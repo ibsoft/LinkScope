@@ -243,7 +243,7 @@ namespace LinkScope {
                 StartAndWait();
             }
         }
-        static void Install() {
+        static void Install(bool upgrade=false) {
             SelfCheck.Run();
             InitConfig();
             Config.Load();
@@ -261,7 +261,10 @@ namespace LinkScope {
                             svc.WaitForStatus(ServiceControllerStatus.Stopped,TimeSpan.FromSeconds(65));
                         svc.Refresh();
                         active=svc.Status!=ServiceControllerStatus.Stopped;
-                        if(Same(old,command) && svc.Status==ServiceControllerStatus.Running) {
+                        if(upgrade && Same(old,command) && svc.Status==ServiceControllerStatus.Running) {
+                            svc.Stop(); svc.WaitForStatus(ServiceControllerStatus.Stopped,TimeSpan.FromSeconds(90)); active=false;
+                        }
+                        else if(Same(old,command) && svc.Status==ServiceControllerStatus.Running) {
                             Console.WriteLine("LinkScope is already running from the installed path. To deploy this build, stop LinkScope in elevated PowerShell, then run this installer again."); return;
                         }
                     }
@@ -323,6 +326,7 @@ namespace LinkScope {
             try {
                 switch(verb) {
                     case "--install": case "-install": Install(); break;
+                    case "--upgrade": Install(true); break;
                     case "--uninstall": case "-uninstall": Uninstall(); break;
                     case "--init-config": InitConfig(); break;
                     case "--self-test": SelfCheck.Run(true); break;
