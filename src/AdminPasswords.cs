@@ -13,7 +13,7 @@ namespace LinkScope {
     }
 
     internal sealed class AdminPasswords {
-        internal const string Starter = "Un1xf0r";
+        internal const string Starter = "admin";
         internal const string Rules = "Use 7–128 characters with at least one A–Z, one a–z and one digit (0–9). Symbols are optional.";
         internal static readonly AdminPasswords Installed = new AdminPasswords(Config.Root, Config.SettingsDir);
         readonly string adminFile, settingsDir;

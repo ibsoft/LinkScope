@@ -11,3 +11,5 @@ Extract the package, open **64-bit PowerShell as Administrator**, and run:
 On a fresh installation open **http://127.0.0.1:9876/** on the monitoring computer. To upgrade, follow [Reinstall or upgrade](docs/README.md#reinstall-or-upgrade).
 
 The [Postman collection](docs/LinkScope.postman_collection.json) and [environment](docs/LinkScope.postman_environment.json) are ready to import.
+
+Recent probe failures include searchable, plain-language descriptions of ICMP statuses and local probe errors. Suggested causes are diagnostic hints, not confirmed root causes.

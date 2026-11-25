@@ -27,8 +27,7 @@ function render(d){
  $('coverage').textContent=fmt(d.points.length)+' of '+fmt((d.end-d.start)/d.step)+' intervals observed · '+(d.step<3600?d.step/60+' min':d.step/3600+' h')+' per interval';
  $('zone').textContent='Display time · '+Intl.DateTimeFormat().resolvedOptions().timeZone;
  $('updated').textContent='Updated '+new Date(d.now*1000).toLocaleTimeString();
- $('events').replaceChildren(...(d.events.length?d.events.map(e=>row([local(e[0]),e[1]])):[row(['—',d.points.length?'No failures recorded in this window.':'Waiting for observations.'])]));
- LinkScopePages.attach($('events').closest('table'),'failures:'+d.target+':'+d.range,'Recent probe failures',!d.events.length);
+ renderFailures(d);
  warning(d.error?'Collector error · '+d.error:'');drawAll();
 }
 async function refresh(foreground=false){
@@ -44,7 +43,7 @@ async function refresh(foreground=false){
 function selectView(change){
  change();data=null;$('name').textContent='Loading history…';$('state').className='pill';$('state').textContent='Loading';$('details').textContent='';
  for(const id of ['rtt','extreme','loss','lost','timeouts','replies','errors','nic','coverage'])$(id).textContent='—';
- $('events').replaceChildren();drawAll();refresh(true);
+ $('events').replaceChildren();$('failure-summary').replaceChildren();$('failure-count').textContent='Loading history…';drawAll();refresh(true);
 }
 $('target').onchange=()=>selectView(()=>selected=$('target').value);
 for(const b of document.querySelectorAll('.tabs button'))b.onclick=()=>{if(b.dataset.range===period)return;selectView(()=>{period=b.dataset.range;for(const x of document.querySelectorAll('.tabs button'))x.setAttribute('aria-pressed',String(x===b));});};
@@ -58,6 +57,56 @@ const modal=$('network-modal'),expanded=$('network-modal-canvas');let expandedId
 function drawExpanded(){if(!modal.open||!expandedId)return;const rect=expanded.getBoundingClientRect();$('network-modal-range').textContent=ranges[period]+' · '+(expandedId==='traffic'?$('nic').textContent:selected);drawChart(expandedId,data,expanded,rect.width,rect.height,window.devicePixelRatio||1,labelTime,expanded.nextElementSibling);}
 for(const id of views){const canvas=$(id),panel=canvas.closest('.panel'),heading=panel.querySelector('h2'),button=document.createElement('button');button.type='button';button.className='expand-chart';button.textContent='Expand ↗';button.setAttribute('aria-label','Expand '+heading.textContent);panel.querySelector('.panelhead').append(button);const open=()=>{if(modal.open)return;expandedId=id;modalOpener=document.activeElement;$('network-modal-title').textContent=heading.textContent;$('network-modal-legend').replaceChildren(...Array.from(panel.querySelector('.legend').children).map(x=>x.cloneNode(true)));modal.showModal();drawExpanded();$('network-modal-close').focus();};button.addEventListener('click',open);canvas.addEventListener('click',open);heading.addEventListener('click',open);heading.classList.add('clickable-chart');canvas.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open();}});}
 $('network-modal-close').onclick=()=>modal.close();modal.addEventListener('close',()=>{expandedId=null;modalOpener?.focus();});
+
+function failureKind(status){const s=String(status).toLowerCase();if(s.startsWith('probe error:'))return 'error';if(s==='timedout')return 'timeout';if(s.includes('unreachable'))return 'unreachable';return 'other';}
+const failureColors={timeout:'red',unreachable:'amber',error:'purple',other:'blue'};
+const failureLabels={timeout:'Timeout',unreachable:'Unreachable',error:'Local probe error',other:'Other failure'};
+function failureDescription(status){
+ const raw=String(status),localError=/^probe error:/i.test(raw),code=raw.replace(/^probe error:\s*/i,'').trim().toLowerCase();
+ const descriptions={
+  timedout:'No ICMP reply arrived before the configured timeout. The host may be offline, congested or filtering ICMP.',
+  destinationhostunreachable:'The destination host could not be reached. Check host availability, local routing and gateway connectivity.',
+  destinationnetworkunreachable:'The destination network could not be reached. Check routes and gateways.',
+  destinationprotocolunreachable:'The destination does not support the requested protocol.',
+  destinationportunreachable:'The destination reported that the requested port is unreachable.',
+  destinationunreachable:'The destination was reported unreachable. Check routing and network connectivity.',
+  destinationprohibited:'Communication with the destination was administratively prohibited. Check network policy and firewall rules.',
+  ttlexpired:'The packet exceeded its time-to-live in transit. Check routing paths for possible loops.',
+  ttlreassemblytimeexceeded:'The destination could not reassemble packet fragments within the allowed time.',
+  timeexceeded:'The packet exceeded its allowed lifetime or reassembly time.',
+  packettoobig:'The packet exceeded the supported path MTU. Check MTU settings along the route.',
+  badroute:'A routing error prevented the probe from completing.',
+  badoption:'An invalid IP option was reported.',
+  badheader:'An invalid IP header was reported.',
+  baddestination:'The destination address was rejected. Check the configured target address.',
+  parameterproblem:'A device reported a problem with an IP packet parameter.',
+  sourcequench:'A device reported congestion using the obsolete ICMP source-quench message.',
+  hardwareerror:'A local network hardware error was reported. Check the adapter and driver.',
+  noresources:'Insufficient local system resources were reported.',
+  generalfailure:'Windows reported a general probe failure. Check local adapter, IP configuration and network stack.',
+  unknown:'Windows returned an unknown probe status.'
+ };
+ const detail=Object.prototype.hasOwnProperty.call(descriptions,code)?descriptions[code]:'';
+ if(localError)return 'Local probe error (excluded from packet loss). '+(detail||'Windows reported: '+raw.replace(/^probe error:\s*/i,'')+'. Check the local network stack and application logs.');
+ return detail||'The probe returned an unrecognized failure status. Review the raw result and application logs.';
+}
+function renderFailures(d){
+ const all=d.searchEvents||d.events, select=$('failure-status'), prior=select.value;
+ const statuses=[...new Set(all.map(e=>String(e[1])))].sort();if(prior&&!statuses.includes(prior))statuses.push(prior);
+ select.replaceChildren(new Option('All results',''),...statuses.map(s=>new Option(s,s)));select.value=prior;
+ const q=$('failure-query').value.trim().toLowerCase().split(/\s+/).filter(Boolean),kind=$('failure-kind').value;
+ const from=$('failure-from').value,to=$('failure-to').value,lo=from?new Date(from).getTime()/1000:-Infinity,hi=to?new Date(to).getTime()/1000+59:Infinity;
+ const valid=lo<=hi;const filtered=valid?all.filter(e=>{const s=String(e[1]),k=failureKind(s),hay=(local(e[0])+' '+new Date(e[0]*1000).toISOString()+' '+s+' '+failureLabels[k]+' '+failureDescription(s)).toLowerCase();return (!kind||k===kind)&&(!prior||s===prior)&&e[0]>=lo&&e[0]<=hi&&q.every(t=>hay.includes(t));}):[];
+ if($('failure-sort').value==='oldest')filtered.reverse();
+ const rows=filtered.map(e=>{const tr=row([local(e[0]),'',failureDescription(e[1])]);tr.cells[1].append(connBadge(e[1],failureColors[failureKind(e[1])]));return tr;});
+ if(!rows.length)rows.push(row(['—',!valid?'Invalid time range: From must be before To.':all.length?'No failures match the filters.':d.points.length?'No failures recorded in this window.':'Waiting for observations.','']));
+ $('events').replaceChildren(...rows);
+ $('failure-summary').replaceChildren(connBadge('Total loaded · '+all.length,'neutral'),...Object.keys(failureLabels).map(k=>connBadge(failureLabels[k]+' · '+all.filter(e=>failureKind(e[1])===k).length,failureColors[k])));
+ $('failure-count').textContent=filtered.length+' matching / '+all.length+' loaded'+(d.searchEventsMore?' · Limited to latest 2,000 failures; older matches may not be shown.':'')+' · Selected target and history range; maximum 48 hours.';
+ LinkScopePages.attach($('failure-table'),'failures:'+d.target+':'+d.range,'Recent probe failures',!filtered.length);
+}
+for(const id of ['query','kind','status','from','to','sort'])$('failure-'+id).addEventListener('input',()=>{if(data)renderFailures(data);});
+$('failure-clear').onclick=()=>{for(const id of ['query','kind','status','from','to'])$('failure-'+id).value='';$('failure-sort').value='newest';if(data)renderFailures(data);};
 let connSnapshot=null,connTimer=null,connBusy=false,connError='';
 const connFilters=['query','protocol','state','local','remote','lport','rport','family'];
 function connValue(k){return $('conn-'+k).value.trim().toLowerCase();}

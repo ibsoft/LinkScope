@@ -117,11 +117,12 @@ namespace LinkScope {
             var rates=db.Rows(@"SELECT (t/?4)*?4 AS bucket,8.0*SUM(rx)/SUM(seconds)/1000000,8.0*SUM(tx)/SUM(seconds)/1000000
                 FROM traffic_roll WHERE nic=?1 AND res=?2 AND t>=?3 AND t<?5 GROUP BY bucket ORDER BY bucket",nicId,res,start,step,end);
             var latest=db.Rows("SELECT t,status,rtt FROM raw WHERE target=? AND t<=? ORDER BY t DESC,rowid DESC LIMIT 1",ip,now).FirstOrDefault();
-            var exceptions=db.Rows("SELECT t,status FROM raw WHERE target=? AND t>=? AND t<=? AND status<>'Success' ORDER BY t DESC,rowid DESC LIMIT 20",ip,Math.Max(start,now-2*Day),now);
+            var searchExceptions=db.Rows("SELECT t,status FROM raw WHERE target=? AND t>=? AND t<=? AND status<>'Success' ORDER BY t DESC,rowid DESC LIMIT 2001",ip,Math.Max(start,now-2*Day),now);
+            var exceptions=searchExceptions.Take(20).ToArray();
             var resourceUsage=db.Rows("SELECT metric,SUM(n),SUM(total)/SUM(n),MIN(lo),MAX(hi),MIN(first_sample),MAX(last_sample) FROM resource_roll WHERE res=? AND t>=? AND t<? GROUP BY metric ORDER BY metric",res,start,end)
                 .Select(r=>new {metric=r[0],samples=r[1],averagePercent=r[2],minPercent=r[3],peakPercent=r[4],firstUtc=Telemetry.Utc(Convert.ToInt64(r[5])),lastUtc=Telemetry.Utc(Convert.ToInt64(r[6]))}).ToArray();
             return new { range=period, target=ip, now=now, start=start, end=end, step=step, targets=cfg.Targets, interval=cfg.IntervalSeconds,
-                resourceUsage=resourceUsage, points=points, rates=rates, latest=latest, events=exceptions, nic=nicName, error=collectorError };
+                resourceUsage=resourceUsage, points=points, rates=rates, latest=latest, events=exceptions, searchEvents=searchExceptions.Take(2000).ToArray(), searchEventsMore=searchExceptions.Count>2000, nic=nicName, error=collectorError };
         }
     }
 }

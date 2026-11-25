@@ -30,7 +30,7 @@ LinkScope is a Windows service that pings configured IP addresses, records packe
    Get-Service -Name LinkScope
    ```
 
-3. When the status is **Running**, open **http://127.0.0.1:9876/** in a browser **on the monitoring computer**. On a new installation the username is **admin** and the starter password is **`Un1xf0r`**. Enter and confirm a different password when prompted. Use **7–128 characters** including at least one A–Z, one a–z and one digit 0–9. Symbols are optional. Control characters are rejected.
+3. When the status is **Running**, open **http://127.0.0.1:9876/** in a browser **on the monitoring computer**. On a new installation the username is **admin** and the starter password is **`admin`**. Enter and confirm a different password when prompted. Use **7–128 characters** including at least one A–Z, one a–z and one digit 0–9. Symbols are optional. Control characters are rejected.
 4. Open **Settings → Network probes**. Enter one IP and optional display name per line, set **Probe interval (seconds)**, and click **Save settings**. Click **Restart LinkScope** under the target list and confirm. Sign in again and select a target under **Network** to confirm the first observations.
 
 Setup installs one service executable, registers **LinkScope Network Monitor** with automatic startup, and starts it as `NT AUTHORITY\LocalService`. Its service SID is `NT SERVICE\LinkScope`. Setup also registers **Unixfor LinkScope SMART**, a scheduled task that uses the same executable with `--smart-once` as SYSTEM every five minutes to read physical disk health.
