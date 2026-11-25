@@ -1,0 +1,93 @@
+{
+  "BrandLabel": "",
+  "BindAddress": "127.0.0.1",
+  "Port": 9876,
+  "IntervalSeconds": 5,
+  "TimeoutMs": 1500,
+  "InterfaceName": "",
+  "Targets": [
+    {
+      "Name": "Local host",
+      "Address": "127.0.0.1"
+    }
+  ],
+  "UseHttps": false,
+  "HostName": "localhost",
+  "CertificateThumbprint": "",
+  "RequireLogin": true,
+  "ResourceSeconds": 15,
+  "InventoryMinutes": 5,
+  "LowLifePercent": 10,
+  "WriteDiskEvents": true,
+  "EventsPerChannel": 25,
+  "EventChannels": [
+    "System",
+    "Application",
+    "Microsoft-Windows-Windows Defender/Operational",
+    "Microsoft-Windows-Windows Firewall With Advanced Security/Firewall",
+    "Microsoft-Windows-WindowsUpdateClient/Operational"
+  ],
+  "ExtraCategories": [],
+  "CpuAlertPercent": 90,
+  "RamAlertPercent": 90,
+  "DiskAlertPercent": 90,
+  "ProbeAlertCount": 3,
+  "Delivery": {
+    "EmailEnabled": false,
+    "EmailRecovery": true,
+    "SmtpHost": "",
+    "SmtpPort": 587,
+    "Encryption": "starttls",
+    "Authentication": "none",
+    "Username": "",
+    "From": "",
+    "SenderName": "LinkScope",
+    "To": "",
+    "Cc": "",
+    "Bcc": "",
+    "ReplyTo": "",
+    "SubjectPrefix": "[LinkScope]",
+    "TimeoutSeconds": 20,
+    "JsonEnabled": false,
+    "JsonDirectory": "",
+    "MaxJsonFiles": 100
+  },
+  "Logging": {
+    "RetentionDays": 30,
+    "MinimumLevel": "Info",
+    "SyslogEnabled": false,
+    "SyslogHost": "",
+    "SyslogPort": 514,
+    "SyslogTransport": "udp",
+    "SyslogFacility": 16,
+    "SyslogMinimumLevel": "Info"
+  },
+  "Ai": {
+    "Enabled": false,
+    "Provider": "openai",
+    "Profiles": {}
+  },
+  "Siem": {
+    "Seq": {
+      "Enabled": false,
+      "MinimumLevel": "Info",
+      "BaseUrl": "",
+      "ProtectedKey": "",
+      "Index": "linkscope-logs"
+    },
+    "Wazuh": {
+      "Enabled": false,
+      "MinimumLevel": "Info",
+      "Host": "",
+      "Port": 514,
+      "Transport": "tcp"
+    },
+    "Elastic": {
+      "Enabled": false,
+      "MinimumLevel": "Info",
+      "BaseUrl": "",
+      "ProtectedKey": "",
+      "Index": "linkscope-logs"
+    }
+  }
+}

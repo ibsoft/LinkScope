@@ -1,0 +1,16 @@
+.assist{max-width:1170px;margin:1.8rem auto;padding:0 1rem}.assist-title,.send-row{display:flex;align-items:center;justify-content:space-between;gap:.8rem}.assist-title{margin-bottom:1rem}.assist-title h1,.assist-title p{margin:0}.assist-title p{color:#50677b}.assist-shell{display:grid;grid-template-columns:minmax(175px,25%) minmax(0,1fr);background:#fff;border:1px solid #c7d6e0;border-radius:16px;overflow:hidden;box-shadow:0 8px 30px #173d5111}.assist-rail{background:#eef5f6;padding:1.4rem;color:#234653}.assist-rail h2{font-size:1rem}.assist-rail ul{padding:0;list-style:none}.assist-rail li{margin:.8rem 0}.assist-rail li::before{content:"";background:#25817d;display:inline-block;width:7px;height:7px;border-radius:2px;margin-right:.6rem}.assist-rail p{font-size:.9rem;overflow-wrap:anywhere}.assist-rail a{color:#176467}.dialog{display:flex;flex-direction:column;min-width:0;padding:0;border:0;margin:0}.dialog #thread{padding:1.4rem;overflow-y:auto;min-height:220px;max-height:58vh;flex:1}.welcome{background:linear-gradient(125deg,#edf8f4,#f3f3ff);border:1px solid #cadfdd;border-radius:12px;padding:1.4rem}.welcome h2{font-size:1.5rem;margin:.6rem 0}.welcome p{max-width:48ch}.spark{color:#147570;font-size:1.6rem}.composer{padding:1rem 1.4rem;border-top:1px solid #d6e2e7}.composer label{font-weight:700}.composer textarea{width:100%;box-sizing:border-box;margin:.4rem 0;resize:vertical}.send-row{justify-content:flex-end}.assist #ai-state{margin:0 0 .55rem;color:#385362}.bubble{max-width:94%;margin:0 0 1rem;padding:.8rem 1rem;border-radius:12px;overflow-wrap:anywhere}.bubble.assistant{background:#f1f6f7;border-left:3px solid #458882}.bubble.technician{margin-left:auto;background:#edf0ff;border-right:3px solid #6979b2}.bubble strong{color:#264757}.bubble p{white-space:pre-wrap;margin:.45rem 0 0}.assist [hidden]{display:none!important}@media(max-width:740px){.assist-shell{grid-template-columns:1fr}.assist-rail{padding:.6rem 1rem}.assist-rail ul{display:none}.dialog #thread{max-height:56vh}.assist-title h1{font-size:1.7rem}}
+.bubble pre{overflow:auto;max-width:100%;padding:.8rem;background:#203642;color:#f5f9fa;border-radius:7px;white-space:pre-wrap}.bubble code{background:#dce9ed;padding:.08rem .25rem;border-radius:3px}.bubble h3{font-size:1.03rem;margin:.85rem 0 .3rem}
+
+.ai-thinking {
+    display: flex;
+    align-items: center;
+    align-self: flex-start;
+    gap: .6rem;
+    margin: 0 1.4rem .8rem;
+    padding: .48rem .8rem;
+    border-radius: .6rem;
+    background: #e7f4f2;
+    color: #165d59;
+    font-size: .92rem;
+    font-weight: 600;
+}

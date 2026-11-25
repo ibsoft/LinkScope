@@ -1,0 +1,45 @@
+<Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition="'$(Configuration)'==''">Release</Configuration>
+    <Platform Condition="'$(Platform)'==''">x64</Platform>
+    <ProjectGuid>{95E2FF2D-82C8-4163-94A6-FE293A34DF01}</ProjectGuid>
+    <OutputType>Exe</OutputType><AssemblyName>LinkScope</AssemblyName><RootNamespace>LinkScope</RootNamespace>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion><PlatformTarget>x64</PlatformTarget>
+    <OutputPath>bin\$(Configuration)\</OutputPath><Optimize>true</Optimize>
+    <DebugSymbols>false</DebugSymbols><DebugType>none</DebugType><LangVersion>5</LangVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" /><Reference Include="System.Numerics" /><Reference Include="System.Core" /><Reference Include="System.Web" />
+    <Reference Include="System.Web.Extensions" /><Reference Include="System.Security" /> <Reference Include="System.ServiceProcess" />
+    <Compile Include="src\*.cs" />
+    <EmbeddedResource Include="src\logs.html"><LogicalName>logs.html</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\logs.js"><LogicalName>logs.js</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\ai.html"><LogicalName>ai.html</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\loading.css"><LogicalName>loading.css</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\loading.js"><LogicalName>loading.js</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\ai.js"><LogicalName>ai.js</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\ai.css"><LogicalName>ai.css</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\alerts.html"><LogicalName>alerts.html</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\charts.js"><LogicalName>charts.js</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\paging.js"><LogicalName>paging.js</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\app.css"><LogicalName>app.css</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\app.js"><LogicalName>app.js</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\security.ps1"><LogicalName>security.ps1</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\certificate.ps1"><LogicalName>certificate.ps1</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\dashboard.css"><LogicalName>dashboard.css</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\dashboard.html"><LogicalName>dashboard.html</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\dashboard.js"><LogicalName>dashboard.js</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\default.json"><LogicalName>default.json</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\hardware-task.ps1"><LogicalName>hardware-task.ps1</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\health.ps1"><LogicalName>health.ps1</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\login.html"><LogicalName>login.html</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\pdf-lib.min.js"><LogicalName>pdf-lib.min.js</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\report.js"><LogicalName>report.js</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\settings.html"><LogicalName>settings.html</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\smart.ps1"><LogicalName>smart.ps1</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\system.html"><LogicalName>system.html</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\toast.css"><LogicalName>toast.css</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\toast.js"><LogicalName>toast.js</LogicalName></EmbeddedResource>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

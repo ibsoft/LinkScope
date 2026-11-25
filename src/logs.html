@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="/assets/loading.css"><script defer src="/assets/loading.js"></script><title>Application logs · {{brand}}</title><link rel="stylesheet" href="/assets/app.css"><link rel="stylesheet" href="/assets/toast.css"><script defer src="/assets/paging.js"></script><script defer src="/assets/toast.js"></script><script defer src="/assets/charts.js"></script><script defer src="/assets/report.js"></script><script defer src="/assets/logs.js"></script></head>
+<body data-page="logs"><header><div class="top"><strong class="brand">{{brand}}</strong><nav aria-label="Main"><a href="/">Network</a><a href="/system">System health</a><a href="/alerts">Alert history</a><a href="/logs" aria-current="page">Logs</a><a href="/ai">AI Assist</a><a href="/settings">Settings</a><button id="global-export" type="button">Export PDF</button></nav></div></header>
+<main><div id="pdf-status" role="status"></div><h1>Application logs</h1>
+<form id="log-form"><label class="field">Search logs<input id="log-q" type="search" maxlength="200" placeholder="Message, module, operation or IP address"></label>
+<details open><summary>Advanced filters</summary><div class="grid">
+<label class="field">Level<select id="log-level"><option value="">All levels</option><option>Debug</option><option>Info</option><option>Warning</option><option>Error</option></select></label>
+<label class="field">Module<select id="log-module"><option value="">All modules</option></select></label>
+<label class="field">Operation contains<input id="log-operation" maxlength="100"></label>
+<label class="field">Client or target IP<input id="log-peer" maxlength="80"></label>
+<label class="field">HTTP status<input id="log-status" type="number" min="100" max="599"></label>
+<label class="field">From (local time)<input id="log-from" type="datetime-local" min="1970-01-02T00:00"></label>
+<label class="field">Until (local time, exclusive)<input id="log-until" type="datetime-local" min="1970-01-02T00:00"></label></div></details>
+<button type="submit">Search</button> <button type="button" id="log-clear">Clear filters</button> <button type="button" id="log-refresh">Refresh</button></form>
+<p id="log-feedback" role="status"></p><div class="tablewrap"><table><thead><tr><th>Local time</th><th>Level</th><th>Module</th><th>Operation</th><th>Message</th><th>Client / target IP</th><th>HTTP</th><th>Duration</th></tr></thead>
+<tbody id="log-list"></tbody></table></div><div id="log-pager"></div></main></body></html>

@@ -1,0 +1,2278 @@
+{
+  "info": {
+    "_postman_id": "d8356cec-6706-4efe-b866-135b226640c7",
+    "name": "LinkScope monitoring tests",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Import the companion environment. Supply a bearer token granted the eight core categories. Folder 3 is opt-in. See docs/README.md."
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const base = pm.environment.get('baseUrl') || '';",
+          "const local = /^http:\\/\\/(127\\.0\\.0\\.1|localhost|\\[::1\\])(:[0-9]+)?$/i;",
+          "const tls = /^https:\\/\\/[a-z0-9.-]+(:[0-9]+)?$/i;",
+          "if (!local.test(base) && !tls.test(base)) {",
+          "    pm.execution.skipRequest();",
+          "    throw new Error('Set baseUrl to an HTTPS origin or loopback HTTP origin, with no trailing slash.');",
+          "}"
+        ]
+      }
+    }
+  ],
+  "protocolProfileBehavior": {
+    "followRedirects": false
+  },
+  "item": [
+    {
+      "name": "1. System health API",
+      "description": "Use a token with all core categories. Optional inventory runs only when configured.",
+      "item": [
+        {
+          "name": "All authorized categories",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/system",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "system"
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{apiToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('JSON snapshot from the monitoring host', () => {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "    const d = pm.response.json();",
+                  "    pm.expect(d.schemaVersion).to.eql(1);",
+                  "    pm.expect(d.monitorHost).to.be.a('string').and.not.empty;",
+                  "    pm.expect(Number.isFinite(Date.parse(d.generatedUtc))).to.eql(true);",
+                  "    pm.expect(d.categories).to.be.an('object');",
+                  "    pm.expect(d.alerts).to.be.an('array');",
+                  "    for (const item of Object.values(d.categories)) {",
+                  "        if (item.status === 'collecting') continue;",
+                  "        pm.expect(item.result).to.be.an('object');",
+                  "        pm.expect(item.ageSeconds).to.be.a('number');",
+                  "        pm.expect(item.stale).to.be.a('boolean');",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read cpu",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/system?categories=cpu",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "system"
+              ],
+              "query": [
+                {
+                  "key": "categories",
+                  "value": "cpu"
+                }
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{apiToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('JSON snapshot from the monitoring host', () => {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "    const d = pm.response.json();",
+                  "    pm.expect(d.schemaVersion).to.eql(1);",
+                  "    pm.expect(d.monitorHost).to.be.a('string').and.not.empty;",
+                  "    pm.expect(Number.isFinite(Date.parse(d.generatedUtc))).to.eql(true);",
+                  "    pm.expect(d.categories).to.be.an('object');",
+                  "    pm.expect(d.alerts).to.be.an('array');",
+                  "    for (const item of Object.values(d.categories)) {",
+                  "        if (item.status === 'collecting') continue;",
+                  "        pm.expect(item.result).to.be.an('object');",
+                  "        pm.expect(item.ageSeconds).to.be.a('number');",
+                  "        pm.expect(item.stale).to.be.a('boolean');",
+                  "    }",
+                  "});",
+                  "pm.test('Only requested categories are returned', () => pm.expect(Object.keys(pm.response.json().categories).sort()).to.eql([\"cpu\"].sort()));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read ram",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/system?categories=ram",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "system"
+              ],
+              "query": [
+                {
+                  "key": "categories",
+                  "value": "ram"
+                }
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{apiToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('JSON snapshot from the monitoring host', () => {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "    const d = pm.response.json();",
+                  "    pm.expect(d.schemaVersion).to.eql(1);",
+                  "    pm.expect(d.monitorHost).to.be.a('string').and.not.empty;",
+                  "    pm.expect(Number.isFinite(Date.parse(d.generatedUtc))).to.eql(true);",
+                  "    pm.expect(d.categories).to.be.an('object');",
+                  "    pm.expect(d.alerts).to.be.an('array');",
+                  "    for (const item of Object.values(d.categories)) {",
+                  "        if (item.status === 'collecting') continue;",
+                  "        pm.expect(item.result).to.be.an('object');",
+                  "        pm.expect(item.ageSeconds).to.be.a('number');",
+                  "        pm.expect(item.stale).to.be.a('boolean');",
+                  "    }",
+                  "});",
+                  "pm.test('Only requested categories are returned', () => pm.expect(Object.keys(pm.response.json().categories).sort()).to.eql([\"ram\"].sort()));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read disk_usage",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/system?categories=disk_usage",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "system"
+              ],
+              "query": [
+                {
+                  "key": "categories",
+                  "value": "disk_usage"
+                }
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{apiToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('JSON snapshot from the monitoring host', () => {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "    const d = pm.response.json();",
+                  "    pm.expect(d.schemaVersion).to.eql(1);",
+                  "    pm.expect(d.monitorHost).to.be.a('string').and.not.empty;",
+                  "    pm.expect(Number.isFinite(Date.parse(d.generatedUtc))).to.eql(true);",
+                  "    pm.expect(d.categories).to.be.an('object');",
+                  "    pm.expect(d.alerts).to.be.an('array');",
+                  "    for (const item of Object.values(d.categories)) {",
+                  "        if (item.status === 'collecting') continue;",
+                  "        pm.expect(item.result).to.be.an('object');",
+                  "        pm.expect(item.ageSeconds).to.be.a('number');",
+                  "        pm.expect(item.stale).to.be.a('boolean');",
+                  "    }",
+                  "});",
+                  "pm.test('Only requested categories are returned', () => pm.expect(Object.keys(pm.response.json().categories).sort()).to.eql([\"disk_usage\"].sort()));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read smart",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/system?categories=smart",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "system"
+              ],
+              "query": [
+                {
+                  "key": "categories",
+                  "value": "smart"
+                }
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{apiToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('JSON snapshot from the monitoring host', () => {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "    const d = pm.response.json();",
+                  "    pm.expect(d.schemaVersion).to.eql(1);",
+                  "    pm.expect(d.monitorHost).to.be.a('string').and.not.empty;",
+                  "    pm.expect(Number.isFinite(Date.parse(d.generatedUtc))).to.eql(true);",
+                  "    pm.expect(d.categories).to.be.an('object');",
+                  "    pm.expect(d.alerts).to.be.an('array');",
+                  "    for (const item of Object.values(d.categories)) {",
+                  "        if (item.status === 'collecting') continue;",
+                  "        pm.expect(item.result).to.be.an('object');",
+                  "        pm.expect(item.ageSeconds).to.be.a('number');",
+                  "        pm.expect(item.stale).to.be.a('boolean');",
+                  "    }",
+                  "});",
+                  "pm.test('Only requested categories are returned', () => pm.expect(Object.keys(pm.response.json().categories).sort()).to.eql([\"smart\"].sort()));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read events",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/system?categories=events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "system"
+              ],
+              "query": [
+                {
+                  "key": "categories",
+                  "value": "events"
+                }
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{apiToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('JSON snapshot from the monitoring host', () => {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "    const d = pm.response.json();",
+                  "    pm.expect(d.schemaVersion).to.eql(1);",
+                  "    pm.expect(d.monitorHost).to.be.a('string').and.not.empty;",
+                  "    pm.expect(Number.isFinite(Date.parse(d.generatedUtc))).to.eql(true);",
+                  "    pm.expect(d.categories).to.be.an('object');",
+                  "    pm.expect(d.alerts).to.be.an('array');",
+                  "    for (const item of Object.values(d.categories)) {",
+                  "        if (item.status === 'collecting') continue;",
+                  "        pm.expect(item.result).to.be.an('object');",
+                  "        pm.expect(item.ageSeconds).to.be.a('number');",
+                  "        pm.expect(item.stale).to.be.a('boolean');",
+                  "    }",
+                  "});",
+                  "pm.test('Only requested categories are returned', () => pm.expect(Object.keys(pm.response.json().categories).sort()).to.eql([\"events\"].sort()));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read firewall",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/system?categories=firewall",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "system"
+              ],
+              "query": [
+                {
+                  "key": "categories",
+                  "value": "firewall"
+                }
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{apiToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('JSON snapshot from the monitoring host', () => {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "    const d = pm.response.json();",
+                  "    pm.expect(d.schemaVersion).to.eql(1);",
+                  "    pm.expect(d.monitorHost).to.be.a('string').and.not.empty;",
+                  "    pm.expect(Number.isFinite(Date.parse(d.generatedUtc))).to.eql(true);",
+                  "    pm.expect(d.categories).to.be.an('object');",
+                  "    pm.expect(d.alerts).to.be.an('array');",
+                  "    for (const item of Object.values(d.categories)) {",
+                  "        if (item.status === 'collecting') continue;",
+                  "        pm.expect(item.result).to.be.an('object');",
+                  "        pm.expect(item.ageSeconds).to.be.a('number');",
+                  "        pm.expect(item.stale).to.be.a('boolean');",
+                  "    }",
+                  "});",
+                  "pm.test('Only requested categories are returned', () => pm.expect(Object.keys(pm.response.json().categories).sort()).to.eql([\"firewall\"].sort()));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read antivirus",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/system?categories=antivirus",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "system"
+              ],
+              "query": [
+                {
+                  "key": "categories",
+                  "value": "antivirus"
+                }
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{apiToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('JSON snapshot from the monitoring host', () => {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "    const d = pm.response.json();",
+                  "    pm.expect(d.schemaVersion).to.eql(1);",
+                  "    pm.expect(d.monitorHost).to.be.a('string').and.not.empty;",
+                  "    pm.expect(Number.isFinite(Date.parse(d.generatedUtc))).to.eql(true);",
+                  "    pm.expect(d.categories).to.be.an('object');",
+                  "    pm.expect(d.alerts).to.be.an('array');",
+                  "    for (const item of Object.values(d.categories)) {",
+                  "        if (item.status === 'collecting') continue;",
+                  "        pm.expect(item.result).to.be.an('object');",
+                  "        pm.expect(item.ageSeconds).to.be.a('number');",
+                  "        pm.expect(item.stale).to.be.a('boolean');",
+                  "    }",
+                  "});",
+                  "pm.test('Only requested categories are returned', () => pm.expect(Object.keys(pm.response.json().categories).sort()).to.eql([\"antivirus\"].sort()));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read security",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/system?categories=security",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "system"
+              ],
+              "query": [
+                {
+                  "key": "categories",
+                  "value": "security"
+                }
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{apiToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('JSON snapshot from the monitoring host', () => {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "    const d = pm.response.json();",
+                  "    pm.expect(d.schemaVersion).to.eql(1);",
+                  "    pm.expect(d.monitorHost).to.be.a('string').and.not.empty;",
+                  "    pm.expect(Number.isFinite(Date.parse(d.generatedUtc))).to.eql(true);",
+                  "    pm.expect(d.categories).to.be.an('object');",
+                  "    pm.expect(d.alerts).to.be.an('array');",
+                  "    for (const item of Object.values(d.categories)) {",
+                  "        if (item.status === 'collecting') continue;",
+                  "        pm.expect(item.result).to.be.an('object');",
+                  "        pm.expect(item.ageSeconds).to.be.a('number');",
+                  "        pm.expect(item.stale).to.be.a('boolean');",
+                  "    }",
+                  "});",
+                  "pm.test('Only requested categories are returned', () => pm.expect(Object.keys(pm.response.json().categories).sort()).to.eql([\"security\"].sort()));",
+                  "pm.test('Security contains only scoped posture checks',()=>{const r=pm.response.json().categories.security.result;if(r&&r.items&&r.items.length)pm.expect(r.items.every(x=>['UAC','Secure Boot','TPM','BitLocker'].includes(x.control)&&['enabled','disabled','unavailable'].includes(x.state))).to.eql(true);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read cpu,ram,disk_usage",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/system?categories=cpu,ram,disk_usage",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "system"
+              ],
+              "query": [
+                {
+                  "key": "categories",
+                  "value": "cpu,ram,disk_usage"
+                }
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{apiToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('JSON snapshot from the monitoring host', () => {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "    const d = pm.response.json();",
+                  "    pm.expect(d.schemaVersion).to.eql(1);",
+                  "    pm.expect(d.monitorHost).to.be.a('string').and.not.empty;",
+                  "    pm.expect(Number.isFinite(Date.parse(d.generatedUtc))).to.eql(true);",
+                  "    pm.expect(d.categories).to.be.an('object');",
+                  "    pm.expect(d.alerts).to.be.an('array');",
+                  "    for (const item of Object.values(d.categories)) {",
+                  "        if (item.status === 'collecting') continue;",
+                  "        pm.expect(item.result).to.be.an('object');",
+                  "        pm.expect(item.ageSeconds).to.be.a('number');",
+                  "        pm.expect(item.stale).to.be.a('boolean');",
+                  "    }",
+                  "});",
+                  "pm.test('Only requested categories are returned', () => pm.expect(Object.keys(pm.response.json().categories).sort()).to.eql([\"cpu\", \"ram\", \"disk_usage\"].sort()));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Optional inventory selection",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/system?categories={{optionalCategories}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "system"
+              ],
+              "query": [
+                {
+                  "key": "categories",
+                  "value": "{{optionalCategories}}"
+                }
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{apiToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('optionalCategories')) pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('JSON snapshot from the monitoring host', () => {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "    const d = pm.response.json();",
+                  "    pm.expect(d.schemaVersion).to.eql(1);",
+                  "    pm.expect(d.monitorHost).to.be.a('string').and.not.empty;",
+                  "    pm.expect(Number.isFinite(Date.parse(d.generatedUtc))).to.eql(true);",
+                  "    pm.expect(d.categories).to.be.an('object');",
+                  "    pm.expect(d.alerts).to.be.an('array');",
+                  "    for (const item of Object.values(d.categories)) {",
+                  "        if (item.status === 'collecting') continue;",
+                  "        pm.expect(item.result).to.be.an('object');",
+                  "        pm.expect(item.ageSeconds).to.be.a('number');",
+                  "        pm.expect(item.stale).to.be.a('boolean');",
+                  "    }",
+                  "});",
+                  "",
+                  "pm.test('Matches optionalCategories', () => pm.expect(Object.keys(pm.response.json().categories).sort()).to.eql(pm.environment.get('optionalCategories').split(',').sort()));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. API error responses",
+      "description": "Validates authentication and supported inputs.",
+      "item": [
+        {
+          "name": "Missing token",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/system",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "system"
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401', () => pm.response.to.have.status(401));",
+                  "pm.test('JSON error message', () => pm.expect(pm.response.json().error).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid token",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/system",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "system"
+              ]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer invalid-example"
+              }
+            ],
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401', () => pm.response.to.have.status(401));",
+                  "pm.test('JSON error message', () => pm.expect(pm.response.json().error).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown category",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/system?categories=unknown_category",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "system"
+              ],
+              "query": [
+                {
+                  "key": "categories",
+                  "value": "unknown_category"
+                }
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{apiToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 403', () => pm.response.to.have.status(403));",
+                  "pm.test('JSON error message', () => pm.expect(pm.response.json().error).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Duplicate category",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/system?categories=cpu,cpu",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "system"
+              ],
+              "query": [
+                {
+                  "key": "categories",
+                  "value": "cpu,cpu"
+                }
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{apiToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 403', () => pm.response.to.have.status(403));",
+                  "pm.test('JSON error message', () => pm.expect(pm.response.json().error).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unexpected query parameter",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/system?unknown=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "system"
+              ],
+              "query": [
+                {
+                  "key": "unknown",
+                  "value": "1"
+                }
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{apiToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
+                  "pm.test('JSON error message', () => pm.expect(pm.response.json().error).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown API endpoint",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/unknown",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "unknown"
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{apiToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 404', () => pm.response.to.have.status(404));",
+                  "pm.test('JSON error message', () => pm.expect(pm.response.json().error).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Optional admin diagnostics and temporary token lifecycle",
+      "description": "Use the folder Runner in order. This opens a browser-compatible session, reads settings, reviews history and creates then revokes its own test token.",
+      "item": [
+        {
+          "name": "Sign in with the existing admin password",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Origin",
+                "value": "{{baseUrl}}"
+              }
+            ],
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{loginBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set('loginBody', JSON.stringify({user:'admin', password:pm.environment.get('adminPassword')}));",
+                  "pm.variables.set('testLabel','Postman-LinkScope-'+pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Signed in with a permanent password', () => pm.expect(pm.response.json().ok).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get admin session and CSRF token",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/ui/session",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ui",
+                "session"
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Administrator session', () => {const d=pm.response.json();pm.expect(d.admin).to.eql(true);pm.expect(d.csrf).to.be.a('string').and.not.empty;pm.variables.set('tempCsrf',d.csrf);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read settings and configured probe rules",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/ui/settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ui",
+                "settings"
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Brand and target settings', () => {const c=pm.response.json().config;pm.expect(c.BrandLabel).to.be.a('string');pm.expect(c.Targets).to.be.an('array').and.not.empty;pm.expect(c.Targets[0].AlertsEnabled).to.be.a('boolean');});",
+                  "const delivery=pm.response.json().config.Delivery;",
+                  "pm.test('SMTP credential redacted', () => { pm.expect(delivery.ProtectedPassword || '').to.eql(''); });",
+                  "pm.variables.set('savedDeliveryJson', JSON.stringify(delivery));",
+                  "pm.test('SIEM configuration and key redaction', () => {const s=pm.response.json().config.Siem; for (const k of ['Seq','Wazuh','Elastic']) pm.expect(s[k].Enabled).to.be.a('boolean'); for (const k of ['Seq','Elastic']) pm.expect(s[k].ProtectedKey).to.eql('');});",
+                  "pm.test('Saved restart state', () => {const s=pm.response.json();pm.expect(s.restartRequired).to.be.a('boolean');pm.expect(s.canRestart).to.be.a('boolean');});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read alert delivery status",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/ui/alert-delivery",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ui",
+                "alert-delivery"
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Delivery status and queue', () => {const d=pm.response.json();pm.expect(d.queued).to.be.a('number');pm.expect(d.testState).to.be.a('string');});",
+                  "pm.test('SIEM delivery status', () => {for(const k of ['Seq','Wazuh','Elastic']) pm.expect(pm.response.json().logStatus.siem[k]).to.be.a('string');});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Optional — queue a saved SIEM receiver test",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/ui/siem-test",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ui",
+                "siem-test"
+              ]
+            },
+            "header": [
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{tempCsrf}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Origin",
+                "value": "{{baseUrl}}"
+              }
+            ],
+            "description": "Queues one synthetic event in the selected, enabled receiver. Set siemTestReceiver to Seq, Wazuh or Elastic to opt in.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"Receiver\":\"{{siemTestReceiver}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('siemTestReceiver')) pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Test queued for the selected receiver',()=>{pm.response.to.have.status(200);const d=pm.response.json();pm.expect(d.queued).to.eql(true);pm.expect(d.eventId).to.be.a('string').and.not.empty;});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Optional — send an SMTP test email",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/ui/smtp-test",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ui",
+                "smtp-test"
+              ]
+            },
+            "header": [
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{tempCsrf}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Origin",
+                "value": "{{baseUrl}}"
+              }
+            ],
+            "description": "Sends a real email only when runSmtpTest is true. Uses saved settings plus optional unsaved overrides. Run in order inside the admin folder.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{smtpTestBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(pm.environment.get('runSmtpTest') !== 'true') pm.execution.skipRequest();",
+                  "else {",
+                  "  const saved=JSON.parse(pm.variables.get('savedDeliveryJson'));",
+                  "  const edits=JSON.parse(pm.environment.get('smtpTestOverrides') || '{}');",
+                  "  const delivery=Object.assign({}, saved, edits);",
+                  "  pm.variables.set('smtpTestBody', JSON.stringify({Delivery:delivery, NewSmtpPassword:pm.environment.get('smtpTestPassword') || ''}));",
+                  "  pm.variables.set('smtpTestDeadline', Date.now() + (Number(delivery.TimeoutSeconds) + 15) * 1000);",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Test started', () => pm.expect(pm.response.json().started).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Optional — wait for SMTP test result",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/ui/alert-delivery",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ui",
+                "alert-delivery"
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(pm.environment.get('runSmtpTest') !== 'true') pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const d=pm.response.json();",
+                  "if(d.testState==='running' && Date.now()<Number(pm.variables.get('smtpTestDeadline'))) {",
+                  "  setTimeout(() => pm.execution.setNextRequest(pm.info.requestId), 1000);",
+                  "} else {",
+                  "  pm.test('SMTP relay accepted the test — '+d.testMessage, () => pm.expect(d.testState).to.eql('accepted'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read alert history without acknowledging",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/ui/alerts/history",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ui",
+                "alerts",
+                "history"
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('History page', () => {const d=pm.response.json();pm.expect(d.alerts).to.be.an('array');pm.expect(d.unread).to.be.a('number');pm.expect(d.more).to.be.a('boolean');});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search and page through alert history",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/ui/alerts/search?q=probe&category=network&state=active&read=unread&page=1&size=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ui",
+                "alerts",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "probe"
+                },
+                {
+                  "key": "category",
+                  "value": "network"
+                },
+                {
+                  "key": "state",
+                  "value": "active"
+                },
+                {
+                  "key": "read",
+                  "value": "unread"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "size",
+                  "value": "10"
+                }
+              ]
+            },
+            "header": [],
+            "description": "Filters apply to the complete SQLite history. Optionally add severity and from/until (UTC Unix seconds, end exclusive). Reuse through from the first response while paging.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Filtered alert page', () => {const d=pm.response.json();pm.expect(d.size).to.eql(10);pm.expect(d.page).to.eql(1);pm.expect(d.total).to.be.a('number');pm.expect(d.alerts.every(a => a.category==='network' && a.resolved===false && a.read===false)).to.eql(true);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search and page through application logs",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/ui/logs/search?level=Warning&size=10&page=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ui",
+                "logs",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "level",
+                  "value": "Warning"
+                },
+                {
+                  "key": "size",
+                  "value": "10"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                }
+              ]
+            },
+            "header": [],
+            "description": "Authenticated administrator session. Runs against the current installation.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Filtered log page',()=>{const d=pm.response.json();pm.expect(d.size).to.eql(10);pm.expect(d.page).to.eql(1);pm.expect(d.total).to.be.a('number');pm.expect(d.items.every(x=>x.level==='Warning')).to.eql(true);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read application log summary",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/ui/logs/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ui",
+                "logs",
+                "summary"
+              ]
+            },
+            "header": [],
+            "description": "Authenticated administrator session. Runs against the current installation.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Summary rows',()=>pm.expect(pm.response.json().rows).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read AI provider configuration",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/ui/ai",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ui",
+                "ai"
+              ]
+            },
+            "header": [],
+            "description": "Authenticated administrator session. Runs against the current installation.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Provider metadata',()=>{const d=pm.response.json();pm.expect(d.enabled).to.be.a('boolean');pm.expect(d.provider).to.be.a('string');});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Optional — request live AI verdict",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/ui/ai/ask",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ui",
+                "ai",
+                "ask"
+              ]
+            },
+            "header": [
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{tempCsrf}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Origin",
+                "value": "{{baseUrl}}"
+              }
+            ],
+            "description": "Sends the current evidence to the configured AI provider when runAiTest is true.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"verdict\":true}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(pm.environment.get('runAiTest')!=='true')pm.execution.skipRequest();",
+                  "else pm.variables.set('aiDeadline',Date.now()+495000);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Test started', () => pm.expect(pm.response.json().started).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Optional — await AI verdict",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/ui/ai/result",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ui",
+                "ai",
+                "result"
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(pm.environment.get('runAiTest')!=='true')pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200',()=>pm.response.to.have.status(200));",
+                  "const d=pm.response.json();",
+                  "if(d.busy&&Date.now()<Number(pm.variables.get('aiDeadline'))){setTimeout(()=>pm.execution.setNextRequest(pm.info.requestId),1200);}",
+                  "else pm.test('Grounded verdict returned',()=>{pm.expect(d.stage).to.eql('complete');pm.expect(d.answer).to.be.a('string').and.not.empty;pm.expect(d.coverage.records).to.be.a('number');});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Resource graphs — day",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/ui/resource-history?range=day",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ui",
+                "resource-history"
+              ],
+              "query": [
+                {
+                  "key": "range",
+                  "value": "day"
+                }
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Selected graph period and series', () => {const d=pm.response.json();pm.expect(d.range).to.eql('day');pm.expect(d.series).to.be.an('array');pm.expect(d.end).to.be.above(d.start);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Resource graphs — week",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/ui/resource-history?range=week",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ui",
+                "resource-history"
+              ],
+              "query": [
+                {
+                  "key": "range",
+                  "value": "week"
+                }
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Selected graph period and series', () => {const d=pm.response.json();pm.expect(d.range).to.eql('week');pm.expect(d.series).to.be.an('array');pm.expect(d.end).to.be.above(d.start);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Resource graphs — month",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/ui/resource-history?range=month",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ui",
+                "resource-history"
+              ],
+              "query": [
+                {
+                  "key": "range",
+                  "value": "month"
+                }
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Selected graph period and series', () => {const d=pm.response.json();pm.expect(d.range).to.eql('month');pm.expect(d.series).to.be.an('array');pm.expect(d.end).to.be.above(d.start);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Resource graphs — year",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/ui/resource-history?range=year",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ui",
+                "resource-history"
+              ],
+              "query": [
+                {
+                  "key": "range",
+                  "value": "year"
+                }
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Selected graph period and series', () => {const d=pm.response.json();pm.expect(d.range).to.eql('year');pm.expect(d.series).to.be.an('array');pm.expect(d.end).to.be.above(d.start);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read complete report manifest",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/ui/report",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ui",
+                "report"
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Network and Windows report sources', () => {const d=pm.response.json();pm.expect(d.windows.monitorHost).to.be.a('string');pm.expect(d.targets).to.be.an('array').and.not.empty;pm.variables.set('reportTarget',d.targets[0].Address);pm.variables.set('reportAt',d.now);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read all network reporting periods",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/history?target={{reportTarget}}&range=all&at={{reportAt}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "history"
+              ],
+              "query": [
+                {
+                  "key": "target",
+                  "value": "{{reportTarget}}"
+                },
+                {
+                  "key": "range",
+                  "value": "all"
+                },
+                {
+                  "key": "at",
+                  "value": "{{reportAt}}"
+                }
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Four reporting periods', () => pm.expect(pm.response.json().map(x => x.range)).to.eql(['day','week','month','year']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Generate a one-day CPU-only test token",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/ui/tokens",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ui",
+                "tokens"
+              ]
+            },
+            "header": [
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{tempCsrf}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Origin",
+                "value": "{{baseUrl}}"
+              }
+            ],
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"{{testLabel}}\",\"days\":1,\"categories\":[\"cpu\"]}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Token issued', () => {const t=pm.response.json().token;pm.expect(t).to.match(/^ls_/);pm.variables.set('tempToken',t);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "CPU allowed with test token",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/system?categories=cpu",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "system"
+              ],
+              "query": [
+                {
+                  "key": "categories",
+                  "value": "cpu"
+                }
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tempToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('JSON snapshot from the monitoring host', () => {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "    const d = pm.response.json();",
+                  "    pm.expect(d.schemaVersion).to.eql(1);",
+                  "    pm.expect(d.monitorHost).to.be.a('string').and.not.empty;",
+                  "    pm.expect(Number.isFinite(Date.parse(d.generatedUtc))).to.eql(true);",
+                  "    pm.expect(d.categories).to.be.an('object');",
+                  "    pm.expect(d.alerts).to.be.an('array');",
+                  "    for (const item of Object.values(d.categories)) {",
+                  "        if (item.status === 'collecting') continue;",
+                  "        pm.expect(item.result).to.be.an('object');",
+                  "        pm.expect(item.ageSeconds).to.be.a('number');",
+                  "        pm.expect(item.stale).to.be.a('boolean');",
+                  "    }",
+                  "});",
+                  "pm.test('Only requested categories are returned', () => pm.expect(Object.keys(pm.response.json().categories).sort()).to.eql([\"cpu\"].sort()));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "RAM outside test token scope",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/system?categories=ram",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "system"
+              ],
+              "query": [
+                {
+                  "key": "categories",
+                  "value": "ram"
+                }
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tempToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 403', () => pm.response.to.have.status(403));",
+                  "pm.test('JSON error message', () => pm.expect(pm.response.json().error).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Find this run’s token ID",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/ui/settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ui",
+                "settings"
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Unique test token', () => {",
+                  "    const found=pm.response.json().tokens.filter(t => t.name===pm.variables.get('testLabel'));",
+                  "    pm.expect(found).to.have.lengthOf(1);pm.variables.set('tempTokenId',found[0].id);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Revoke only the generated test token",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/ui/tokens/revoke",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ui",
+                "tokens",
+                "revoke"
+              ]
+            },
+            "header": [
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{tempCsrf}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Origin",
+                "value": "{{baseUrl}}"
+              }
+            ],
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"id\":\"{{tempTokenId}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('tempTokenId')) pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Test token revoked', () => pm.expect(pm.response.json().ok).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Revoked token rejected",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/system",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "system"
+              ]
+            },
+            "header": [],
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tempToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401', () => pm.response.to.have.status(401));",
+                  "pm.test('JSON error message', () => pm.expect(pm.response.json().error).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Log off the test session",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            },
+            "header": [
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{tempCsrf}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Origin",
+                "value": "{{baseUrl}}"
+              }
+            ],
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Logged off', () => pm.expect(pm.response.json().ok).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.environment.get('runAdminTests') !== 'true' || !pm.environment.get('adminPassword')) pm.execution.skipRequest();"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

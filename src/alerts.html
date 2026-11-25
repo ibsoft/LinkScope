@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="/assets/loading.css"><script defer src="/assets/loading.js"></script><title>Alert history · {{brand}}</title><link rel="stylesheet" href="/assets/app.css"><link rel="stylesheet" href="/assets/toast.css"><script defer src="/assets/paging.js"></script><script defer src="/assets/toast.js"></script><script defer src="/assets/charts.js"></script><script defer src="/assets/report.js"></script></head>
+<body data-page="alerts"><header><div class="top"><strong class="brand">{{brand}}</strong><nav aria-label="Main"><a href="/">Network</a><a href="/system">System health</a><a href="/alerts" aria-current="page">Alert history</a><a href="/logs">Logs</a><a href="/ai">AI Assist</a><a href="/settings">Settings</a><button id="global-export" type="button">Export PDF</button></nav></div></header>
+<main><div id="pdf-status" role="status" aria-live="polite"></div><h1>Alert history</h1><form id="history-search"><label class="field">Search alerts<input type="search" id="alert-query" maxlength="200" placeholder="Text, IP address, target name or alert ID"></label>
+<details id="advanced-search"><summary>Advanced filters</summary><div class="grid">
+<label class="field">Category<select id="alert-category"><option value="">All categories</option></select></label>
+<label class="field">Severity<select id="alert-severity"><option value="">All severities</option><option value="info">Info</option><option value="warning">Warning</option><option value="error">Error</option><option value="critical">Critical</option></select></label>
+<label class="field">Alert state<select id="alert-state"><option value="">Any state</option><option value="active">Active</option><option value="resolved">Resolved</option></select></label>
+<label class="field">Read status<select id="alert-read"><option value="">Read and unread</option><option value="unread">Unread</option><option value="read">Read</option></select></label>
+<label class="field">Opened from (local date)<input id="alert-from" type="date" min="1970-01-01"></label>
+<label class="field">Opened through (local date)<input id="alert-until" type="date" min="1970-01-01"></label></div></details>
+<button type="submit">Search</button> <button type="button" id="clear-search">Clear search</button></form>
+<div class="history-tools"><span id="history-count">Loading alert history…</span><button type="button" id="refresh-history">Refresh</button><button type="button" id="read-all" title="Includes alerts outside the current search, through this snapshot" disabled>Mark all alerts as read</button></div>
+<div id="history-status" role="status"></div><div class="tablewrap"><table class="alert-results"><thead><tr><th>Opened</th><th>Alert</th><th>Category</th><th>Severity</th><th>State</th><th>Read status</th></tr></thead><tbody id="history-list"></tbody></table></div><div id="history-pager"></div></main></body></html>
