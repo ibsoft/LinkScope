@@ -15,7 +15,7 @@ namespace LinkScope {
         internal static string Text(object x,string k){return Get(x,k) as string??"";}
         internal static object Payload(string provider,string model,string system,string prompt){
             if(provider=="bedrock")return new {system=new[]{new {text=system}},messages=new[]{new {role="user",content=new[]{new {text=prompt}}}}};
-            if(provider=="anthropic")return new {model=model,max_tokens=2200,system=system,messages=new[]{new {role="user",content=prompt}}};
+            if(provider=="anthropic")return new {model=model,max_tokens=4096,system=system,messages=new[]{new {role="user",content=prompt}}};
             if(provider=="gemini")return new {systemInstruction=new {parts=new[]{new {text=system}}},contents=new[]{new {role="user",parts=new[]{new {text=prompt}}}}};
             return new {model=model,messages=new[]{new {role="system",content=system},new {role="user",content=prompt}}};
         }

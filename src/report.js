@@ -49,7 +49,10 @@ const LinkScopeReport = (() => {
             history.length+' monitoring alert records',
             'The raw report data is attached as LinkScope-report.json.'
         ];
-        contents.forEach((v,i)=>cover.drawText(v,{x:margin,y:pageHeight-185-i*32,size:11,font:regular,color:color(muted)}));
+        if(!manifest.aiVerdict || !manifest.aiVerdict.answer) contents.forEach((v,i)=>cover.drawText(v,{x:margin,y:pageHeight-185-i*32,size:11,font:regular,color:color(muted)}));
+        if(manifest.aiVerdict && manifest.aiVerdict.answer) {
+            await addVerdictPages(doc,lib,regular,bold,color,cover,manifest.aiVerdict,sections[0].now);
+        }
         for(const d of sections) {
             await new Promise(resolve=>setTimeout(resolve,0));
             const ip=d.target,target=targets.find(t=>t.Address===ip);
@@ -167,6 +170,55 @@ const LinkScopeReport = (() => {
         }
         await addWindowsPages(doc,lib,regular,bold,health,sections,color,trends,history,manifest);
         return doc.save();
+    }
+
+    async function addVerdictPages(doc,lib,regular,bold,color,cover,verdict,reportNow) {
+        let page=cover,y=155;
+        const ctx=document.createElement('canvas').getContext('2d');
+        function newPage(){
+            page=doc.addPage([pageWidth,pageHeight]);y=64;
+            page.drawRectangle({x:0,y:pageHeight-43,width:pageWidth,height:43,color:color(navy)});
+            page.drawText('LinkScope / AI verdict (continued)',{x:margin,y:pageHeight-27,size:15,font:bold,color:color('#ffffff')});
+        }
+        async function write(raw,size=10,font=regular,fill=ink){
+            const text=clean(raw);
+            ctx.font=(font===bold?'bold ':'')+size+'px "Segoe UI", Arial, sans-serif';
+            function width(s){try{return font.widthOfTextAtSize(s,size);}catch{return ctx.measureText(s).width;}}
+            async function draw(s){
+                if(y+size+5>pageHeight-55)newPage();
+                const pos={x:margin,y:pageHeight-y-size,size,font,color:color(fill)};
+                try{font.encodeText(s);page.drawText(s,pos);}
+                catch{
+                    const canvas=document.createElement('canvas'),scale=3;
+                    canvas.width=Math.ceil(inside*scale);canvas.height=Math.ceil((size+5)*scale);
+                    const g=canvas.getContext('2d');g.scale(scale,scale);g.font=ctx.font;g.fillStyle=fill;g.fillText(s,0,size);
+                    const image=await doc.embedPng(canvas.toDataURL('image/png'));
+                    page.pushOperators(lib.PDFOperator.of('BDC',[lib.PDFName.of('Span'),doc.context.obj({ActualText:lib.PDFHexString.fromText(s)})]));
+                    page.drawText(' ',{...pos,opacity:0});
+                    page.drawImage(image,{x:margin,y:pageHeight-y-canvas.height/scale,width:canvas.width/scale,height:canvas.height/scale});
+                    page.pushOperators(lib.PDFOperator.of('EMC'));
+                }
+                y+=size+5;
+            }
+            let current='';
+            for(const word of text.split(/\s+/)){
+                if(current&&width(current+' '+word)>inside){await draw(current);current='';}
+                if(width(word)>inside){for(const c of word){if(current&&width(current+c)>inside){await draw(current);current='';}current+=c;}}
+                else current+=(current?' ':'')+word;
+            }
+            if(current)await draw(current);else y+=6;
+        }
+        await write('AI executive summary - latest completed verdict',17,bold,teal);
+        await write('Report generated: '+utc(reportNow,true)+' UTC',9,regular,muted);
+        await write('Evidence snapshot: '+verdict.evidenceUtc+' | Completed: '+verdict.completedUtc,9,regular,muted);
+        await write('Provider: '+verdict.provider+' | Model: '+verdict.model,9,regular,muted);
+        await write('Historical AI interpretation; may differ from current readings. Verify recommendations against the report data below.',9,bold,orange);
+        y+=8;
+        for(const raw of verdict.answer.split(/\r?\n/)){
+            const heading=/^\s*#{1,6}\s+/.test(raw);
+            const value=raw.replace(/^\s*#{1,6}\s+/,'').replace(/\*\*/g,'').replace(/^\s*[-*]\s+/,'• ');
+            await write(value,heading?12:10,heading?bold:regular,heading?teal:ink);
+        }
     }
 
     async function addWindowsPages(doc,lib,regular,bold,health,sections,color,trends,history,manifest) {
@@ -321,7 +373,7 @@ const LinkScopeReport = (() => {
                 for(const e of d.events.slice(3))await line(utc(e[0],true)+' UTC  /  '+e[1]);
             }
         }
-        const snapshot=new TextEncoder().encode(JSON.stringify({windows:health,network:sections,resourceHistory:trends,alertHistory:history,applicationLogSummary:manifest.logSummary,probeAlertRules:{defaultFailures:manifest.probeAlertCount,targets:manifest.targets}}));
+        const snapshot=new TextEncoder().encode(JSON.stringify({aiVerdict:manifest.aiVerdict||undefined,windows:health,network:sections,resourceHistory:trends,alertHistory:history,applicationLogSummary:manifest.logSummary,probeAlertRules:{defaultFailures:manifest.probeAlertCount,targets:manifest.targets}}));
         await doc.attach(snapshot,'LinkScope-report.json',{mimeType:'application/json',description:'Complete network, resource, Windows health and alert history report data.'});
         const pages=doc.getPages();
         pages.forEach((p,i)=>p.drawText((i+1)+' / '+pages.length,{x:pageWidth-margin-32,y:25,size:9,font:bold,color:color(teal)}));
