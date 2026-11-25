@@ -24,3 +24,16 @@ The verdict evaluates all collected core and enabled optional Windows categories
 
 ### AI verdict in PDF reports
 When AI Assist is enabled, the latest successful system verdict (not an ordinary chat reply) appears on the report cover and continuation pages before network/system data, and in the attached JSON. The original AI interpretation, evidence timestamp, completion timestamp, provider and model are retained in the protected service data directory (`ai-verdict.json`). Export does not call the AI provider. Disabling AI hides the verdict; clearing chat does not erase the saved system verdict. The report labels the interpretation as historical; compare it with the current report readings. A failed analysis leaves the last successful verdict unchanged.
+
+### Graphical installation wizard
+Double-click `LinkScopeSetup.exe` without arguments to open the embedded Windows Forms wizard (Windows PowerShell 5.1, no separate installer runtime). Choose Install, Upgrade / repair, or Uninstall service. Windows requests UAC elevation for the selected operation; progress is indeterminate until the elevated command finishes. The console shows detailed installation output. The dashboard shortcut opens the fresh-install default URL only; use your configured URL for custom ports or HTTPS.
+
+For automation, run from an elevated 64-bit terminal:
+
+```powershell
+.\LinkScopeSetup.exe --install
+.\LinkScopeSetup.exe --upgrade
+.\LinkScopeSetup.exe --uninstall
+```
+
+`--upgrade` compiles the new service before stopping the current standard LinkScope service, then deploys and starts it using the existing installer. `--install` retains its original behavior. Uninstall removes the service and hardware task while retaining settings, history, and installed files. Installation remains in the standard Program Files location; port, bind address and HTTPS are configured in the dashboard. Back up data before upgrading. An unsuccessful deployment after stopping the service may require manual recovery; this is not a transactional rollback installer. The setup binary is unsigned. Windows GUI, UAC and service installation require runtime validation on Windows.

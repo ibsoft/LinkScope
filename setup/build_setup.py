@@ -3,6 +3,7 @@ No library code is linked. Import archives describe standard Windows system DLLs
 The service can also be built directly on Windows with the supplied Build.cmd.
 """
 from pathlib import Path
+import base64
 import ctypes as ct
 import ctypes.util
 import re
@@ -15,7 +16,7 @@ apis = {
     "KERNEL32": """ExitProcess GetStdHandle WriteFile WriteConsoleW CloseHandle GetWindowsDirectoryW
                    GetFileAttributesW CreateDirectoryW RemoveDirectoryW CreateFileW DeleteFileW
                    GetLastError GetCurrentProcessId GetTickCount GetCommandLineW LocalFree CreateProcessW
-                   WaitForSingleObject GetExitCodeProcess""".split(),
+                   WaitForSingleObject GetExitCodeProcess GetModuleFileNameW SetEnvironmentVariableW""".split(),
     "SHELL32": ["CommandLineToArgvW", "SHGetFolderPathW"],
 }
 
@@ -59,6 +60,8 @@ with tempfile.TemporaryDirectory() as tmp:
         chunks.append(f"static const unsigned char {name}[]={{ {arr} }};")
         entries.append(f'{{L"{f.name}",{name},sizeof({name})}}')
     (work / "payload.h").write_text("\n".join(chunks) + "\nstatic const struct file files[]={" + ",".join(entries) + "};\n")
+    encoded = base64.b64encode((root / "setup" / "wizard.ps1").read_text().encode("utf-16le")).decode("ascii")
+    (work / "wizard.h").write_text('static W wizard_command[]=L"powershell.exe -NoLogo -NoProfile -NonInteractive -STA -EncodedCommand '+encoded+'";\n')
     # Generate import archives. The stub DLLs are build intermediates only.
     for dll, symbols in apis.items():
         (work / "exports.s").write_text(".text\n" + "\n".join(f".global {s}\n{s}: ret" for s in symbols) + "\n")

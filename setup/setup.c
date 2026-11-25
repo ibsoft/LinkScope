@@ -16,6 +16,8 @@ typedef struct {
 } STARTUP;
 typedef struct { HANDLE process,thread; DWORD pid,tid; } PROCESS;
 extern void ExitProcess(DWORD);
+extern DWORD GetModuleFileNameW(HANDLE,W*,DWORD);
+extern BOOL SetEnvironmentVariableW(CW,CW);
 extern HANDLE GetStdHandle(DWORD);
 extern BOOL WriteFile(HANDLE,const void*,DWORD,DWORD*,void*);
 extern BOOL WriteConsoleW(HANDLE,const W*,DWORD,DWORD*,void*);
@@ -40,6 +42,7 @@ _Static_assert(sizeof(STARTUP)==104 && sizeof(PROCESS)==24 && sizeof(W)==2,"Wind
 
 struct file { CW name; const unsigned char *data; DWORD len; };
 #include "payload.h"
+#include "wizard.h"
 
 static size_t len(CW s) { size_t n=0; while(s[n]) ++n; return n; }
 static void say(CW s) {
@@ -81,9 +84,10 @@ static int launch(CW exe,W *cmd,CW cwd) {
     CloseHandle(pi.process);return (int)rc;
 }
 static W programFiles[MAXPATH],stage[MAXPATH],target[MAXPATH],path[MAXPATH],compiler[MAXPATH],windows[MAXPATH],cmd[4096];
+static CW operation=L" --install";
 static int install_service(void) {
     cmd[0]=0;
-    if(!append(cmd,4096,L"\"")||!append(cmd,4096,target)||!append(cmd,4096,L"\" --install"))return 1;
+    if(!append(cmd,4096,L"\"")||!append(cmd,4096,target)||!append(cmd,4096,L"\"")||!append(cmd,4096,operation))return 1;
     return launch(target,cmd,stage);
 }
 static int install(void) {
@@ -122,11 +126,24 @@ cleanup:
     RemoveDirectoryW(stage);
     return rc;
 }
+static int wizard(void) {
+    W self[MAXPATH], ps[MAXPATH];
+    DWORD n=GetModuleFileNameW(0,self,MAXPATH);
+    if(!n||n>=MAXPATH||!SetEnvironmentVariableW(L"LINKSCOPE_SETUP_EXE",self))return 1;
+    n=GetWindowsDirectoryW(windows,MAXPATH);
+    if(!n||n>=MAXPATH||!setpath(ps,windows,L"System32\\WindowsPowerShell\\v1.0\\powershell.exe"))return 1;
+    STARTUP si={0}; PROCESS pi={0};si.cb=sizeof(si);
+    if(!CreateProcessW(ps,wizard_command,0,0,0,0x08000000,0,0,&si,&pi))return fail(L"Could not open setup wizard",GetLastError());
+    CloseHandle(pi.thread);CloseHandle(pi.process);return 0;
+}
 void entry(void) {
     int argc=0;
     W **args=CommandLineToArgvW(GetCommandLineW(),&argc);
-    int valid=args && argc==2 && (equal(args[1],L"--install")||equal(args[1],L"-install"));
+    if(args && argc==1) {LocalFree(args);ExitProcess((DWORD)wizard());}
+    int valid=args && argc==2 && (equal(args[1],L"--install")||equal(args[1],L"-install")||equal(args[1],L"--upgrade")||equal(args[1],L"--uninstall"));
+    if(valid && equal(args[1],L"--upgrade"))operation=L" --upgrade";
+    if(valid && equal(args[1],L"--uninstall"))operation=L" --uninstall";
     if(args)LocalFree(args);
-    if(!valid) { say(L"Run from an Administrator terminal: LinkScopeSetup.exe --install\r\n"); ExitProcess(argc==1?0:2); }
+    if(!valid) { say(L"Usage: LinkScopeSetup.exe [--install | --upgrade | --uninstall]\r\n"); ExitProcess(2); }
     ExitProcess((DWORD)install());
 }
