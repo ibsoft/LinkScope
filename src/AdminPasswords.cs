@@ -37,7 +37,8 @@ namespace LinkScope {
         }
 
         static Credential Create(string password, bool starter) {
-            CheckRules(password);
+            // The fixed starter is local-only and must be replaced before a session is issued.
+            if (!starter || !Access.Equal(password, Starter)) CheckRules(password);
             if (!starter && Access.Equal(password, Starter))
                 throw new InvalidDataException("Choose a password different from the starter password.");
             byte[] salt = new byte[24];

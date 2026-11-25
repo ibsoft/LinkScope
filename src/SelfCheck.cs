@@ -9,7 +9,7 @@ namespace LinkScope {
         static void Check(bool ok,string message){if(!ok)throw new InvalidOperationException("Self-check failed: "+message);}
         static Dictionary<string,object> AsMap(object o){return (Dictionary<string,object>)Config.Json().DeserializeObject(Config.Json().Serialize(o));}
         static void CheckPasswords(string dir){
-            foreach(string invalid in new[]{"Short1","abcdef1","ABCDEF1","Abcdefg",new string('A',127)+"a1"}){
+            foreach(string invalid in new[]{"admin","Short1","abcdef1","ABCDEF1","Abcdefg",new string('A',127)+"a1"}){
                 bool rejected=false;
                 try{AdminPasswords.CheckRules(invalid);}catch(InvalidDataException){rejected=true;}
                 Check(rejected,"minimum password rules");

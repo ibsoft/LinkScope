@@ -13,3 +13,5 @@ On a fresh installation open **http://127.0.0.1:9876/** on the monitoring comput
 The [Postman collection](docs/LinkScope.postman_collection.json) and [environment](docs/LinkScope.postman_environment.json) are ready to import.
 
 Recent probe failures include searchable, plain-language descriptions of ICMP statuses and local probe errors. Suggested causes are diagnostic hints, not confirmed root causes.
+
+Fresh installations use `admin` / `admin` for local first-use enrollment only. A new password meeting the existing complexity rules is required before access. Upgrades preserve existing credentials.
