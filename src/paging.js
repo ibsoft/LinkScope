@@ -20,20 +20,33 @@ window.LinkScopePages=(()=>{
             previous.disabled=busy||page<=1;next.disabled=busy||page>=pages;jump.disabled=busy||pages===1;select.disabled=busy;
         }};
     }
-    function attach(table,key,name,placeholder=false){
+    function attach(table,key,name,placeholder=false,searchable=false){
         let pager=attached.get(table);
         const state=positions.get(key)||{page:1,size:10};
         positions.set(key,state);
         function render(){
-            const rows=[...table.tBodies[0].rows],total=placeholder?0:rows.length,pages=Math.max(1,Math.ceil(total/state.size));
+            const rows=[...table.tBodies[0].rows], terms=(state.query||'').toLowerCase().trim().split(/\s+/).filter(Boolean);
+            const matched=placeholder?[]:rows.filter(r=>!searchable||terms.every(t=>r.textContent.toLowerCase().includes(t)));
+            const total=matched.length,pages=Math.max(1,Math.ceil(total/state.size));
             state.page=Math.max(1,Math.min(state.page,pages));
-            rows.forEach((r,i)=>r.hidden=!placeholder&&(i<(state.page-1)*state.size||i>=state.page*state.size));
+            const visible=new Set(matched.slice((state.page-1)*state.size,state.page*state.size));
+            rows.forEach(r=>r.hidden=!placeholder&&!visible.has(r));
+            if(pager.searchCount)pager.searchCount.textContent=total+' matching / '+rows.length+' loaded';
             pager.widget.update(state.page,pages,total,state.size);pager.widget.root.hidden=total===0;
         }
         function change(page,size){state.page=page;state.size=size;render();}
         if(!pager){
             const widget=controls(name,(p,s)=>pager.change(p,s));
             pager={widget};attached.set(table,pager);table.after(widget.root);
+            if(searchable){
+                const bar=element('div');bar.className='health-table-search';
+                const input=element('input');input.type='search';input.placeholder='Search all loaded rows…';input.setAttribute('aria-label','Search '+name);input.value=state.query||'';input.dataset.healthSearch=key;
+                const clear=element('button','Clear');clear.type='button';clear.className='secondary';
+                const count=element('span');count.className='health-search-count';count.setAttribute('role','status');pager.searchCount=count;
+                input.oninput=()=>{state.query=input.value;pager.change(1,state.size);};
+                clear.onclick=()=>{input.value='';input.oninput();input.focus();};
+                bar.append(input,clear,count);table.before(bar);
+            }
             // Native form validation can discover an invalid control on another page.
             table.addEventListener('invalid',e=>{
                 const row=e.target.closest('tr');if(row&&!row.hidden)return;

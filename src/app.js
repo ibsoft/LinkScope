@@ -1,7 +1,7 @@
 'use strict';
 const byId=id=>document.getElementById(id);
 const page=document.body.dataset.page;
-const labels={ram:'RAM',cpu:'CPU',disk_usage:'Disk usage',smart:'Disk health and SSD life',events:'Event logs · last 24 hours',firewall:'Firewall profiles',antivirus:'Antivirus',security:'Security posture',event_details:'Event message text',ip_addresses:'IP addresses',dns:'DNS',bios:'BIOS',usb:'USB',os:'Operating system'};
+const labels={data_integrity:'Data Integrity & Tamper Detection',ram:'RAM',cpu:'CPU',disk_usage:'Disk usage',smart:'Disk health and SSD life',events:'Event logs · last 24 hours',firewall:'Firewall profiles',antivirus:'Antivirus',security:'Security posture',event_details:'Event message text',ip_addresses:'IP addresses',dns:'DNS',bios:'BIOS',usb:'USB',os:'Operating system'};
 const label=s=>labels[s]||s.replace(/_/g,' ').replace(/^./,c=>c.toUpperCase());
 const element=(tag,text)=>{const e=document.createElement(tag);if(text!=null)e.textContent=text;return e;};
 // Shared, asynchronous confirmation dialog. Never invoke browser-native prompts.
@@ -60,14 +60,14 @@ function table(rows,key){
     const container=element('div');container.className='tablewrap';if(!rows.length){container.append(element('small','No records in this sample.'));return container;}
     const keys=[...new Set(rows.flatMap(row=>Object.keys(row)))];const t=element('table'),head=t.createTHead().insertRow(),body=t.createTBody();
     keys.forEach(k=>head.append(element('th',k)));
-    for(const row of rows){const tr=body.insertRow();for(const k of keys){const v=row[k];tr.insertCell().textContent=v==null?'—':typeof v==='object'?JSON.stringify(v):String(v);}}
-    container.append(t);LinkScopePages.attach(t,key,label(key));return container;
+    for(const row of rows){const tr=body.insertRow();for(const k of keys){const v=row[k];const cell=tr.insertCell(),text=v==null?'—':typeof v==='object'?JSON.stringify(v):String(v);const kind=(page==='system'||page==='integrity')?healthCellKind(key,k,v):null;if(kind)cell.append(healthBadge(text,kind));else cell.textContent=text;}}
+    container.append(t);LinkScopePages.attach(t,key,label(key),false,page==='system'||page==='integrity');return container;
 }
 function checkboxList(id,options,selected){
     byId(id).replaceChildren(...options.map(k=>{const lab=element('label');const box=element('input');box.type='checkbox';box.value=k;box.checked=selected.includes(k);lab.append(box,document.createTextNode(' '+label(k)));return lab;}));
 }
 const checked=id=>Array.from(byId(id).querySelectorAll('input:checked'),c=>c.value);
-const numbers=['CpuAlertPercent','RamAlertPercent','DiskAlertPercent','ProbeAlertCount','Port','IntervalSeconds','TimeoutMs','ResourceSeconds','InventoryMinutes','LowLifePercent','EventsPerChannel'];
+const numbers=['CpuAlertPercent','RamAlertPercent','DiskAlertPercent','ProbeAlertCount','NetworkCardHours','Port','IntervalSeconds','TimeoutMs','ResourceSeconds','InventoryMinutes','LowLifePercent','EventsPerChannel'];
 const strings=['BrandLabel','BindAddress','HostName','InterfaceName','CertificateThumbprint'];
 const flags=['RequireLogin','UseHttps','WriteDiskEvents'];
 let config;
@@ -284,9 +284,13 @@ function showMaintenanceStatus(s){if(!s)return;byId('database-maintenance-status
 function fillDatabaseMaintenance(model){const d=model.config.DatabaseMaintenance;byId('DatabaseMaintenanceEnabled').checked=d.Enabled;byId('DatabaseMaintenanceAge').value=d.Age;byId('DatabaseMaintenanceUnit').value=d.Unit;byId('DatabaseMaintenanceKeepMonth').checked=d.KeepLatestMonth;maintenanceFields();showMaintenanceStatus(model.databaseMaintenanceStatus);}
 async function refreshMaintenance(){try{showMaintenanceStatus(await request('/ui/database-maintenance'));}catch(ex){byId('database-maintenance-status').textContent=ex.message;}}
 async function runMaintenance(){if(formDirty){notice('Save settings before running database cleanup.','error');return;}if(!(await confirmAction('Run database cleanup?', 'Records older than the saved retention period will be permanently deleted. Make sure you have a current backup.', 'Delete old records', true)))return;try{await request('/ui/database-maintenance',{});notice('Database cleanup queued.');await refreshMaintenance();}catch(ex){failure(ex);}}
+const integrityLines=id=>byId(id).value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+function readIntegrity(){return {Enabled:byId('IntegrityEnabled').checked,IntervalSeconds:Number(byId('IntegrityInterval').value),Recursive:byId('IntegrityRecursive').checked,WriteEvents:byId('IntegrityWriteEvents').checked,Paths:integrityLines('IntegrityPaths'),ExcludedPaths:integrityLines('IntegrityExcludedPaths'),ExcludedPatterns:integrityLines('IntegrityExcludedPatterns')};}
+function fillIntegrity(c){const i=c.Integrity;byId('IntegrityEnabled').checked=i.Enabled;byId('IntegrityInterval').value=i.IntervalSeconds;byId('IntegrityRecursive').checked=i.Recursive;byId('IntegrityWriteEvents').checked=i.WriteEvents;for(const key of ['Paths','ExcludedPaths','ExcludedPatterns'])byId('Integrity'+key).value=(i[key]||[]).join('\n');byId('IntegrityReason').value='';}
 async function loadSettings(){
-    const model=await request('/ui/settings');config=model.config;fillTelemetryExport(model);fillSiem(model);showRestart(model);formDirty=false;fillDelivery(model);fillLogs(model);fillAi(model);fillDatabaseMaintenance(model);
+    const model=await request('/ui/settings');config=model.config;fillIntegrity(config);fillTelemetryExport(model);fillSiem(model);showRestart(model);formDirty=false;fillDelivery(model);fillLogs(model);fillAi(model);fillDatabaseMaintenance(model);
     byId('origin').textContent='Current listener · '+model.activeOrigin;
+    byId('AllowedClientIPs').value=(config.AllowedClientIPs||[]).join('\n');byId('firewall-client-ip').textContent='Current client IP · '+model.clientIp;
     [...numbers,...strings].forEach(k=>byId(k).value=config[k]??'');flags.forEach(k=>byId(k).checked=config[k]);
     byId('certMode').value=config.CertificateThumbprint?'custom':'auto';certFields();
     byId('targets').value=config.Targets.map(t=>t.Address+' '+t.Name).join('\n');
@@ -308,6 +312,14 @@ function settingsPage(){
     byId('configForm').onsubmit=async e=>{e.preventDefault();if(!config)return;
         let done=()=>{};
         try{const next={...config,...deliveryInput(),...readAi(),...readSiem(),Logging:readLogs(),TelemetryExport:readTelemetryExport(),DatabaseMaintenance:readDatabaseMaintenance()};numbers.forEach(k=>next[k]=Number(byId(k).value));strings.forEach(k=>next[k]=byId(k).value.trim());flags.forEach(k=>next[k]=byId(k).checked);
+            next.Integrity=readIntegrity();
+            if(Object.keys(next.Integrity).some(k=>JSON.stringify(next.Integrity[k])!==JSON.stringify(config.Integrity[k]))){
+                next.IntegrityReason=byId('IntegrityReason').value.trim();
+                if(next.IntegrityReason.length<5)throw Error('Enter a reason for the integrity policy change (at least five characters).');
+                if(!(await confirmAction('Apply integrity monitoring policy?', 'Verify that all protected files are trusted before the first scan. Changing exclusions can reduce monitoring coverage. Existing trusted hashes will not be replaced.', 'Apply policy')))return;
+            }
+            next.AllowedClientIPs=byId('AllowedClientIPs').value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+            if(JSON.stringify(next.AllowedClientIPs)!==JSON.stringify(config.AllowedClientIPs||[])&&!(await confirmAction('Apply IP firewall allowlist?', 'All unlisted remote clients will be denied immediately, including API clients. Localhost is always allowed.', 'Apply allowlist')))return;
             if(byId('certMode').value==='auto')next.CertificateThumbprint='';
             next.Targets=targetLines().map(t=>({...targetRules.get(t.Address),...t}));
             next.EventChannels=checked('channels');next.ExtraCategories=checked('extras');
@@ -323,7 +335,83 @@ function settingsPage(){
     byId('hideSecret').onclick=()=>{byId('secret').value='';byId('newToken').hidden=true;};
     return loadSettings();
 }
-function metric(name,value,foot){const d=element('div');d.className='card';const n=element('strong',value);n.className='metric';d.append(element('small',name),n,element('small',foot));return d;}
+function healthKind(value){
+    const v=String(value??'unknown').toLowerCase();
+    if(['ok','normal','healthy','enabled','true','pass','passed','success'].includes(v))return 'ok';
+    if(['critical','error','fail','failed','replace','disabled','false','unhealthy'].includes(v))return 'fail';
+    if(['warning','review','partial','stale','degraded','warming_up'].includes(v))return 'review';
+    return 'unknown';
+}
+function healthBadge(value,kind){const b=element('span',value);b.className='health-badge '+kind;return b;}
+function healthCellKind(category,key,value){
+    const k=key.toLowerCase();
+    if(['status','state','level','severity','health','recommendation','registrationstatus'].includes(k))return healthKind(value);
+    if((category==='firewall'&&k==='enabled')||(category==='defender'&&['amserviceenabled','antivirusenabled','realtimeprotectionenabled'].includes(k)))return healthKind(value);
+    if(k==='predictfailure')return value==null?'unknown':String(value).toLowerCase()==='true'?'fail':String(value).toLowerCase()==='false'?'ok':'unknown';
+    if(category==='firewall'&&['inbounddefault','outbounddefault'].includes(k))return 'info';
+    return null;
+}
+function alertSeverityKind(alerts){
+    return alerts.some(a=>['critical','error'].includes(String(a.severity||'').toLowerCase()))?'fail':alerts.some(a=>String(a.severity||'').toLowerCase()==='warning')?'review':null;
+}
+function alertStateLabel(kind){
+    return kind==='fail'?'Critical / Error':kind==='review'?'Warning':kind==='ok'?'No active alerts':kind==='fail'?'Collection error':kind==='unknown'?'Data unavailable':'Data needs review';
+}
+function metricAlertState(active,category,volume,collectionKind){
+    const matching=active.filter(a=>!a.resolved&&a.category===category&&(volume==null||a.title===volume+' usage is high'||(a.title==='Volume data unavailable'&&a.message===volume)||a.title===category+' coverage is unavailable'||a.title===category+' coverage is partial'));
+    const severity=alertSeverityKind(matching);
+    const kind=severity||(collectionKind==='ok'?'ok':collectionKind);
+    return {kind,status:alertStateLabel(kind),messages:matching.filter(a=>['critical','error','warning'].includes(String(a.severity||'').toLowerCase())).map(a=>a.title+' · '+a.message)};
+}
+function categoryFallbackKind(category,result,rows,collectionKind){
+    if(collectionKind==='fail'||collectionKind==='unknown')return collectionKind;
+    const values=[];
+    const push=v=>{if(v!=null&&v!=='')values.push(v);};
+    push(result?.status);push(result?.health);push(result?.severity);push(result?.state);
+    for(const row of rows||[]){
+        if(category==='events'||category==='event_details'){push(row.status);for(const item of row.items||[]){push(item.level);push(item.severity);}}
+        else if(category==='smart'){push(row.recommendation);push(row.health);push(row.status);push(row.predictFailure);}
+        else if(category==='security'){push(row.status);push(row.state);push(row.level);push(row.severity);push(row.value);}
+        else if(category==='antivirus'){
+            push(row.registrationStatus);
+            for(const [k,v] of Object.entries(row.defender||{}))if(['amServiceEnabled','antivirusEnabled','realTimeProtectionEnabled','status','health'].includes(k))push(v);
+            for(const product of row.registeredProducts||[]){push(product.status);push(product.state);push(product.health);push(product.enabled);}
+        }else if(category==='firewall'){push(row.status);push(row.enabled);push(row.state);}
+        else{for(const [k,v] of Object.entries(row||{}))if(['status','state','health','severity','level','recommendation','enabled','registrationStatus','predictFailure'].includes(k))push(v);}
+    }
+    const kinds=values.map(healthKind);
+    if(kinds.includes('fail'))return 'fail';
+    if(kinds.includes('review'))return 'review';
+    return collectionKind;
+}
+function categoryAlertState(active,category,result,rows,collectionKind){
+    const matching=active.filter(a=>!a.resolved&&a.category===category);
+    const severity=alertSeverityKind(matching);
+    const fallback=categoryFallbackKind(category,result,rows,collectionKind);
+    const kind=severity||fallback;
+    return {kind,status:alertStateLabel(kind),messages:matching.filter(a=>['critical','error','warning'].includes(String(a.severity||'').toLowerCase())).map(a=>a.title+' · '+a.message)};
+}
+function metric(name,value,foot,collectionKind,alertState){
+    const d=element('div');d.className='card health-metric-card '+alertState.kind;
+    const heading=element('div');heading.className='health-metric-heading';heading.append(element('strong',name),healthBadge(alertState.status,alertState.kind));
+    const n=element('strong',value);n.className='metric';d.append(heading,n,healthBadge(foot,collectionKind));
+    for(const message of alertState.messages){const detail=element('small',message);detail.className='health-metric-alert-detail';d.append(detail);}
+    return d;
+}
+function decorateHealthSection(section,title,state,kind,alertState,timeText){
+    section.className='health-category-card '+alertState.kind;
+    const summary=element(page==='integrity'?'div':'summary');
+    const heading=element('div');heading.className='health-category-heading';heading.append(element('strong',title),healthBadge(alertState.status,alertState.kind));
+    summary.append(heading);
+    section.append(summary,element('small',(state?state+'. ':'')+(timeText?'Collected'+timeText:'Waiting for Windows.')));
+    if(alertState.messages.length){
+        const list=element('div');
+        for(const message of alertState.messages.slice(0,3)){
+            const detail=element('small',message);detail.className='health-category-alert-detail';list.append(detail);
+        }
+        section.append(list);
+    }
+}
 const pct=n=>n==null?'—':n+'%';
 const gib=n=>n==null?'—':(n/1073741824).toLocaleString(undefined,{maximumFractionDigits:1})+' GiB';
 const smartTabs=new Map();
@@ -332,13 +420,13 @@ const triple=n=>n==null?'—':String(n).padStart(3,'0');
 function smartTable(attrs,diskId){
     const wrap=element('div');wrap.className='tablewrap';const t=element('table');t.className='smart-table';
     const head=t.createTHead().insertRow(),body=t.createTBody();['State','Num','Attribute Name','Value','Worst','Raw (hex)','Threshold'].forEach(x=>head.append(element('th',x)));
-    for(const a of attrs){const row=body.insertRow();const badge=element('span',a.state);badge.className='drive-state '+verdictClass(a.state);row.insertCell().append(badge);
+    for(const a of attrs){const row=body.insertRow();const badge=element('span',a.state);badge.className='health-badge '+verdictClass(a.state);row.insertCell().append(badge);
         [triple(a.id),a.name,triple(a.value),triple(a.worst),a.rawHex,triple(a.threshold)].forEach(v=>row.insertCell().textContent=v);}
-    wrap.append(t);LinkScopePages.attach(t,'smart:'+diskId,'SMART attributes');return wrap;
+    wrap.append(t);LinkScopePages.attach(t,'smart:'+diskId,'SMART attributes',false,true);return wrap;
 }
 function renderDrive(d){
     const card=element('article');card.className='drive';
-    const headline=element('h3','●  State · '+(d.headline||'UNABLE TO DETERMINE'));headline.className='drive-state '+verdictClass(d.recommendation);card.append(headline);
+    const headline=element('h3','●  State · '+(d.headline||'UNABLE TO DETERMINE'));headline.className='drive-state';headline.replaceChildren(healthBadge(d.headline||'UNABLE TO DETERMINE',verdictClass(d.recommendation)));card.append(headline);
     const meta=element('dl');meta.className='drive-meta';
     const capacity=d.capacityBytes!=null?(Number(d.capacityBytes)/1e9).toLocaleString(undefined,{maximumFractionDigits:2})+' GB ('+Number(d.capacityBytes).toLocaleString()+' bytes)':'—';
     for(const [k,v] of Object.entries({Model:d.model,Firmware:d.firmware,Serial:d.serial,Capacity:capacity,'Report by':d.reportBy,'Scan date':d.scanUtc?new Date(d.scanUtc).toLocaleString():'—',Vendor:d.vendor,Bus:d.bus,'Estimated life remaining':d.estimatedLifeRemainingPercent==null?'Unavailable':pct(d.estimatedLifeRemainingPercent)})){meta.append(element('dt',k),element('dd',v||'—'));}
@@ -352,35 +440,72 @@ function renderDrive(d){
         if(d.nvme)panel.append(table([d.nvme],'nvme:'+d.diskId));for(const msg of d.diagnostics||[])panel.append(element('p',msg));
         const row=Object.fromEntries(['health','predictFailure','temperatureC','powerOnHours','readErrorsTotal','writeErrorsTotal','readErrorsUncorrected','writeErrorsUncorrected','thresholdPercent'].map(k=>[k,d[k]]));panel.append(table([row],'drive:'+d.diskId));
     }
-    options.forEach((name,i)=>{const b=element('button',name);b.type='button';b.onclick=()=>select(i);tabs.append(b);});
+    options.forEach((name,i)=>{const b=element('button',name);b.type='button';b.onclick=()=>{select(i);filterHealthCategories();};tabs.append(b);});
     card.append(tabs,panel);select(smartTabs.get(d.diskId)||0);return card;
 }
 
 async function renderHealth(){
-    const data=await request('/ui/system');const cats=data.categories,metrics=byId('metrics'),alerts=byId('alerts'),results=byId('results');
+    const data=await request(page==='integrity'?'/ui/integrity':'/ui/system');const activeAlerts=Array.isArray(data.alerts)?data.alerts:[];const cats=data.categories,metrics=byId('metrics'),alerts=byId('alerts'),results=byId('results');
     const opened=new Set(Array.from(results.querySelectorAll('details[open]'),d=>d.dataset.category));
+    const active=document.activeElement,focusKey=active?.dataset?.healthSearch,selection=focusKey?[active.selectionStart,active.selectionEnd]:null;
     const first=!results.children.length;notice('');byId('stamp').textContent='Snapshot · '+new Date(data.generatedUtc).toLocaleString();
     metrics.replaceChildren();alerts.replaceChildren();results.replaceChildren();
     for(const [key,v] of Object.entries(cats)){
-        const result=v.result||v,rows=result.items||[],state=(v.stale?'Stale · ':'')+(result.status||'unknown');
+        if((page==='integrity')!==(key==='data_integrity'))continue;
+        const result=v.result||v,rows=result.items||[],state=(v.stale?'Stale · ':'')+'Collection: '+(result.status||'unknown');
+        const kind=v.stale?'review':healthKind(result.status);
         const time=v.collectedUtc?' · '+new Date(v.collectedUtc).toLocaleTimeString():'';
-        if(key==='cpu'||key==='ram'){const card=metric(label(key),pct(result.usedPercent),state+(key==='ram'&&result.totalBytes?' · '+gib(result.usedBytes)+' of '+gib(result.totalBytes):'')+time);card.id='category-'+key;metrics.append(card);continue;}
-        if(key==='disk_usage')for(const disk of rows){metrics.append(metric('Volume '+disk.volume,pct(disk.usedPercent),gib(disk.freeBytes)+' free · '+state+time));}
+        if(key==='cpu'||key==='ram'){const card=metric(label(key),pct(result.usedPercent),state+(key==='ram'&&result.totalBytes?' · '+gib(result.usedBytes)+' of '+gib(result.totalBytes):'')+time,kind,metricAlertState(activeAlerts,key,null,result.usedPercent==null&&kind==='ok'?'unknown':kind));card.id='category-'+key;metrics.append(card);continue;}
+        if(key==='disk_usage')for(const disk of rows){const diskKind=v.stale?'review':healthKind(disk.status||result.status);metrics.append(metric('Volume '+disk.volume,pct(disk.usedPercent),gib(disk.freeBytes)+' free · '+state+time,diskKind,metricAlertState(activeAlerts,key,disk.volume,disk.usedPercent==null&&diskKind==='ok'?'unknown':diskKind)));}
         if(key==='smart')for(const disk of rows.filter(d=>d.recommendation==='replace'||d.recommendation==='review')){
-            const msg=element('div',(disk.recommendation==='replace'?'Plan disk replacement':'Review disk health')+' · '+disk.model+' (disk '+disk.device+') · '+(disk.estimatedLifeRemainingPercent==null?'Life unavailable':pct(disk.estimatedLifeRemainingPercent)+' estimated life remaining')+' · '+state+time);msg.className='alert';alerts.append(msg);
+            const msg=element('div',(disk.recommendation==='replace'?'Plan disk replacement':'Review disk health')+' · '+disk.model+' (disk '+disk.device+') · '+(disk.estimatedLifeRemainingPercent==null?'Life unavailable':pct(disk.estimatedLifeRemainingPercent)+' estimated life remaining')+' · '+state+time);msg.className='alert health-alert '+verdictClass(disk.recommendation);alerts.append(msg);
         }
-        const section=element('details');section.dataset.category=key;section.id='category-'+key;section.open=opened.has(key)||(first&&['smart','firewall','antivirus','security'].includes(key));
-        section.append(element('summary',label(key)+' · '+state),element('small',(result.truncated?'Showing the first 256 records. ':'')+(time?'Collected'+time:'Waiting for Windows.')));
+        const section=element(page==='integrity'?'section':'details');section.dataset.category=key;section.id='category-'+key;section.open=page==='integrity'||opened.has(key)||(first&&['smart','firewall','antivirus','security','data_integrity'].includes(key));
+        const categoryState=categoryAlertState(activeAlerts,key,result,rows,kind);
+        const infoState=(result.truncated?'Showing the first 256 records. ':'')+state;
+        decorateHealthSection(section,label(key),infoState,kind,categoryState,time);
         if(key==='smart'&&rows.length){for(const disk of rows)section.append(renderDrive(disk));}
-        else if(key==='events'||key==='event_details'){for(const group of rows){section.append(element('h3',group.channel+' · '+group.status+(group.truncated?' · capped':'')),table(group.items,key+' · '+group.channel));}}
+        else if(key==='events'||key==='event_details'){for(const group of rows){const heading=element('h3',group.channel+' ');heading.append(healthBadge(group.status,healthKind(group.status)));if(group.truncated)heading.append(' · capped');section.append(heading,table(group.items||[],key+' · '+group.channel));}}
+        else if(key==='data_integrity'){
+            if(result.status==='disabled'){section.className='health-category-card unknown';section.querySelector('.health-category-heading .health-badge').replaceWith(healthBadge('Disabled','unknown'));section.append(element('p','Enable integrity monitoring in Settings.'));}
+            else {
+                const stats=element('div');stats.className='cards integrity-metrics';
+                const observedKind=v.stale?'review':kind;
+                const differenceKind=result.violations==null?'unknown':result.violations>0?(rows.some(r=>healthKind(r.severity)==='fail')?'fail':'review'):observedKind;
+                const chainKind=result.chainValid===false?'fail':result.chainValid===true?(v.stale?'review':'ok'):'unknown';
+                const values=[
+                    ['Monitored files',result.monitoredFiles,observedKind,observedKind==='ok'?'Collected':alertStateLabel(observedKind),'Files hashed in latest scan'],
+                    ['Excluded entries',result.excludedEntries,'unknown','Information','Excluded by monitoring policy'],
+                    ['Detected differences',result.violations,differenceKind,alertStateLabel(differenceKind),'Differences and scan errors'],
+                    ['Hash chain',result.chainValid===true?'Valid':result.chainValid===false?'Invalid':'—',chainKind,chainKind==='ok'?'Verified':alertStateLabel(chainKind),'Authenticated snapshot chain']
+                ];
+                for(const [name,val,k,status,foot] of values){const missing=val==null;stats.append(metric(name,missing?'—':typeof val==='number'?val.toLocaleString():String(val),foot,missing?'unknown':k,{kind:missing?'unknown':k,status:missing?'Data unavailable':status,messages:[]}));}section.append(stats);
+                if(result.sequence!=null){const detail=element('p','Chain sequence: '+result.sequence+' · Head: '+result.chainHead);detail.className='integrity-chain-detail';section.append(detail);}
+                if(result.protectedPaths?.length){const detail=element('p','Protected paths: '+result.protectedPaths.join(' · '));detail.className='integrity-chain-detail';section.append(detail);}
+                const actions=element('div');actions.className='integrity-actions';
+                const b=element('button','Scan now');b.type='button';b.className='secondary';b.disabled=!csrf;b.onclick=async()=>{b.disabled=true;try{await request('/ui/integrity-scan',{});notice('Integrity scan queued.');}catch(e){failure(e);}finally{b.disabled=false;}};actions.append(b);section.append(actions);
+                section.append(rows.length?table(rows,key):element('p',result.status==='ok'?'No differences from trusted baseline.':'Integrity verification incomplete.'));
+            }
+        }
         else if(key==='security'){if(result.scannedUtc)section.append(element('p','Security scan · '+new Date(result.scannedUtc).toLocaleString()));section.append(rows.length?table(rows,'security'):element('p',state));}
         else if(key==='antivirus'){const av=rows[0]||{};section.append(element('p','Windows Security Center · '+(result.windowsSecurityCenter||'unavailable')),element('h3','Microsoft Defender'),av.defender?table([av.defender],'defender'):element('p','Defender status unavailable.'),element('h3','Registered products · '+(av.registrationStatus||'unavailable')),table(av.registeredProducts||[],'antivirus products'));}
         else section.append(rows.length?table(rows,key):element('p',result.reason||((result.status==='ok')?'No records in this sample.':state)));
         results.append(section);
     }
+    if(page==='system')filterHealthCategories();
+    if(focusKey){const input=[...results.querySelectorAll('[data-health-search]')].find(e=>e.dataset.healthSearch===focusKey);if(input&&!input.closest('[hidden]')){input.focus({preventScroll:true});if(selection&&selection[0]!=null)input.setSelectionRange(...selection);}}
     if(first)revealCategory();
 }
+function filterHealthCategories(){
+    const q=byId('health-category-search').value.trim().toLowerCase(),terms=q.split(/\s+/).filter(Boolean);
+    const sections=[...byId('results').children];let count=0;
+    for(const section of sections){const walker=document.createTreeWalker(section,NodeFilter.SHOW_TEXT);let node,parts=[];while((node=walker.nextNode())){if(!node.parentElement.closest('.health-table-search,.ls-pager'))parts.push(node.textContent);}
+        const content=parts.join(' ').toLowerCase(),match=terms.every(t=>content.includes(t));section.hidden=!match;if(match)count++;}
+    byId('health-category-count').textContent=count+' / '+sections.length+' categories';
+}
+
 function revealCategory(){
+    if(page==='system'&&location.hash==='#category-data_integrity'){location.replace('/integrity#category-data_integrity');return;}
     const d=byId(location.hash.slice(1));
     if(d){if(d.tagName==='DETAILS')d.open=true;d.scrollIntoView({block:'start'});}
 }
@@ -389,7 +514,7 @@ async function start(){
     if(page==='login'){
         const form=byId('loginForm'), firstUse=byId('firstUse'), button=byId('signInButton');
         const spinner=byId('signInSpinner'), label=byId('signInLabel'), status=byId('notice');
-        const destinations={'#network':'/','#ai':'/ai','#logs':'/logs','#alerts':'/alerts','#report':'/system#report','#siem':'/settings#siem'};
+        const destinations={'#integrity':'/integrity','#network':'/','#ai':'/ai','#logs':'/logs','#alerts':'/alerts','#report':'/system#report','#siem':'/settings#siem'};
         let endBusy=null,attempt=0;
         function setBusy(busy){
             button.disabled=busy;
@@ -445,7 +570,13 @@ async function start(){
         if(location.hash==='#siem')revealCategory();
         return;
     }
+    if(page==='integrity'){
+        async function pollIntegrity(){try{await renderHealth();}catch(ex){failure(ex);}finally{setTimeout(pollIntegrity,15000);}}
+        await pollIntegrity();return;
+    }
     if(page==='system'){
+        byId('health-category-search').oninput=filterHealthCategories;
+        byId('health-category-clear').onclick=()=>{byId('health-category-search').value='';filterHealthCategories();byId('health-category-search').focus();};
         async function poll(){try{await renderHealth();}catch(ex){failure(ex);}finally{setTimeout(poll,15000);}}
         await poll();
     }

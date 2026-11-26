@@ -42,16 +42,49 @@ namespace LinkScope {
             Action<string,long?> sample=(status,rtt)=>alerts.Probes(new[]{new Probe{Address=target.Address,Status=status,Rtt=rtt,LocalError=status=="Probe error"}},cfg);
             string[] network={"network"};
             sample("Success",12);sample("Success",50);sample("TimedOut",null);
-            Check(alerts.List(network,true).Length==1,"RTT threshold and loss warm-up");
+            Check(alerts.List(network,true).Length==3,"Immediate loss and timeout plus RTT during loss warm-up");
             sample("TimedOut",null);
-            Check(alerts.List(network,true).Length==3,"independent network thresholds");
+            Check(alerts.List(network,true).Length==5,"Independent network thresholds and immediate incidents");
             sample("Probe error",null);sample("Success",10);
             Check(alerts.List(network,true).Length==1,"successful probe clears RTT and failure alerts");
             sample("Success",10);sample("Success",10);
             Check(alerts.List(network,true).Length==0,"rolling loss recovery");
+            target.HighRttMs=null;target.LossPercent=null;target.FailureCount=0;
+            sample("TimedOut",null);
+            Check(alerts.List(network,true).Length==2,"Immediate timeout and loss without threshold rules");
+            long firstSequence=alerts.List(network,true).Select(x=>Convert.ToInt64(AsMap(x)["sequence"])).Max();
+            sample("TimedOut",null);
+            Check(alerts.List(network,true).Select(x=>Convert.ToInt64(AsMap(x)["sequence"])).Max()==firstSequence,"Continuous timeout is deduplicated");
+            sample("Success",10);Check(alerts.List(network,true).Length==0,"Immediate incidents recover");
+            sample("TimedOut",null);
+            Check(alerts.List(network,true).Select(x=>Convert.ToInt64(AsMap(x)["sequence"])).Min()>firstSequence,"New timeout after recovery creates new history entries");
             target.AlertsEnabled=false;sample("Success",99);Check(alerts.List(network,true).Length==0,"target alert opt-out");
         }
+        static void CheckIntegrity(string dir){
+            string files=Path.Combine(dir,"fim-files"),store=Path.Combine(dir,"fim-store");Directory.CreateDirectory(files);Directory.CreateDirectory(store);
+            string watched=Path.Combine(files,"app.txt");File.WriteAllText(watched,"original");File.WriteAllText(Path.Combine(files,"trace.log"),"excluded");
+            var settings=new IntegritySettings{Enabled=true,Paths=new[]{files},ExcludedPatterns=new[]{"*.log"}};settings.Validate();
+            var scanner=new FileIntegrity(store);
+            using(var stop=new System.Threading.ManualResetEvent(false)){
+                var first=AsMap(scanner.Scan(settings,stop));Check(Equals(first["chainValid"],true)&&Convert.ToInt32(first["monitoredFiles"])==1&&Convert.ToInt32(first["violations"])==0,"FIM baseline and exclusion");
+                File.WriteAllText(watched,"modified");File.WriteAllText(Path.Combine(files,"trace.log"),"changed");
+                var second=AsMap(scanner.Scan(settings,stop));Check(Convert.ToInt32(second["violations"])==1,"FIM content change detected");
+                File.WriteAllText(watched,"original");Check(Convert.ToInt32(AsMap(scanner.Scan(settings,stop))["violations"])==0,"FIM recovery retains baseline");
+                File.Delete(watched);Check(Convert.ToInt32(AsMap(scanner.Scan(settings,stop))["violations"])==1,"FIM deletion detected");
+                var changed=new IntegritySettings{Enabled=true,Paths=new[]{files},ExcludedPatterns=new[]{"*.log","*.txt"}};changed.Validate();
+                Check(Equals(AsMap(scanner.Scan(changed,stop))["chainValid"],false),"FIM unauthorized policy change detected");
+                scanner.Authorize(settings,changed);Check(Equals(AsMap(scanner.Scan(changed,stop))["chainValid"],true),"FIM authorized policy change");
+                string state=Path.Combine(store,"integrity","chain.json");var chain=Config.Json().Deserialize<IntegrityState>(File.ReadAllText(state));chain.Chain[0].Mac=new string('0',64);Config.Save(state,chain);
+                Check(Equals(AsMap(scanner.Scan(changed,stop))["chainValid"],false),"FIM chain tampering detected");
+            }
+        }
         internal static void Run(bool testPasswords=false){
+            var allowedIPs=ClientFirewall.Validate(new[]{"192.168.1.10","2001:db8::10","::ffff:192.168.1.10"});
+            Check(allowedIPs.Length==2 && ClientFirewall.Allows("192.168.1.10",allowedIPs),"IP firewall explicit allow");
+            Check(ClientFirewall.Allows("::ffff:127.0.0.1",null)&&ClientFirewall.Allows("::1",null),"IP firewall loopback");
+            Check(!ClientFirewall.Allows("192.168.1.11",allowedIPs)&&!ClientFirewall.Allows("192.168.1.10",null),"IP firewall default deny");
+            bool invalidIP=false;try{ClientFirewall.Validate(new[]{"0.0.0.0"});}catch(System.IO.InvalidDataException){invalidIP=true;}
+            Check(invalidIP,"IP firewall invalid rule rejection");
             var c=Config.Validate(Config.Json().Deserialize<Config>(Encoding.UTF8.GetString(Program.Resource("default.json"))));
             Check(c.BindAddress=="127.0.0.1"&&!c.UseHttps&&c.RequireLogin,"local default");
             c.BindAddress="192.0.2.1";bool rejected=false;try{Config.Validate(c);}catch(InvalidDataException){rejected=true;}
@@ -64,7 +97,7 @@ namespace LinkScope {
             var unknown=AsMap(SmartDisk.Attributes(ata,null,true).Single());Check((string)unknown["state"]=="UNKNOWN","absent manufacturer threshold");
             string dir=Path.Combine(Path.GetTempPath(),"LinkScope-check-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(dir);
             try{
-                CheckProbeRules(dir);
+                CheckProbeRules(dir);CheckIntegrity(dir);
                 if(testPasswords){CheckPasswords(dir);DeliveryChecks.Run(dir);LogAiChecks.Run(dir);}
                 var access=new Access(Path.Combine(dir,"tokens.json"));string token=access.Issue("self-check",new[]{"cpu"},1,c.Categories());
                 Check(access.Authorize("Bearer "+token).SequenceEqual(new[]{"cpu"}),"token scope");
