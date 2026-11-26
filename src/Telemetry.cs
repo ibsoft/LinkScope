@@ -30,7 +30,7 @@ namespace LinkScope {
             extra=new Thread(delegate(){Slow(true);}){IsBackground=true,Name="LinkScope optional inventory"};
             fast.Start();slow.Start();extra.Start();
         }
-        internal void Update(Config c){lock(gate){cfg=c; foreach(var key in values.Keys.Except(c.Categories()).Concat(new[]{"smart","events","event_details"}).Distinct().ToArray()){values.Remove(key);times.Remove(key);}}refresh.Set();refreshExtra.Set();refreshFast.Set();}
+        internal void Update(Config c){lock(gate){cfg=c; foreach(var key in values.Keys.Except(c.CollectedCategories()).Concat(new[]{"smart","events","event_details"}).Distinct().ToArray()){values.Remove(key);times.Remove(key);}}refresh.Set();refreshExtra.Set();refreshFast.Set();}
         internal object Snapshot(IEnumerable<string> names){return Snapshot(names,false);}
         internal object ReportSnapshot(IEnumerable<string> names){return Snapshot(names,true);}
         object Snapshot(IEnumerable<string> names,bool includeNetwork){lock(gate){
@@ -103,7 +103,7 @@ namespace LinkScope {
             }if(changed)Config.Save(notices,state);
         }
         void Slow(bool optional){var wake=optional?refreshExtra:refresh;while(!stop.WaitOne(0)){Config c;lock(gate)c=cfg;
-            foreach(var key in (optional?c.ExtraCategories:Config.Core.Skip(3).ToArray())){if(stop.WaitOne(0))return;lock(gate)if(!ReferenceEquals(cfg,c))break;
+            foreach(var key in (optional?c.CollectedCategories().Intersect(Config.Extras).ToArray():Config.Core.Skip(3).ToArray())){if(stop.WaitOne(0))return;lock(gate)if(!ReferenceEquals(cfg,c))break;
                 object value;try{value=key=="security"?SecurityPosture.Read():Run(key,c);}catch(Exception ex){AppJournal.Fault("Health",key,ex);value=Unavailable();}
                 lock(gate){if(!ReferenceEquals(cfg,c))break;values[key]=value;times[key]=History.Now();try{alerts.Sample(key,value,cfg);}catch(Exception ex){AppJournal.Fault("Alerts","evaluate",ex);}
                     if(key=="smart")try{Notify(value,c);}catch(Exception ex){AppJournal.Fault("SMART","notify",ex);}}

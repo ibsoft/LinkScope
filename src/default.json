@@ -89,5 +89,28 @@
       "ProtectedKey": "",
       "Index": "linkscope-logs"
     }
+  },
+  "TelemetryExport": {
+    "Enabled": false,
+    "IntervalSeconds": 300,
+    "Directory": "",
+    "Full": false,
+    "Categories": [
+      "ram",
+      "cpu",
+      "disk_usage",
+      "smart",
+      "events",
+      "firewall",
+      "antivirus",
+      "security",
+      "network"
+    ]
+  },
+  "DatabaseMaintenance": {
+    "Enabled": false,
+    "Age": 1,
+    "Unit": "years",
+    "KeepLatestMonth": true
   }
 }

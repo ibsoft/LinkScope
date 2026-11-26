@@ -16,6 +16,8 @@ namespace LinkScope {
     }
     public sealed class Config {
         public AiSettings Ai {get;set;}
+        public TelemetryExportSettings TelemetryExport {get;set;}
+        public DatabaseMaintenanceSettings DatabaseMaintenance {get;set;}
         public SiemSettings Siem {get;set;}
         public LogSettings Logging {get;set;}
         public DeliverySettings Delivery {get;set;}
@@ -45,7 +47,7 @@ namespace LinkScope {
         public static readonly string[] Extras={"os","computer","bios","baseboard","processors","memory_modules","graphics","network_adapters","ip_addresses","dns","routes","volumes","partitions","services","processes","hotfixes","installed_software","drivers","pnp_devices","usb","battery","shares","printers","pagefile","time_zone","event_details"};
         public static readonly string[] Channels={"System","Application","Microsoft-Windows-Windows Defender/Operational","Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","Microsoft-Windows-WindowsUpdateClient/Operational","Microsoft-Windows-TaskScheduler/Operational","Microsoft-Windows-NTFS/Operational","Microsoft-Windows-Storage-Storport/Operational"};
         public Config() {
-            Delivery=new DeliverySettings();Logging=new LogSettings();Ai=new AiSettings();Siem=new SiemSettings();
+            DatabaseMaintenance=new DatabaseMaintenanceSettings();TelemetryExport=new TelemetryExportSettings();Delivery=new DeliverySettings();Logging=new LogSettings();Ai=new AiSettings();Siem=new SiemSettings();
             BrandLabel=""; BindAddress="127.0.0.1"; HostName="localhost"; CertificateThumbprint=""; Port=9876;
             IntervalSeconds=5; TimeoutMs=1500; InterfaceName=""; RequireLogin=true; ResourceSeconds=15;
             InventoryMinutes=5; EventsPerChannel=25; EventChannels=Channels.Take(5).ToArray();
@@ -66,6 +68,7 @@ namespace LinkScope {
         public static Config Load(){return Validate(Json().Deserialize<Config>(File.ReadAllText(FilePath)));}
         internal static bool Allowed(string[] selected,string[] allowed){return selected!=null && selected.Length<=allowed.Length && selected.All(x=>allowed.Contains(x)) && selected.Distinct().Count()==selected.Length;}
         internal string[] Categories(){return Core.Concat(ExtraCategories).ToArray();}
+        internal string[] CollectedCategories(){return Categories().Concat(TelemetryExport.Enabled?TelemetryExport.Selected().Intersect(Extras):new string[0]).Distinct().ToArray();}
         internal Config PublicCopy(){var copy=(Config)MemberwiseClone();copy.Delivery=Delivery.PublicCopy();copy.Ai=Ai.PublicCopy();copy.Siem=Siem.PublicCopy();return copy;}
         internal string Origin(){return new UriBuilder(UseHttps?"https":"http",UseHttps?HostName:BindAddress,Port).Uri.GetLeftPart(UriPartial.Authority);}
         internal static Config Validate(Config c) {
@@ -73,6 +76,8 @@ namespace LinkScope {
             if(c==null || !IPAddress.TryParse(c.BindAddress,out addr) || addr.Equals(IPAddress.Any) || addr.Equals(IPAddress.IPv6Any) || addr.IsIPv6Multicast || addr.Equals(IPAddress.Broadcast))
                 throw new InvalidDataException("Choose one specific local listening IP.");
             c.BindAddress=addr.ToString();
+            if(c.TelemetryExport==null)c.TelemetryExport=new TelemetryExportSettings();c.TelemetryExport.Validate();
+            if(c.DatabaseMaintenance==null)c.DatabaseMaintenance=new DatabaseMaintenanceSettings();c.DatabaseMaintenance.Validate();
             if(c.Delivery==null)c.Delivery=new DeliverySettings();
             c.Delivery.Validate(false);if(c.Ai==null)c.Ai=new AiSettings();c.Ai.Validate();
             if(c.Logging==null)c.Logging=new LogSettings();c.Logging.Validate();if(c.Siem==null)c.Siem=new SiemSettings();c.Siem.Validate();

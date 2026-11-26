@@ -4,6 +4,42 @@ const page=document.body.dataset.page;
 const labels={ram:'RAM',cpu:'CPU',disk_usage:'Disk usage',smart:'Disk health and SSD life',events:'Event logs · last 24 hours',firewall:'Firewall profiles',antivirus:'Antivirus',security:'Security posture',event_details:'Event message text',ip_addresses:'IP addresses',dns:'DNS',bios:'BIOS',usb:'USB',os:'Operating system'};
 const label=s=>labels[s]||s.replace(/_/g,' ').replace(/^./,c=>c.toUpperCase());
 const element=(tag,text)=>{const e=document.createElement(tag);if(text!=null)e.textContent=text;return e;};
+// Shared, asynchronous confirmation dialog. Never invoke browser-native prompts.
+let activeConfirmation = false;
+function confirmAction(title, message, action, destructive = false) {
+    if (activeConfirmation) return Promise.resolve(false);
+    const dialog = element('dialog');
+    dialog.className = 'ls-confirm-dialog';
+    dialog.setAttribute('aria-labelledby', 'ls-confirm-title');
+    dialog.setAttribute('aria-describedby', 'ls-confirm-message');
+    const heading = element('h2', title); heading.id = 'ls-confirm-title';
+    const description = element('p', message); description.id = 'ls-confirm-message';
+    const footer = element('div'); footer.className = 'ls-confirm-actions';
+    const cancel = element('button', 'Cancel'); cancel.type = 'button'; cancel.className = 'secondary'; cancel.autofocus = true;
+    const accept = element('button', action); accept.type = 'button';
+    if (destructive) accept.className = 'ls-confirm-danger';
+    footer.append(cancel, accept); dialog.append(heading, description, footer);
+    const previous = document.activeElement;
+    return new Promise(resolve => {
+        let settled = false;
+        function finish(approved) {
+            if (settled) return;
+            settled = true; activeConfirmation = false;
+            if (dialog.open) dialog.close();
+            dialog.remove();
+            if (previous && previous.isConnected) previous.focus();
+            resolve(approved);
+        }
+        cancel.addEventListener('click', () => finish(false));
+        accept.addEventListener('click', () => finish(true));
+        dialog.addEventListener('cancel', event => { event.preventDefault(); finish(false); });
+        dialog.addEventListener('close', () => finish(false));
+        activeConfirmation = true;
+        document.body.append(dialog);
+        try { dialog.showModal(); cancel.focus(); }
+        catch (error) { finish(false); failure(error); }
+    });
+}
 let csrf='';
 async function request(url,data){
     const options={cache:'no-store',credentials:'same-origin',redirect:'error'};
@@ -207,7 +243,7 @@ async function restartService(){
     if(waitingRestart)return;
     const button=byId('restart-service'),status=byId('restart-status'),link=byId('restart-login');
     if(formDirty){status.textContent='Save your changes before restarting LinkScope.';return;}
-    if(!window.confirm('Restart LinkScope to apply saved settings? Monitoring will pause briefly and dashboard users will need to sign in again.'))return;
+    if(!(await confirmAction('Restart LinkScope?', 'Monitoring will pause briefly while saved settings are applied. Dashboard users will need to sign in again.', 'Restart service')))return;
     waitingRestart=true;button.disabled=true;
     const done=LinkScopeBusy.begin('Restarting LinkScope…');
     try{
@@ -231,8 +267,25 @@ async function restartService(){
     }catch(e){status.textContent=e.message;}
     finally{done();waitingRestart=false;button.disabled=false;}
 }
+function exportCategoryState(){
+    byId('telemetry-export-categories').querySelectorAll('input').forEach(x=>x.disabled=byId('TelemetryExportFull').checked);
+}
+function fillTelemetryExport(model){
+    const e=model.config.TelemetryExport;
+    byId('TelemetryExportEnabled').checked=e.Enabled;byId('TelemetryExportInterval').value=e.IntervalSeconds;
+    byId('TelemetryExportDirectory').value=e.Directory;byId('TelemetryExportFull').checked=e.Full;
+    checkboxList('telemetry-export-categories',model.telemetryExportCategories,e.Categories);exportCategoryState();
+    const st=model.telemetryExportStatus;byId('telemetry-export-status').textContent=st.status+' · '+st.path+(st.lastSuccessUtc?' · Last successful: '+st.lastSuccessUtc:'');
+}
+function readTelemetryExport(){return {Enabled:byId('TelemetryExportEnabled').checked,IntervalSeconds:Number(byId('TelemetryExportInterval').value),Directory:byId('TelemetryExportDirectory').value.trim(),Full:byId('TelemetryExportFull').checked,Categories:checked('telemetry-export-categories')};}
+function readDatabaseMaintenance(){return {Enabled:byId('DatabaseMaintenanceEnabled').checked,Age:Number(byId('DatabaseMaintenanceAge').value),Unit:byId('DatabaseMaintenanceUnit').value,KeepLatestMonth:byId('DatabaseMaintenanceKeepMonth').checked};}
+function maintenanceFields(){const d=readDatabaseMaintenance();byId('DatabaseMaintenanceAge').max={days:3650,months:120,years:10}[d.Unit];byId('RetentionDays').disabled=d.Enabled;}
+function showMaintenanceStatus(s){if(!s)return;byId('database-maintenance-status').textContent=s.status+(s.cutoffUtc?' · Delete before '+new Date(s.cutoffUtc).toLocaleString():'')+(s.lastSuccessUtc?' · Last successful: '+new Date(s.lastSuccessUtc).toLocaleString():'')+' · Last run rows removed: history '+s.historyDeleted+', alerts '+s.alertsDeleted+', logs '+s.logsDeleted;byId('DatabaseMaintenanceRun').disabled=!!s.busy||!config||!config.DatabaseMaintenance.Enabled;}
+function fillDatabaseMaintenance(model){const d=model.config.DatabaseMaintenance;byId('DatabaseMaintenanceEnabled').checked=d.Enabled;byId('DatabaseMaintenanceAge').value=d.Age;byId('DatabaseMaintenanceUnit').value=d.Unit;byId('DatabaseMaintenanceKeepMonth').checked=d.KeepLatestMonth;maintenanceFields();showMaintenanceStatus(model.databaseMaintenanceStatus);}
+async function refreshMaintenance(){try{showMaintenanceStatus(await request('/ui/database-maintenance'));}catch(ex){byId('database-maintenance-status').textContent=ex.message;}}
+async function runMaintenance(){if(formDirty){notice('Save settings before running database cleanup.','error');return;}if(!(await confirmAction('Run database cleanup?', 'Records older than the saved retention period will be permanently deleted. Make sure you have a current backup.', 'Delete old records', true)))return;try{await request('/ui/database-maintenance',{});notice('Database cleanup queued.');await refreshMaintenance();}catch(ex){failure(ex);}}
 async function loadSettings(){
-    const model=await request('/ui/settings');config=model.config;fillSiem(model);showRestart(model);formDirty=false;fillDelivery(model);fillLogs(model);fillAi(model);
+    const model=await request('/ui/settings');config=model.config;fillTelemetryExport(model);fillSiem(model);showRestart(model);formDirty=false;fillDelivery(model);fillLogs(model);fillAi(model);fillDatabaseMaintenance(model);
     byId('origin').textContent='Current listener · '+model.activeOrigin;
     [...numbers,...strings].forEach(k=>byId(k).value=config[k]??'');flags.forEach(k=>byId(k).checked=config[k]);
     byId('certMode').value=config.CertificateThumbprint?'custom':'auto';certFields();
@@ -244,7 +297,8 @@ async function loadSettings(){
 }
 function settingsPage(){
     byId('configForm').addEventListener('input',()=>{formDirty=true;});
-    byId('restart-service').onclick=restartService;
+    byId('DatabaseMaintenanceUnit').onchange=byId('DatabaseMaintenanceEnabled').onchange=maintenanceFields;byId('DatabaseMaintenanceRun').onclick=runMaintenance;setInterval(refreshMaintenance,5000);
+    byId('restart-service').onclick=restartService;byId('TelemetryExportFull').onchange=exportCategoryState;
     for(const name of receivers)byId(name+'Test').onclick=()=>testSiem(name);
     byId('AiProvider').onchange=()=>{stashAi();showAiProfile(byId('AiProvider').value);};
     byId('SyslogTransport').onchange=()=>{const port=byId('SyslogPort');if(['514','6514'].includes(port.value))port.value=byId('SyslogTransport').value==='tls'?6514:514;};
@@ -252,11 +306,13 @@ function settingsPage(){
     byId('tokenDays').value=90;byId('targets').oninput=renderRules;
     byId('certMode').onchange=byId('UseHttps').onchange=certFields;
     byId('configForm').onsubmit=async e=>{e.preventDefault();if(!config)return;
-        const done=LinkScopeBusy.begin('Saving settings…');
-        try{const next={...config,...deliveryInput(),...readAi(),...readSiem(),Logging:readLogs()};numbers.forEach(k=>next[k]=Number(byId(k).value));strings.forEach(k=>next[k]=byId(k).value.trim());flags.forEach(k=>next[k]=byId(k).checked);
+        let done=()=>{};
+        try{const next={...config,...deliveryInput(),...readAi(),...readSiem(),Logging:readLogs(),TelemetryExport:readTelemetryExport(),DatabaseMaintenance:readDatabaseMaintenance()};numbers.forEach(k=>next[k]=Number(byId(k).value));strings.forEach(k=>next[k]=byId(k).value.trim());flags.forEach(k=>next[k]=byId(k).checked);
             if(byId('certMode').value==='auto')next.CertificateThumbprint='';
             next.Targets=targetLines().map(t=>({...targetRules.get(t.Address),...t}));
             next.EventChannels=checked('channels');next.ExtraCategories=checked('extras');
+            if(next.DatabaseMaintenance.Enabled&&JSON.stringify(next.DatabaseMaintenance)!==JSON.stringify(config.DatabaseMaintenance)&&!(await confirmAction('Apply retention policy?', 'Saving this retention policy starts permanent database cleanup. Continue only after making a backup.', 'Save and enable cleanup', true)))return;
+            done=LinkScopeBusy.begin('Saving settings…');
             const res=await request('/ui/settings',next);await loadSettings();window.LinkScopeToast.brand(config.BrandLabel);
             notice(res.restartRequired?(byId('restart-service').hidden?'Settings saved. Restart the console process on the monitoring host.':'Settings saved. Use Restart LinkScope under Network probes to apply the changes.'):'Settings saved.');
         }catch(ex){failure(ex);}finally{done();}};

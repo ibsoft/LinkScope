@@ -169,6 +169,15 @@ const LinkScopeReport = (() => {
 
         }
         await addWindowsPages(doc,lib,regular,bold,health,sections,color,trends,history,manifest);
+        // Decode the same embedded ICO used by the executable and browser header.
+        try {
+            const icon = new Image();
+            await new Promise((resolve,reject)=>{icon.onload=resolve;icon.onerror=reject;icon.src='/assets/linkscope.ico';});
+            const canvas=document.createElement('canvas');canvas.width=64;canvas.height=64;
+            canvas.getContext('2d').drawImage(icon,0,0,64,64);
+            const logo=await doc.embedPng(canvas.toDataURL('image/png'));
+            for(const page of doc.getPages()) page.drawImage(logo,{x:page.getWidth()-margin-24,y:page.getHeight()-30,width:24,height:24});
+        } catch(e) { console.warn('Report icon unavailable',e); }
         return doc.save();
     }
 

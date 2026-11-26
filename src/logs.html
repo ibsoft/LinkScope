@@ -1,7 +1,7 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en"><head><link rel="icon" type="image/x-icon" href="/assets/linkscope.ico"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="stylesheet" href="/assets/loading.css"><script defer src="/assets/loading.js"></script><title>Application logs · {{brand}}</title><link rel="stylesheet" href="/assets/app.css"><link rel="stylesheet" href="/assets/toast.css"><script defer src="/assets/paging.js"></script><script defer src="/assets/toast.js"></script><script defer src="/assets/charts.js"></script><script defer src="/assets/report.js"></script><script defer src="/assets/logs.js"></script></head>
-<body data-page="logs"><header><div class="top"><strong class="brand">{{brand}}</strong><nav aria-label="Main"><a href="/">Network</a><a href="/system">System health</a><a href="/alerts">Alert history</a><a href="/logs" aria-current="page">Logs</a><a href="/ai">AI Assist</a><a href="/settings">Settings</a><button id="global-export" type="button">Export PDF</button></nav></div></header>
+<body data-page="logs"><header><div class="top"><strong class="brand"><img class="ls-brand-icon" src="/assets/linkscope.ico" alt="" width="32" height="32">{{brand}}</strong><nav aria-label="Main"><a href="/">Network</a><a href="/system">System health</a><a href="/alerts">Alert history</a><a href="/logs" aria-current="page">Logs</a><a href="/ai">AI Assist</a><a href="/settings">Settings</a><button id="global-export" type="button">Export PDF</button></nav></div></header>
 <main><div id="pdf-status" role="status"></div><h1>Application logs</h1>
 <form id="log-form"><label class="field">Search logs<input id="log-q" type="search" maxlength="200" placeholder="Message, module, operation or IP address"></label>
 <details open><summary>Advanced filters</summary><div class="grid">

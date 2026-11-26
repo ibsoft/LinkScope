@@ -26,12 +26,12 @@ namespace LinkScope {
         readonly bool readWindows;
         readonly SiemForwarder siem;
         internal sealed class Policy {
-            internal SiemPlan Siem; internal LogSettings Options; internal LogLevel Local,Remote; internal string Destination;
+            internal SiemPlan Siem; internal DatabaseMaintenanceSettings Maintenance; internal LogSettings Options; internal LogLevel Local,Remote; internal string Destination;
         }
         volatile Policy policy;
         long dropped;int maintenance=1;
         volatile string forwardStatus="Disabled.",localStatus="Ready.";
-        internal AppJournal(string path,LogSettings options,bool importCommands=true,SiemSettings receivers=null){
+        internal AppJournal(string path,LogSettings options,bool importCommands=true,SiemSettings receivers=null,DatabaseMaintenanceSettings maintenancePolicy=null){
             database=path;readWindows=importCommands;
             using(var db=new Sqlite(path,false)){db.Exec("PRAGMA journal_mode=WAL");
                 db.Exec("CREATE TABLE IF NOT EXISTS app_log(id INTEGER PRIMARY KEY AUTOINCREMENT,t INTEGER NOT NULL,level INTEGER NOT NULL,module TEXT NOT NULL,operation TEXT NOT NULL,message TEXT NOT NULL,peer TEXT NOT NULL,status INTEGER,elapsed INTEGER,words TEXT NOT NULL,destination TEXT NOT NULL)");
@@ -43,10 +43,10 @@ namespace LinkScope {
                 db.Exec("CREATE INDEX IF NOT EXISTS log_pending ON app_log(destination,id) WHERE destination<>''");
             }
             siem=new SiemForwarder(database,stop.Token,LocalWarning);
-            Configure(options,receivers??new SiemSettings());
+            Configure(options,receivers??new SiemSettings(),maintenancePolicy);
         }
-        internal void Configure(LogSettings options,SiemSettings receivers){
-            var next=new Policy{Siem=new SiemPlan(receivers,options.RetentionDays),Options=options,Local=LogSettings.Level(options.MinimumLevel),Remote=LogSettings.Level(options.SyslogMinimumLevel),Destination=options.Destination()};
+        internal void Configure(LogSettings options,SiemSettings receivers,DatabaseMaintenanceSettings maintenancePolicy=null){
+            var next=new Policy{Siem=new SiemPlan(receivers,options.RetentionDays,maintenancePolicy),Maintenance=maintenancePolicy,Options=options,Local=LogSettings.Level(options.MinimumLevel),Remote=LogSettings.Level(options.SyslogMinimumLevel),Destination=options.Destination()};
             lock(configGate){
                 var old=policy;
                 if(old==null||old.Destination!=next.Destination){
@@ -83,11 +83,12 @@ namespace LinkScope {
         internal static void Prune(Sqlite db,int days,long now){
             db.Exec("DELETE FROM app_log WHERE t < ?",now-days*86400L);
         }
+        static long Cutoff(Policy p,long now){return p.Maintenance==null?now-p.Options.RetentionDays*History.Day:p.Maintenance.LogCutoff(now,p.Options.RetentionDays);}
         bool ImportCommands(){
             var p=policy;
             long id,stamp;object[] cursor;
             using(var db=new Sqlite(database,true))cursor=db.Rows("SELECT last_id,last_stamp FROM app_log_commands WHERE singleton=1")[0];
-            var list=MaintenanceEvents.Read((long)cursor[0],(long)cursor[1],History.Now()-p.Options.RetentionDays*86400L,out id,out stamp);
+            var list=MaintenanceEvents.Read((long)cursor[0],(long)cursor[1],Cutoff(p,History.Now()),out id,out stamp);
             if(list.Count==0)return false;
             lock(configGate)using(var db=new Sqlite(database,false)){
                 p=policy;db.Exec("BEGIN IMMEDIATE");
@@ -129,7 +130,7 @@ namespace LinkScope {
                                 Insert(db,item,route);pending|=route.Length!=0;
                                 siemPending|=SiemForwarder.Queue(db,item.Level,item.Siem,p.Siem);
                             }
-                            if(prune)Prune(db,p.Options.RetentionDays,now);
+                            if(prune&&(p.Maintenance==null||!p.Maintenance.Enabled))db.Exec("DELETE FROM app_log WHERE t<?",Cutoff(p,now));
                             db.Exec("COMMIT");
                         }
                         if(prune){next=now+3600;Interlocked.Exchange(ref maintenance,0);}
@@ -149,7 +150,7 @@ namespace LinkScope {
                 try{
                     if(p.Destination!=""){
                         List<object[]> rows;
-                        using(var db=new Sqlite(database,true))rows=db.Rows("SELECT id,t,level,module,operation,message,peer,status,elapsed FROM app_log WHERE destination=? AND t>=? ORDER BY id LIMIT 64",p.Destination,History.Now()-p.Options.RetentionDays*86400L);
+                        using(var db=new Sqlite(database,true))rows=db.Rows("SELECT id,t,level,module,operation,message,peer,status,elapsed FROM app_log WHERE destination=? AND t>=? ORDER BY id LIMIT 64",p.Destination,Cutoff(p,History.Now()));
                         if(rows.Count>0&&p.Destination==policy.Destination){
                             SyslogSender.Send(p.Options,rows,stop.Token);
                             using(var db=new Sqlite(database,false))db.Exec("UPDATE app_log SET destination='' WHERE destination=? AND id<=?",p.Destination,(long)rows.Last()[0]);

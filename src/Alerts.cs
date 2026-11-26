@@ -29,6 +29,9 @@ namespace LinkScope {
                 db.Exec("BEGIN IMMEDIATE");
                 try{
                     db.Exec("CREATE TABLE IF NOT EXISTS alert_events(seq INTEGER PRIMARY KEY,id TEXT NOT NULL UNIQUE,alert_key TEXT NOT NULL,category TEXT NOT NULL,severity TEXT NOT NULL,title TEXT NOT NULL,message TEXT NOT NULL,revision TEXT,since INTEGER NOT NULL,is_read INTEGER NOT NULL,resolved INTEGER NOT NULL,ended INTEGER)");
+                    db.Exec("CREATE TABLE IF NOT EXISTS alert_sequence(singleton INTEGER PRIMARY KEY CHECK(singleton=1),last_seq INTEGER NOT NULL)");
+                    db.Exec("INSERT OR IGNORE INTO alert_sequence SELECT 1,COALESCE(MAX(seq),0) FROM alert_events");
+                    db.Exec("UPDATE alert_sequence SET last_seq=MAX(last_seq,(SELECT COALESCE(MAX(seq),0) FROM alert_events)) WHERE singleton=1");
                     db.Exec("CREATE INDEX IF NOT EXISTS alerts_by_read ON alert_events(is_read,seq)");
                     db.Exec("CREATE INDEX IF NOT EXISTS alerts_open ON alert_events(resolved,alert_key)");
                     db.Exec("CREATE TABLE IF NOT EXISTS alert_search_index(seq INTEGER PRIMARY KEY,words TEXT NOT NULL)");
@@ -55,9 +58,10 @@ namespace LinkScope {
                 Title=(string)r[5],Message=(string)r[6],Revision=(string)r[7],Since=(long)r[8],Read=(long)r[9]!=0,Resolved=(long)r[10]!=0,Ended=(long?)r[11]};
         }
         static void Insert(Sqlite db,HealthAlert a){
-            db.Exec("INSERT INTO alert_events(id,alert_key,category,severity,title,message,revision,since,is_read,resolved) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                a.Id,a.Key,a.Category,a.Severity,a.Title,a.Message,a.Revision,a.Since,a.Read,a.Resolved);
-            a.Sequence=(long)db.Rows("SELECT last_insert_rowid()")[0][0];
+            db.Exec("UPDATE alert_sequence SET last_seq=last_seq+1 WHERE singleton=1");
+            a.Sequence=Head(db);
+            db.Exec("INSERT INTO alert_events(seq,id,alert_key,category,severity,title,message,revision,since,is_read,resolved,ended) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                a.Sequence,a.Id,a.Key,a.Category,a.Severity,a.Title,a.Message,a.Revision,a.Since,a.Read,a.Resolved,a.Ended);
             AlertSearch.Index(db,a);
         }
         static HealthAlert Signal(string cat,string key,string severity,string title,string message,string revision=""){
@@ -66,7 +70,7 @@ namespace LinkScope {
         internal object[] List(IEnumerable<string> categories,bool showRead){
             lock(this)return current.Values.Where(a=>categories.Contains(a.Category)).OrderBy(a=>a.Severity=="critical"?0:1).ThenByDescending(a=>a.Since).Select(a=>a.View(showRead)).ToArray();
         }
-        static long Head(Sqlite db){return (long)db.Rows("SELECT COALESCE(MAX(seq),0) FROM alert_events")[0][0];}
+        static long Head(Sqlite db){return (long)db.Rows("SELECT last_seq FROM alert_sequence WHERE singleton=1")[0][0];}
         static long Unread(Sqlite db){return (long)db.Rows("SELECT COUNT(*) FROM alert_events WHERE is_read=0")[0][0];}
         internal object Page(long before){
             lock(this)using(var db=new Sqlite(database,true)){

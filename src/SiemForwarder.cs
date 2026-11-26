@@ -10,7 +10,10 @@ namespace LinkScope {
         internal readonly string[] Routes;
         internal readonly LogLevel[] Levels;
         internal readonly int Days;
-        internal SiemPlan(SiemSettings settings,int days){
+        readonly DatabaseMaintenanceSettings maintenance;
+        internal long Cutoff(long now){return maintenance==null?now-Days*History.Day:maintenance.LogCutoff(now,Days);}
+        internal SiemPlan(SiemSettings settings,int days,DatabaseMaintenanceSettings maintenancePolicy=null){
+            maintenance=maintenancePolicy;
             Settings=settings;Days=days;Routes=SiemSettings.Kinds.Select(settings.Route).ToArray();
             Levels=SiemSettings.Kinds.Select(settings.Minimum).ToArray();
         }
@@ -87,7 +90,7 @@ namespace LinkScope {
                 try{
                     if(route!=""){
                         List<object[]> rows;
-                        using(var db=new Sqlite(path,true))rows=db.Rows("SELECT a.id,a.t,a.level,a.module,a.operation,a.message,a.peer,a.status,a.elapsed FROM siem_queue q JOIN app_log a ON a.id=q.log_id WHERE q.receiver=? AND q.route=? AND a.t>=? ORDER BY q.log_id LIMIT 64",w.Name,route,History.Now()-p.Days*86400L);
+                        using(var db=new Sqlite(path,true))rows=db.Rows("SELECT a.id,a.t,a.level,a.module,a.operation,a.message,a.peer,a.status,a.elapsed FROM siem_queue q JOIN app_log a ON a.id=q.log_id WHERE q.receiver=? AND q.route=? AND a.t>=? ORDER BY q.log_id LIMIT 64",w.Name,route,p.Cutoff(History.Now()));
                         if(rows.Count>0&&current.Routes[w.Index]==route){
                             var result=SiemSender.Send(w.Name,p.Settings,origin,rows,stop);
                             using(var db=new Sqlite(path,false)){

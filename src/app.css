@@ -4,3 +4,14 @@
 #signInButton{display:inline-flex;align-items:center;justify-content:center;gap:.55rem}
 #siem{scroll-margin-top:1rem}
 .login form[aria-busy="true"] + .notice{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);margin:0;padding:0;border:0}
+
+.brand{display:inline-flex;align-items:center;gap:9px}.ls-brand-icon{width:32px;height:32px;object-fit:contain;flex-shrink:0}
+
+/* Application confirmation modal */
+.ls-confirm-dialog{width:min(480px,calc(100% - 32px));max-height:85vh;overflow:auto;border:1px solid var(--line);border-radius:14px;padding:26px;color:var(--ink);background:#fff;box-shadow:0 24px 80px #102b3940}
+.ls-confirm-dialog::backdrop{background:#102b3999}
+.ls-confirm-dialog h2{font-size:22px;margin:0 0 12px}
+.ls-confirm-dialog p{white-space:pre-wrap;overflow-wrap:anywhere;margin-bottom:24px}
+.ls-confirm-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.ls-confirm-dialog .ls-confirm-danger{background:#b42318;color:#fff}
+.ls-confirm-dialog .ls-confirm-danger:hover{background:#912018}

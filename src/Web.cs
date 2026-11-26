@@ -40,6 +40,8 @@ namespace LinkScope {
         readonly Alerts alerts;
         readonly AlertDelivery outputs;
         readonly Telemetry monitor;
+        readonly TelemetryExport telemetryExport;
+        readonly DatabaseMaintenance databaseMaintenance;
         readonly AiAssist ai=new AiAssist();
         readonly Access access=new Access();
         readonly object mutation=new object();
@@ -51,7 +53,8 @@ namespace LinkScope {
         Thread thread;volatile bool stopping;
         internal Web(Config c,Collector collector,Alerts alerts,AlertDelivery outputs){
             this.outputs=outputs;
-            this.collector=collector;settings=running=c;listener=new TcpListener(IPAddress.Parse(c.BindAddress),c.Port);this.alerts=alerts;alerts.Trim(c.Categories().Concat(new[]{"network"}).ToArray());monitor=new Telemetry(c,alerts);
+            this.collector=collector;settings=running=c;listener=new TcpListener(IPAddress.Parse(c.BindAddress),c.Port);this.alerts=alerts;alerts.Trim(c.Categories().Concat(new[]{"network"}).ToArray());monitor=new Telemetry(c,alerts);telemetryExport=new TelemetryExport(c,monitor,collector,ai);databaseMaintenance=new DatabaseMaintenance(c.DatabaseMaintenance);
+            var icon=new Reply{Mime="image/x-icon",Bytes=Program.Resource("linkscope.ico")};assets["/assets/linkscope.ico"]=icon;assets["/favicon.ico"]=icon;
             Asset("/","dashboard.html","text/html");Asset("/login","login.html","text/html");Asset("/system","system.html","text/html");Asset("/settings","settings.html","text/html");Asset("/alerts","alerts.html","text/html");Asset("/logs","logs.html","text/html");Asset("/ai","ai.html","text/html");
             foreach(var file in new[]{"loading.js","loading.css","ai.js","ai.css","logs.js","paging.js","charts.js","dashboard.js","report.js","app.js","pdf-lib.min.js","app.css","dashboard.css","toast.js","toast.css"}){
                 string url=file=="pdf-lib.min.js"?"pdf-lib.js":file;Asset("/assets/"+url,file,file.EndsWith(".js")?"application/javascript":"text/css");}
@@ -87,7 +90,7 @@ namespace LinkScope {
             }
         }
         internal void Start(){if(running.UseHttps)cert=Certificate(running);listener.Server.ExclusiveAddressUse=true;listener.Start(32);
-            monitor.Start();thread=new Thread(Accept){IsBackground=true,Name="LinkScope web"};thread.Start();}
+            monitor.Start();telemetryExport.Start();databaseMaintenance.Start();thread=new Thread(Accept){IsBackground=true,Name="LinkScope web"};thread.Start();}
         void Accept(){
             while(!stopping)try{var client=listener.AcceptTcpClient();
                 lock(active){if(stopping||active.Count>=24){client.Close();continue;}active.Add(client);}
@@ -163,7 +166,7 @@ namespace LinkScope {
                 }finally{passwordWorkers.Release();}
             }
             Reply asset;
-            if(!post&&r.Path.StartsWith("/assets/",StringComparison.Ordinal)&&assets.TryGetValue(r.Path,out asset))return asset;
+            if(!post&&(r.Path=="/favicon.ico"||r.Path.StartsWith("/assets/",StringComparison.Ordinal))&&assets.TryGetValue(r.Path,out asset))return asset;
             if(!post&&r.Path=="/login"){lock(mutation)return PageAsset("/login");}
             string rawCookie=r.Cookie(CookieName());var session=access.Find(rawCookie);
             if(post&&(session==null||!Access.Equal(session.Csrf,r.Header("X-CSRF-Token"))))Deny();
@@ -204,7 +207,7 @@ namespace LinkScope {
                 else if(post&&r.Path=="/ui/ai/ask"){var cfg=settings;return Reply.Json(ai.Start(session,Decode<AiQuestion>(r),cfg.Ai,()=>AiEvidence.Collect(monitor,running,cfg,()=>outputs.State())));}
                 else if(post&&r.Path=="/ui/ai/cancel"){ai.Cancel(session);return Reply.Json(new {ok=true});}
                 else if(post&&r.Path=="/ui/ai/clear"){ai.Clear(session);return Reply.Json(new {ok=true});}
-                else if(!post&&r.Path=="/ui/settings")return Reply.Json(new {config=settings.PublicCopy(),restartRequired=RestartNeeded(settings),canRestart=Program.ServiceMode,nextOrigin=settings.Origin(),seqKeyStored=!string.IsNullOrEmpty(settings.Siem.Seq.ProtectedKey),elasticKeyStored=!string.IsNullOrEmpty(settings.Siem.Elastic.ProtectedKey),aiKeyStored=settings.Ai.Profiles.ToDictionary(x=>x.Key,x=>!string.IsNullOrEmpty(x.Value.ProtectedKey)),smtpPasswordStored=!string.IsNullOrEmpty(settings.Delivery.ProtectedPassword),defaultJsonDirectory=Path.Combine(Config.Data,"active-alerts"),outputStatus=outputs.State(),logStatus=AppJournal.Current.State(),core=Config.Core,extras=Config.Extras,channels=Config.Channels,tokens=access.List(),activeOrigin=running.Origin()});
+                else if(!post&&r.Path=="/ui/settings")return Reply.Json(new {config=settings.PublicCopy(),databaseMaintenanceStatus=databaseMaintenance.State(),telemetryExportStatus=telemetryExport.State(),telemetryExportCategories=TelemetryExportSettings.All(),restartRequired=RestartNeeded(settings),canRestart=Program.ServiceMode,nextOrigin=settings.Origin(),seqKeyStored=!string.IsNullOrEmpty(settings.Siem.Seq.ProtectedKey),elasticKeyStored=!string.IsNullOrEmpty(settings.Siem.Elastic.ProtectedKey),aiKeyStored=settings.Ai.Profiles.ToDictionary(x=>x.Key,x=>!string.IsNullOrEmpty(x.Value.ProtectedKey)),smtpPasswordStored=!string.IsNullOrEmpty(settings.Delivery.ProtectedPassword),defaultJsonDirectory=Path.Combine(Config.Data,"active-alerts"),outputStatus=outputs.State(),logStatus=AppJournal.Current.State(),core=Config.Core,extras=Config.Extras,channels=Config.Channels,tokens=access.List(),activeOrigin=running.Origin()});
                 else if(post&&r.Path=="/ui/settings"){
                     var next=Decode<Config>(r);
                     next.Delivery=SubmittedDelivery(r,false);
@@ -213,11 +216,13 @@ namespace LinkScope {
                     next.Siem=SiemSettings.Merge(settings.Siem,Decode<SiemEdit>(r));
                     Config.Validate(next);
                     if(next.UseHttps)using(Certificate(next)){}
-                    outputs.Set(next.Delivery,delegate{Config.Save(Config.FilePath,next);});if(Config.Json().Serialize(settings.Ai)!=Config.Json().Serialize(next.Ai))ai.Reset();settings=next;AppJournal.Current.Configure(next.Logging,next.Siem);
-                    collector.AlertRules=next;monitor.Update(next);alerts.Trim(next.Categories().Concat(new[]{"network"}).ToArray());
+                    outputs.Set(next.Delivery,delegate{Config.Save(Config.FilePath,next);});if(Config.Json().Serialize(settings.Ai)!=Config.Json().Serialize(next.Ai))ai.Reset();settings=next;AppJournal.Current.Configure(next.Logging,next.Siem,next.DatabaseMaintenance);
+                    collector.AlertRules=next;monitor.Update(next);telemetryExport.Update(next);databaseMaintenance.Update(next.DatabaseMaintenance);alerts.Trim(next.Categories().Concat(new[]{"network"}).ToArray());
                     bool restart=RestartNeeded(next);
                     return Reply.Json(new {ok=true,restartRequired=restart,nextOrigin=next.Origin()});
                 }
+                else if(!post&&r.Path=="/ui/database-maintenance")return Reply.Json(databaseMaintenance.State());
+                else if(post&&r.Path=="/ui/database-maintenance"){if(!databaseMaintenance.Request())throw new HttpError(409,"Enable and save maintenance first, or wait for the running cleanup.");return Reply.Json(new {accepted=true});}
                 else if(!post&&r.Path=="/ui/alert-delivery")return Reply.Json(outputs.State());
                 else if(post&&r.Path=="/ui/restart")return RequestRestart();
                 else if(post&&r.Path=="/ui/siem-test")return Reply.Json(AppJournal.Current.TestSiem(Decode<SiemTestInput>(r).Receiver));
@@ -251,6 +256,6 @@ namespace LinkScope {
             try{return Reply.Json(resource?History.ResourceTrend(period,at):collector.Report(target,period,at));}finally{historyWorkers.Release();}
         }
         public void Dispose(){stopping=true;listener.Stop();if(thread!=null)thread.Join();restartReplySent.Wait(9000);lock(active){foreach(var c in active)c.Close();while(active.Count>0)Monitor.Wait(active);}
-            ai.Dispose();monitor.Dispose();if(cert!=null)cert.Dispose();passwordWorkers.Dispose();historyWorkers.Dispose();}
+            databaseMaintenance.Dispose();telemetryExport.Dispose();ai.Dispose();monitor.Dispose();if(cert!=null)cert.Dispose();passwordWorkers.Dispose();historyWorkers.Dispose();}
     }
 }
