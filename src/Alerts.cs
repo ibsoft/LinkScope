@@ -167,6 +167,20 @@ namespace LinkScope {
             if(status=="warming_up")return;
             if(status=="unavailable"||status=="partial")list.Add(Signal(cat,"coverage","warning",cat+" coverage is "+status,"Check the Windows provider, driver or access permissions."));
             if(S(value,"truncated")=="True")list.Add(Signal(cat,"limit","info",cat+" inventory limit reached","The response contains the first 256 records."));
+            if(cat=="data_integrity"){
+                lock(this){
+                    foreach(var item in Rows(value)){
+                        string id=S(item,"id"),severity=S(item,"severity"),title=S(item,"change"),message=S(item,"path")+" · "+S(item,"detail")+" Expected: "+S(item,"expectedHash")+" Actual: "+S(item,"actualHash");
+                        var a=Signal(cat,id,severity,title,message,S(item,"actualHash"));list.Add(a);HealthAlert previous;
+                        if(!current.TryGetValue(a.Key,out previous)||previous.Revision!=a.Revision||previous.Severity!=a.Severity){
+                            AppJournal.Event(severity=="critical"?LogLevel.Error:LogLevel.Warning,"Integrity",title,message);
+                            if(cfg.Integrity.WriteEvents)try{System.Diagnostics.EventLog.WriteEntry("Unixfor LinkScope",title+" · "+message,severity=="critical"?System.Diagnostics.EventLogEntryType.Error:System.Diagnostics.EventLogEntryType.Warning,4201);}catch(Exception ex){AppJournal.Fault("Integrity","event-log",ex);}
+                        }
+                    }
+                    if(status=="unavailable"||status=="partial")list.AddRange(current.Values.Where(x=>x.Category==cat&&!list.Any(y=>y.Key==x.Key)));
+                    Update(cat,list);
+                }return;
+            }
             if(cat=="cpu"||cat=="ram")Usage(list,cat,cat.ToUpperInvariant(),value,cat=="cpu"?cfg.CpuAlertPercent:cfg.RamAlertPercent);
             if(cat=="disk_usage")foreach(var d in Rows(value)){
                 if(S(d,"status")=="unavailable")list.Add(Signal(cat,"unavailable-"+S(d,"volume"),"warning","Volume data unavailable",S(d,"volume")));
@@ -264,6 +278,19 @@ namespace LinkScope {
                     w.Add(p);
                     Target t;if(!targets.TryGetValue(p.Address,out t)||!t.AlertsEnabled)continue;
                     string label=string.IsNullOrEmpty(t.Name)||t.Name==p.Address?p.Address:t.Name+" ("+p.Address+")";
+                    // Immediate incidents are independent of the optional rolling-loss and consecutive-failure rules.
+                    // A continuous run is one incident; a successful reply closes it so the next failure is new.
+                    string lossIncident=p.Address+"/packet-loss-incident", timeoutIncident=p.Address+"/timeout-incident";
+                    if(p.LocalError){
+                        KeepActive(signals,lossIncident);KeepActive(signals,timeoutIncident);
+                    }else{
+                        if(!p.Rtt.HasValue && p.Status!="Success")
+                            signals.Add(Signal("network",lossIncident,"warning","Packet loss detected · "+label,
+                                "ICMP probe unanswered. Latest status: "+p.Status+"."));
+                        if(p.Status=="TimedOut")
+                            signals.Add(Signal("network",timeoutIncident,"warning","Network timeout · "+label,
+                                "No ICMP reply before the configured timeout."));
+                    }
                     int fails=t.FailureCount??rules.ProbeAlertCount;
                     if(fails>0&&w.Failures>=fails)signals.Add(Signal("network",p.Address,"error","Network probe failing · "+label,
                         w.Failures+" consecutive failed probes. Latest status: "+p.Status));

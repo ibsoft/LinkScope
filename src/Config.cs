@@ -15,6 +15,7 @@ namespace LinkScope {
         public Target(){AlertsEnabled=true;LossWindowProbes=20;}
     }
     public sealed class Config {
+        public IntegritySettings Integrity {get;set;}
         public AiSettings Ai {get;set;}
         public TelemetryExportSettings TelemetryExport {get;set;}
         public DatabaseMaintenanceSettings DatabaseMaintenance {get;set;}
@@ -23,6 +24,7 @@ namespace LinkScope {
         public DeliverySettings Delivery {get;set;}
         public string BrandLabel {get;set;}
         public string BindAddress {get;set;}
+        public string[] AllowedClientIPs {get;set;}
         public bool UseHttps {get;set;}
         public string HostName {get;set;}
         public string CertificateThumbprint {get;set;}
@@ -40,18 +42,19 @@ namespace LinkScope {
         public int RamAlertPercent {get;set;}
         public int DiskAlertPercent {get;set;}
         public int ProbeAlertCount {get;set;}
+        public int NetworkCardHours {get;set;}
         public int LowLifePercent {get;set;}
         public bool WriteDiskEvents {get;set;}
         public string[] ExtraCategories {get;set;}
-        public static readonly string[] Core={"ram","cpu","disk_usage","smart","events","firewall","antivirus","security"};
+        public static readonly string[] Core={"ram","cpu","disk_usage","smart","events","firewall","antivirus","security","data_integrity"};
         public static readonly string[] Extras={"os","computer","bios","baseboard","processors","memory_modules","graphics","network_adapters","ip_addresses","dns","routes","volumes","partitions","services","processes","hotfixes","installed_software","drivers","pnp_devices","usb","battery","shares","printers","pagefile","time_zone","event_details"};
         public static readonly string[] Channels={"System","Application","Microsoft-Windows-Windows Defender/Operational","Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","Microsoft-Windows-WindowsUpdateClient/Operational","Microsoft-Windows-TaskScheduler/Operational","Microsoft-Windows-NTFS/Operational","Microsoft-Windows-Storage-Storport/Operational"};
         public Config() {
-            DatabaseMaintenance=new DatabaseMaintenanceSettings();TelemetryExport=new TelemetryExportSettings();Delivery=new DeliverySettings();Logging=new LogSettings();Ai=new AiSettings();Siem=new SiemSettings();
-            BrandLabel=""; BindAddress="127.0.0.1"; HostName="localhost"; CertificateThumbprint=""; Port=9876;
+            Integrity=new IntegritySettings();DatabaseMaintenance=new DatabaseMaintenanceSettings();TelemetryExport=new TelemetryExportSettings();Delivery=new DeliverySettings();Logging=new LogSettings();Ai=new AiSettings();Siem=new SiemSettings();
+            AllowedClientIPs=new string[0]; BrandLabel=""; BindAddress="127.0.0.1"; HostName="localhost"; CertificateThumbprint=""; Port=9876;
             IntervalSeconds=5; TimeoutMs=1500; InterfaceName=""; RequireLogin=true; ResourceSeconds=15;
             InventoryMinutes=5; EventsPerChannel=25; EventChannels=Channels.Take(5).ToArray();
-            CpuAlertPercent=90;RamAlertPercent=90;DiskAlertPercent=90;ProbeAlertCount=3;LowLifePercent=10; WriteDiskEvents=true; ExtraCategories=new string[0];
+            CpuAlertPercent=90;RamAlertPercent=90;DiskAlertPercent=90;ProbeAlertCount=3;NetworkCardHours=24;LowLifePercent=10; WriteDiskEvents=true; ExtraCategories=new string[0];
         }
         public static readonly string Root=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),"LinkScope");
         public static readonly string SettingsDir=Path.Combine(Root,"settings");
@@ -76,6 +79,8 @@ namespace LinkScope {
             if(c==null || !IPAddress.TryParse(c.BindAddress,out addr) || addr.Equals(IPAddress.Any) || addr.Equals(IPAddress.IPv6Any) || addr.IsIPv6Multicast || addr.Equals(IPAddress.Broadcast))
                 throw new InvalidDataException("Choose one specific local listening IP.");
             c.BindAddress=addr.ToString();
+            c.AllowedClientIPs=ClientFirewall.Validate(c.AllowedClientIPs);
+            if(c.Integrity==null)c.Integrity=new IntegritySettings();c.Integrity.Validate();
             if(c.TelemetryExport==null)c.TelemetryExport=new TelemetryExportSettings();c.TelemetryExport.Validate();
             if(c.DatabaseMaintenance==null)c.DatabaseMaintenance=new DatabaseMaintenanceSettings();c.DatabaseMaintenance.Validate();
             if(c.Delivery==null)c.Delivery=new DeliverySettings();
@@ -93,7 +98,7 @@ namespace LinkScope {
                 throw new InvalidDataException("A LAN listener needs HTTPS and a DNS name matching its certificate.");
             if(c.Port<1||c.Port>65535||c.IntervalSeconds<1||c.IntervalSeconds>86400||c.TimeoutMs<100||c.TimeoutMs>30000||
                 c.ResourceSeconds<5||c.ResourceSeconds>3600||c.InventoryMinutes<1||c.InventoryMinutes>1440||c.EventsPerChannel<1||c.EventsPerChannel>100||
-                new[]{c.CpuAlertPercent,c.RamAlertPercent,c.DiskAlertPercent}.Any(x=>x<1||x>100)||c.ProbeAlertCount<1||c.ProbeAlertCount>100||c.LowLifePercent<1||c.LowLifePercent>50) throw new InvalidDataException("One or more numeric settings are outside the displayed ranges.");
+                new[]{c.CpuAlertPercent,c.RamAlertPercent,c.DiskAlertPercent}.Any(x=>x<1||x>100)||c.NetworkCardHours<1||c.NetworkCardHours>48||c.ProbeAlertCount<1||c.ProbeAlertCount>100||c.LowLifePercent<1||c.LowLifePercent>50) throw new InvalidDataException("One or more numeric settings are outside the displayed ranges.");
             if(!Allowed(c.EventChannels,Channels)||c.EventChannels.Length==0||!Allowed(c.ExtraCategories,Extras))
                 throw new InvalidDataException("Choose supported channels and categories.");
             if(c.Targets==null||c.Targets.Length<1||c.Targets.Length>128)throw new InvalidDataException("Configure 1 to 128 targets.");

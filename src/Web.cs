@@ -13,6 +13,7 @@ using System.Web;
 namespace LinkScope {
     public sealed class LoginInput {public string user{get;set;}public string password{get;set;}public string newPassword{get;set;}}
     public sealed class TokenInput {public string name{get;set;}public int days{get;set;}public string[] categories{get;set;}public string id{get;set;}}
+    public sealed class IntegrityEdit {public string IntegrityReason{get;set;}}
     public sealed class AlertReadBatch { public long through {get;set;} }
     internal sealed class Web:IDisposable {
         readonly Config running;
@@ -35,7 +36,7 @@ namespace LinkScope {
                 reply.Code=202;reply.RestartAccepted=true;return reply;
             }catch{restartReplySent.Set();throw;}
         }
-        Config settings;
+        volatile Config settings;
         readonly Collector collector;
         readonly Alerts alerts;
         readonly AlertDelivery outputs;
@@ -52,11 +53,13 @@ namespace LinkScope {
         X509Certificate2 cert;
         Thread thread;volatile bool stopping;
         internal Web(Config c,Collector collector,Alerts alerts,AlertDelivery outputs){
-            this.outputs=outputs;
+            this.outputs=outputs;UserAudit.Init();
             this.collector=collector;settings=running=c;listener=new TcpListener(IPAddress.Parse(c.BindAddress),c.Port);this.alerts=alerts;alerts.Trim(c.Categories().Concat(new[]{"network"}).ToArray());monitor=new Telemetry(c,alerts);telemetryExport=new TelemetryExport(c,monitor,collector,ai);databaseMaintenance=new DatabaseMaintenance(c.DatabaseMaintenance);
             var icon=new Reply{Mime="image/x-icon",Bytes=Program.Resource("linkscope.ico")};assets["/assets/linkscope.ico"]=icon;assets["/favicon.ico"]=icon;
-            Asset("/","dashboard.html","text/html");Asset("/login","login.html","text/html");Asset("/system","system.html","text/html");Asset("/settings","settings.html","text/html");Asset("/alerts","alerts.html","text/html");Asset("/logs","logs.html","text/html");Asset("/ai","ai.html","text/html");
-            foreach(var file in new[]{"loading.js","loading.css","ai.js","ai.css","logs.js","paging.js","charts.js","dashboard.js","report.js","app.js","pdf-lib.min.js","app.css","dashboard.css","toast.js","toast.css"}){
+            Asset("/audit","audit.html","text/html");Asset("/manifest.webmanifest","manifest.webmanifest","application/manifest+json");Asset("/sw.js","sw.js","application/javascript");Asset("/assets/pwa-192.png","pwa-192.png","image/png");Asset("/assets/pwa-512.png","pwa-512.png","image/png");
+            Asset("/assets/toast-pale-v2.css","toast.css","text/css");Asset("/assets/theme-pale-v2.css","theme.css","text/css");
+            Asset("/","dashboard.html","text/html");Asset("/login","login.html","text/html");Asset("/system","system.html","text/html");Asset("/integrity","integrity.html","text/html");Asset("/settings","settings.html","text/html");Asset("/alerts","alerts.html","text/html");Asset("/logs","logs.html","text/html");Asset("/ai","ai.html","text/html");
+            foreach(var file in new[]{"audit.js","pwa.js","theme.js","theme.css","loading.js","loading.css","ai.js","ai.css","logs.js","paging.js","charts.js","dashboard.js","report.js","app.js","pdf-lib.min.js","app.css","dashboard.css","toast.js","toast.css"}){
                 string url=file=="pdf-lib.min.js"?"pdf-lib.js":file;Asset("/assets/"+url,file,file.EndsWith(".js")?"application/javascript":"text/css");}
         }
         void Asset(string url,string file,string mime){assets[url]=new Reply{Mime=mime+"; charset=utf-8",Bytes=Program.Resource(file)};}
@@ -108,17 +111,22 @@ namespace LinkScope {
                     if(cert!=null){tls=new SslStream(raw,true);tls.AuthenticateAsServer(cert,false,SslProtocols.Tls12,false);stream=tls;}
                     Reply reply;Request req=null;var timer=System.Diagnostics.Stopwatch.StartNew();
                     try{req=Request.Read(stream);
+                        if(!ClientFirewall.Allows(ip,settings.AllowedClientIPs)){
+                            try{UserAudit.Write("Unauthenticated",ip,"IP firewall denied access",403,"Denied");}catch(Exception ex){Program.Log(ex);}
+                            throw new HttpError(403,"Access denied by IP firewall.");
+                        }
                         if(!HostAllowed(req.Header("Host")))throw new HttpError(400,"Unexpected host.");
+                        if(req.Method=="POST"||req.Path=="/audit"||req.Path=="/ui/audit")req.AuditActor=access.Find(req.Cookie(CookieName()))!=null?"admin":"Unauthenticated";
                         reply=Route(req,ip);
                     }catch(HttpError ex){reply=Reply.Error(ex.Status,ex.Message);}
                     catch(InvalidDataException ex){reply=Reply.Error(400,ex.Message);}
                     catch(Exception ex){Program.Log(ex);reply=Reply.Error(503,"LinkScope could not complete this request.");}
-                    try{AuditRequest(req,reply.Code,ip,timer.ElapsedMilliseconds);reply.Send(stream,cert!=null);}
+                    try{AuditRequest(req,reply.Code,ip,timer.ElapsedMilliseconds);RecordUserAudit(req,reply.Code,ip);reply.Send(stream,cert!=null);}
                     finally{if(reply.RestartAccepted)restartReplySent.Set();}
                 }finally{if(tls!=null)tls.Dispose();}
             }
         }
-        static readonly HashSet<string> knownRoutes=new HashSet<string>{"/ui/connections","/ui/restart","/ui/siem-test","/ui/ai","/ui/ai/ask","/ui/ai/result","/ui/ai/clear","/ui/ai/cancel","/ai","/ui/logs/summary","/","/alerts","/api/history","/api/v1/system","/auth/login","/auth/logout","/login","/logs","/settings","/system","/ui/alert-delivery","/ui/alerts","/ui/alerts/history","/ui/alerts/read","/ui/alerts/read-all","/ui/alerts/search","/ui/logs/search","/ui/report","/ui/report-system","/ui/resource-history","/ui/session","/ui/settings","/ui/smtp-test","/ui/system","/ui/tokens","/ui/tokens/revoke"};
+        static readonly HashSet<string> knownRoutes=new HashSet<string>{"/integrity","/ui/integrity","/ui/integrity-scan","/audit","/ui/audit","/ui/network-card-ack","/ui/connections","/ui/restart","/ui/siem-test","/ui/ai","/ui/ai/ask","/ui/ai/result","/ui/ai/clear","/ui/ai/cancel","/ai","/ui/logs/summary","/","/alerts","/api/history","/api/v1/system","/auth/login","/auth/logout","/login","/logs","/settings","/system","/ui/alert-delivery","/ui/alerts","/ui/alerts/history","/ui/alerts/read","/ui/alerts/read-all","/ui/alerts/search","/ui/logs/search","/ui/report","/ui/report-system","/ui/resource-history","/ui/session","/ui/settings","/ui/smtp-test","/ui/system","/ui/tokens","/ui/tokens/revoke"};
         void AuditRequest(Request req,int code,string ip,long elapsed){
             string route=req==null?"malformed":knownRoutes.Contains(req.Path)?req.Path:assets.ContainsKey(req.Path)?"asset":"unknown";
             string method=req==null?"HTTP":req.Method;
@@ -127,6 +135,13 @@ namespace LinkScope {
                 route.StartsWith("/ui/alerts")?"Alerts":route=="/ui/smtp-test"?"SMTP":route=="/ui/logs/search"?"Logging":"Web";
             LogLevel level=code>=500?LogLevel.Error:code>=400?LogLevel.Warning:method=="POST"||module=="API"||route=="/ui/report"?LogLevel.Info:LogLevel.Debug;
             AppJournal.Event(level,module,method+" "+route,"HTTP "+code+".",ip,code,elapsed);
+        }
+        void RecordUserAudit(Request req,int code,string ip){
+            if(req==null||!(req.Method=="POST"||req.Path=="/audit"||req.Path=="/ui/audit"))return;
+            string action=knownRoutes.Contains(req.Path)?req.Method+" "+req.Path:req.Method+" unknown route";
+            if(req.Path=="/ui/audit"&&code<400)return; // Avoid recording every successful pagination or refresh.
+            string result=req.AuditResult??(code>=500?"Error":code>=400||code==303?"Denied":"Success");
+            try{UserAudit.Write(req.AuditActor??"Unauthenticated",ip,action,code,result);}catch(Exception ex){Program.Log(ex);}
         }
         bool HostAllowed(string host){
             if(string.Equals(host,new Uri(running.Origin()).Authority,StringComparison.OrdinalIgnoreCase))return true;
@@ -152,7 +167,7 @@ namespace LinkScope {
                     if(!Config.Allowed(selected,allowed))Deny();return Reply.Json(monitor.Snapshot(selected));}
             }
             if(r.Header("Authorization")!=null)Deny();
-            if(r.Path!="/api/history"&&r.Path!="/ui/resource-history"&&r.Path!="/ui/alerts"&&r.Path!="/ui/alerts/history"&&r.Path!="/ui/alerts/search"&&r.Path!="/ui/logs/search"&&r.Query.Length>0)throw new HttpError(400,"Unexpected query string.");
+            if(r.Path!="/ui/audit"&&r.Path!="/ui/network-card-ack"&&r.Path!="/api/history"&&r.Path!="/ui/resource-history"&&r.Path!="/ui/alerts"&&r.Path!="/ui/alerts/history"&&r.Path!="/ui/alerts/search"&&r.Path!="/ui/logs/search"&&r.Query.Length>0)throw new HttpError(400,"Unexpected query string.");
             bool post=r.Method=="POST";
             if(post&&!string.Equals(r.Header("Origin"),(running.UseHttps?"https://":"http://")+r.Header("Host"),StringComparison.OrdinalIgnoreCase))Deny();
             if(post&&r.Path=="/auth/login"){
@@ -160,23 +175,32 @@ namespace LinkScope {
                 try{var input=Decode<LoginInput>(r);bool changeRequired;
                     bool local=IPAddress.IsLoopback(IPAddress.Parse(ip))&&IPAddress.IsLoopback(IPAddress.Parse(running.BindAddress));
                     string value=access.Login(input.user,input.password,input.newPassword,local,out changeRequired);
-                    if(changeRequired)return Reply.Json(new {changeRequired=true});
+                    if(changeRequired){r.AuditActor="admin";r.AuditResult="Password change required";return Reply.Json(new {changeRequired=true});}
                     if(value==null)throw new HttpError(401,"Sign-in failed. Check the username and password.");
-                    var response=Reply.Json(new {ok=true});response.Cookie=Cookie(value,false);return response;
+                    r.AuditActor="admin";var response=Reply.Json(new {ok=true});response.Cookie=Cookie(value,false);return response;
                 }finally{passwordWorkers.Release();}
             }
             Reply asset;
-            if(!post&&(r.Path=="/favicon.ico"||r.Path.StartsWith("/assets/",StringComparison.Ordinal))&&assets.TryGetValue(r.Path,out asset))return asset;
+            if(!post&&(r.Path=="/manifest.webmanifest"||r.Path=="/sw.js"||r.Path=="/favicon.ico"||r.Path.StartsWith("/assets/",StringComparison.Ordinal))&&assets.TryGetValue(r.Path,out asset))return asset;
             if(!post&&r.Path=="/login"){lock(mutation)return PageAsset("/login");}
             string rawCookie=r.Cookie(CookieName());var session=access.Find(rawCookie);
             if(post&&(session==null||!Access.Equal(session.Csrf,r.Header("X-CSRF-Token"))))Deny();
             lock(mutation){
+                if(!post&&r.Path=="/audit")return session!=null?PageAsset("/audit"):SignIn();
+                if(!post&&r.Path=="/ui/audit"){if(session==null)Deny();return Reply.Json(UserAudit.Search(r.Query));}
                 bool view=session!=null||(!settings.RequireLogin&&IPAddress.IsLoopback(IPAddress.Parse(ip)));
-                if(!post&&(r.Path=="/"||r.Path=="/system"||r.Path=="/settings"||r.Path=="/alerts"||r.Path=="/logs"||r.Path=="/ai")){
+                if(!post&&(r.Path=="/"||r.Path=="/system"||r.Path=="/integrity"||r.Path=="/settings"||r.Path=="/alerts"||r.Path=="/logs"||r.Path=="/ai")){
+                    if(r.Path=="/integrity"&&!view)return new Reply{Code=303,Location="/login#integrity",Bytes=new byte[0]};
                     if(r.Path=="/ai"&&session==null)return new Reply{Code=303,Location="/login#ai",Bytes=new byte[0]};
                     if(r.Path=="/logs"&&session==null)return new Reply{Code=303,Location="/login#logs",Bytes=new byte[0]};
                     if(r.Path=="/alerts"&&session==null)return new Reply{Code=303,Location="/login#alerts",Bytes=new byte[0]};
                     return (r.Path=="/settings"?session!=null:view)?PageAsset(r.Path):SignIn();
+                }
+                if(r.Path=="/ui/network-card-ack"&&view){
+                    if(post){var input=Decode<NetworkCardAckInput>(r);if(input==null||!running.Targets.Any(t=>t.Address==input.target)||!new[]{"loss","timeouts","all"}.Contains(input.metric)||r.Query.Length!=0)throw new HttpError(400,"Invalid acknowledgement.");NetworkCardAck.Acknowledge(input);return Reply.Json(new {ok=true});}
+                    var q=HttpUtility.ParseQueryString(r.Query);string ackTarget=q["target"];
+                    if(q.AllKeys.Any(k=>k!="target")||!running.Targets.Any(t=>t.Address==ackTarget))throw new HttpError(400,"Invalid target.");
+                    return Reply.Json(new {snapshot=NetworkCardAck.Snapshot(ackTarget,settings.NetworkCardHours),admin=session!=null,csrf=session==null?null:session.Csrf});
                 }
                 if(!post&&r.Path=="/ui/session")return Reply.Json(new {instanceId=instanceId,admin=session!=null,csrf=session==null?null:session.Csrf,brandLabel=settings.BrandLabel});
                 if(!post&&r.Path=="/ui/alerts"&&view){
@@ -194,20 +218,22 @@ namespace LinkScope {
                 }
                 if(!post&&r.Path=="/ui/report-system"&&view){
                     if(session==null&&settings.ExtraCategories.Length>0)throw new HttpError(403,"Sign in to export the complete configured inventory.");
-                    return Reply.Json(monitor.ReportSnapshot(settings.Categories()));
+                    return Reply.Json(monitor.ReportSnapshot(settings.Categories().Where(x=>x!="data_integrity"||settings.Integrity.Enabled)));
                 }
+                if(!post&&r.Path=="/ui/integrity"&&view)return Reply.Json(monitor.Snapshot(new[]{"data_integrity"}));
                 if(!post&&r.Path=="/ui/system"&&view)return Reply.Json(monitor.Snapshot(session!=null?settings.Categories():Config.Core));
                 if(!post&&((r.Path=="/api/history"||r.Path=="/ui/resource-history")&&view||(r.Path=="/ui/alerts/search"||r.Path=="/ui/logs/search"||r.Path=="/ui/logs/summary")&&session!=null)){} // History reads run outside the settings lock.
                 else if(session==null)throw new HttpError(401,"Sign in required.");
                 else if(post&&r.Path=="/auth/logout"){ai.Clear(session);access.Logout(rawCookie);var res=Reply.Json(new {ok=true});res.Cookie=Cookie("",true);return res;}
-                else if(!post&&r.Path=="/ui/report")return Reply.Json(new {now=History.Now(),targets=running.Targets.Select(t=>settings.Targets.FirstOrDefault(x=>x.Address==t.Address)??t).ToArray(),probeAlertCount=settings.ProbeAlertCount,windows=monitor.ReportSnapshot(settings.Categories()),aiVerdict=ai.ReportVerdict(settings.Ai)});
+                else if(!post&&r.Path=="/ui/report")return Reply.Json(new {now=History.Now(),targets=running.Targets.Select(t=>settings.Targets.FirstOrDefault(x=>x.Address==t.Address)??t).ToArray(),probeAlertCount=settings.ProbeAlertCount,windows=monitor.ReportSnapshot(settings.Categories().Where(x=>x!="data_integrity"||settings.Integrity.Enabled)),aiVerdict=ai.ReportVerdict(settings.Ai)});
                 else if(!post&&r.Path=="/ui/connections")return Reply.Json(NativeConnections.Snapshot());
                 else if(!post&&r.Path=="/ui/ai")return Reply.Json(ai.Info(settings.Ai));
                 else if(!post&&r.Path=="/ui/ai/result")return Reply.Json(ai.Result(session));
                 else if(post&&r.Path=="/ui/ai/ask"){var cfg=settings;return Reply.Json(ai.Start(session,Decode<AiQuestion>(r),cfg.Ai,()=>AiEvidence.Collect(monitor,running,cfg,()=>outputs.State())));}
                 else if(post&&r.Path=="/ui/ai/cancel"){ai.Cancel(session);return Reply.Json(new {ok=true});}
                 else if(post&&r.Path=="/ui/ai/clear"){ai.Clear(session);return Reply.Json(new {ok=true});}
-                else if(!post&&r.Path=="/ui/settings")return Reply.Json(new {config=settings.PublicCopy(),databaseMaintenanceStatus=databaseMaintenance.State(),telemetryExportStatus=telemetryExport.State(),telemetryExportCategories=TelemetryExportSettings.All(),restartRequired=RestartNeeded(settings),canRestart=Program.ServiceMode,nextOrigin=settings.Origin(),seqKeyStored=!string.IsNullOrEmpty(settings.Siem.Seq.ProtectedKey),elasticKeyStored=!string.IsNullOrEmpty(settings.Siem.Elastic.ProtectedKey),aiKeyStored=settings.Ai.Profiles.ToDictionary(x=>x.Key,x=>!string.IsNullOrEmpty(x.Value.ProtectedKey)),smtpPasswordStored=!string.IsNullOrEmpty(settings.Delivery.ProtectedPassword),defaultJsonDirectory=Path.Combine(Config.Data,"active-alerts"),outputStatus=outputs.State(),logStatus=AppJournal.Current.State(),core=Config.Core,extras=Config.Extras,channels=Config.Channels,tokens=access.List(),activeOrigin=running.Origin()});
+                else if(!post&&r.Path=="/ui/settings")return Reply.Json(new {config=settings.PublicCopy(),clientIp=ip,databaseMaintenanceStatus=databaseMaintenance.State(),telemetryExportStatus=telemetryExport.State(),telemetryExportCategories=TelemetryExportSettings.All(),restartRequired=RestartNeeded(settings),canRestart=Program.ServiceMode,nextOrigin=settings.Origin(),seqKeyStored=!string.IsNullOrEmpty(settings.Siem.Seq.ProtectedKey),elasticKeyStored=!string.IsNullOrEmpty(settings.Siem.Elastic.ProtectedKey),aiKeyStored=settings.Ai.Profiles.ToDictionary(x=>x.Key,x=>!string.IsNullOrEmpty(x.Value.ProtectedKey)),smtpPasswordStored=!string.IsNullOrEmpty(settings.Delivery.ProtectedPassword),defaultJsonDirectory=Path.Combine(Config.Data,"active-alerts"),outputStatus=outputs.State(),logStatus=AppJournal.Current.State(),core=Config.Core,extras=Config.Extras,channels=Config.Channels,tokens=access.List(),activeOrigin=running.Origin()});
+                else if(post&&r.Path=="/ui/integrity-scan"){if(!settings.Integrity.Enabled)throw new HttpError(409,"Enable and save integrity monitoring first.");monitor.ScanIntegrityNow();return Reply.Json(new {accepted=true});}
                 else if(post&&r.Path=="/ui/settings"){
                     var next=Decode<Config>(r);
                     next.Delivery=SubmittedDelivery(r,false);
@@ -215,9 +241,19 @@ namespace LinkScope {
                     next.Logging=Decode<LogSettingsInput>(r).Logging??settings.Logging;
                     next.Siem=SiemSettings.Merge(settings.Siem,Decode<SiemEdit>(r));
                     Config.Validate(next);
+                    if(!ClientFirewall.Allows(ip,next.AllowedClientIPs))throw new HttpError(400,"The firewall allowlist must retain your current client IP. Edit it from an allowed local connection or the configuration file.");
                     if(next.UseHttps)using(Certificate(next)){}
+                    bool integrityChanged=Config.Json().Serialize(settings.Integrity)!=Config.Json().Serialize(next.Integrity);
+                    string integrityAudit=null;
+                    if(integrityChanged){
+                        var edit=Decode<IntegrityEdit>(r);string reason=(edit.IntegrityReason??"").Trim();
+                        if(reason.Length<5||reason.Length>300||reason.Any(char.IsControl))throw new HttpError(400,"Enter a reason (5–300 characters) for the integrity policy change.");
+                        monitor.AuthorizeIntegrity(settings.Integrity,next.Integrity);
+                        integrityAudit="Integrity policy changed: "+reason+" | Previous: "+Config.Json().Serialize(settings.Integrity)+" | New: "+Config.Json().Serialize(next.Integrity);
+                    }
                     outputs.Set(next.Delivery,delegate{Config.Save(Config.FilePath,next);});if(Config.Json().Serialize(settings.Ai)!=Config.Json().Serialize(next.Ai))ai.Reset();settings=next;AppJournal.Current.Configure(next.Logging,next.Siem,next.DatabaseMaintenance);
                     collector.AlertRules=next;monitor.Update(next);telemetryExport.Update(next);databaseMaintenance.Update(next.DatabaseMaintenance);alerts.Trim(next.Categories().Concat(new[]{"network"}).ToArray());
+                    if(integrityAudit!=null)try{UserAudit.Write("admin",ip,integrityAudit,200,"Success");}catch(Exception ex){AppJournal.Fault("Integrity","audit",ex);}
                     bool restart=RestartNeeded(next);
                     return Reply.Json(new {ok=true,restartRequired=restart,nextOrigin=next.Origin()});
                 }

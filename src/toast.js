@@ -5,27 +5,35 @@
     const id=k=>document.getElementById(k), toasts=new Map(), entries=new Map();
     const onHistory=document.body.dataset.page==='alerts';
     let csrf='',admin=false,pending=false,again=false,nextPoll,through=null,historyVersion=0,historyPage=1,historySize=25;
-    let cursor=null,guestReads=[],guestSeen=[];
+    let cursor=null,guestReads=[],guestSeen=[],unreadCount=0;
+    const readSignal='linkscope.alert-read-change';
     function stored(store,key,fallback){try{return JSON.parse(store.getItem(key))??fallback;}catch{return fallback;}}
     function keep(store,key,value){try{store.setItem(key,JSON.stringify(value));}catch{}}
     function rememberGuest(){keep(localStorage,'linkscope.read-alerts.v1',guestReads.slice(-512));keep(sessionStorage,'ls-guest-seen',guestSeen.slice(-512));}
-    const region=el('aside');region.id='linkscope-toasts';region.setAttribute('aria-label','Notifications');document.body.append(region);
+    const region=el('div');region.id='linkscope-toasts';region.setAttribute('role','region');region.setAttribute('aria-label','Notifications');document.body.append(region);
+    const header=document.querySelector('body > header');
+    function positionToasts(){const bottom=header?header.getBoundingClientRect().bottom:0;region.style.setProperty('--ls-toast-top',Math.min(Math.max(16,Math.ceil(bottom)+12),Math.max(16,window.innerHeight-180))+'px');}
+    positionToasts();window.addEventListener('resize',positionToasts);window.addEventListener('scroll',positionToasts,{passive:true});
+    if(header&&typeof ResizeObserver!=='undefined')new ResizeObserver(positionToasts).observe(header);
     function dismiss(key){
         const item=toasts.get(key);if(!item)return;
-        clearTimeout(item.timer);item.node.remove();toasts.delete(key);
+        clearTimeout(item.timer);toasts.delete(key);item.node.remove();
     }
     function show(key,severity,title,message,alert){
-        dismiss(key);
+        if(toasts.has(key))return;
         const node=el('article');node.className='ls-toast ls-'+severity;
         const body=el('div');body.setAttribute('role',severity==='critical'||severity==='error'?'alert':'status');body.append(el('strong',title),el('p',message));node.append(body);
+        const actions=el('div');actions.className='ls-toast-actions';
         if(alert){
-            const actions=el('div');actions.className='ls-toast-actions';
-            const button=el('button','Mark as read');button.type='button';button.onclick=()=>ack(alert).catch(feedback);
-            const link=el('a','View details');link.href=alert.category==='network'?'/':'/system#category-'+encodeURIComponent(alert.category);
-            link.onclick=async e=>{e.preventDefault();try{await ack(alert);location.assign(link.href);}catch(ex){feedback(ex);}};
-            body.onclick=()=>ack(alert).catch(feedback);actions.append(button,link);node.append(actions);
+            const button=el('button','Mark as read');button.type='button';button.onclick=async()=>{button.disabled=true;try{await ack(alert);}catch(ex){dismiss(key);feedback(ex);}finally{button.disabled=false;}};
+            const link=el('a','View details');link.href=alert.category==='network'?'/':alert.category==='data_integrity'?'/integrity':'/system#category-'+encodeURIComponent(alert.category);
+            link.onclick=async e=>{e.preventDefault();try{await ack(alert);location.assign(link.href);}catch(ex){dismiss(key);feedback(ex);}};
+            actions.append(button,link);
         }
-        region.append(node);toasts.set(key,{node,timer:setTimeout(()=>dismiss(key),5000)});
+        const close=el('button',alert?'Close without marking read':'Dismiss');close.type='button';close.onclick=()=>dismiss(key);actions.append(close);node.append(actions);
+        const item={node,alertSequence:alert?.sequence,timer:null};toasts.set(key,item);region.prepend(node);
+        // Expire every toast after seven seconds without acknowledging the alert.
+        item.timer=setTimeout(()=>dismiss(key),7000);
     }
     function feedback(e){if(onHistory)id('history-status').textContent=e.message;show('feedback','error','Action failed',e.message);}
     async function json(path,body){
@@ -50,7 +58,7 @@
     tools.append(bell,account);document.querySelector('header > div').append(tools);
     document.addEventListener('pointerdown',e=>{if(!account.contains(e.target))account.open=false;});
     account.onkeydown=e=>{if(e.key==='Escape'){account.open=false;summary.focus();}};
-    function badgeCount(n){badge.hidden=n===0;badge.textContent=n>99?'99+':String(n);bell.setAttribute('aria-label','Alert history, '+n+' unread');}
+    function badgeCount(n){unreadCount=Math.max(0,Number(n)||0);badge.hidden=unreadCount===0;badge.textContent=unreadCount>99?'99+':String(unreadCount);bell.title=unreadCount+' unread monitoring alerts';bell.setAttribute('aria-label','Alert history, '+unreadCount+' unread');}
     badgeCount(0);
     function session(s){admin=s.admin;csrf=s.csrf||'';login.hidden=admin;logoff.hidden=!admin;brand(s.brandLabel);}
     logoff.onclick=async()=>{try{await LinkScopeBusy.run('Signing out…',()=>json('/auth/logout',{}));keep(sessionStorage,'ls-notice-cursor',null);location.assign('/login');}catch(e){feedback(e);}};
@@ -58,7 +66,7 @@
     async function ack(a){
         if(admin){await LinkScopeBusy.run('Marking alert as read…',()=>json('/ui/alerts/read',{id:a.id}));markRow(a.id);if(onHistory)await history(historyPage,false);}
         else if(!guestReads.includes(a.id)){guestReads.push(a.id);rememberGuest();}
-        dismiss(a.id);poll();
+        dismiss(a.id);keep(localStorage,readSignal,{id:a.id,at:Date.now()});poll();
     }
     function addRow(a){
         const node=el('tr');node.className=a.read?'':'unread';node.dataset.seq=a.sequence;
@@ -115,15 +123,17 @@
         id('read-all').onclick=async()=>{const btn=id('read-all');btn.disabled=true;const cutoff=through;
             try{await LinkScopeBusy.run('Marking alerts as read…',()=>json('/ui/alerts/read-all',{through:cutoff}));
                 for(const [key,item] of toasts)if(item.alertSequence<=cutoff)dismiss(key);
-                await history(historyPage,false);poll();
+                await history(historyPage,false);keep(localStorage,readSignal,{through:cutoff,at:Date.now()});poll();
             }catch(e){btn.disabled=false;feedback(e);}};
     }
     function processFeed(s){
         session(s);const f=s.feed;
         if(admin){
             for(const a of f.alerts){
-                show(a.id,a.severity,(a.resolved?'Resolved · ':'')+a.title,a.message,a);toasts.get(a.id).alertSequence=a.sequence;
+                if(a.read)continue;
+                show(a.id,a.severity,(a.resolved?'Resolved · ':'')+a.title,a.message,a);
             }
+            if(f.unread===0)for(const [key,item] of toasts)if(item.alertSequence!=null)dismiss(key);
             cursor=f.cursor;keep(sessionStorage,'ls-notice-cursor',cursor);badgeCount(f.unread);
             if(onHistory){id('history-count').textContent=f.unread+' unread across all alerts';id('read-all').disabled=f.unread===0||!through;
                 if(through!=null&&f.cursor>through)id('history-status').textContent='New alerts are available. Select Refresh to see them.';}
@@ -139,8 +149,10 @@
         pending=true;clearTimeout(nextPoll);let more=false;
         try{more=processFeed(await json('/ui/alerts'+(admin&&cursor!=null?'?after='+cursor:'')));dismiss('connection');}
         catch(e){if(!document.hidden)show('connection','warning','Notification connection unavailable',e.message);}
-        finally{pending=false;nextPoll=setTimeout(poll,more||again?0:15000);again=false;}
+        finally{pending=false;nextPoll=setTimeout(poll,more||again?0:5000);again=false;}
     }
+    window.addEventListener('storage',e=>{if(e.key===readSignal){try{const change=JSON.parse(e.newValue);if(change?.id)dismiss(change.id);if(change?.through!=null)for(const [key,item] of toasts)if(item.alertSequence!=null&&item.alertSequence<=change.through)dismiss(key);}catch{}if(!admin)guestReads=stored(localStorage,'linkscope.read-alerts.v1',[]);poll();}});
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll();});
     (async()=>{try{session(await json('/ui/session'));cursor=admin?stored(sessionStorage,'ls-notice-cursor',null):null;
         if(onHistory)await history(1,true);
     }catch(e){feedback(e);}poll();})();

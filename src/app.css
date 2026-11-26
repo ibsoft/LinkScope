@@ -15,3 +15,51 @@
 .ls-confirm-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
 .ls-confirm-dialog .ls-confirm-danger{background:#b42318;color:#fff}
 .ls-confirm-dialog .ls-confirm-danger:hover{background:#912018}
+
+/* System health badges and search */
+.health-badge{display:inline-block;border:1px solid transparent;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:700;line-height:1.55;overflow-wrap:anywhere;vertical-align:middle}
+.health-badge.ok{background:#dcfce7;color:#166534;border-color:#86efac}.health-badge.review{background:#fef3c7;color:#92400e;border-color:#fcd34d}.health-badge.fail{background:#fee2e2;color:#991b1b;border-color:#fca5a5}.health-badge.unknown{background:#e5e7eb;color:#374151;border-color:#cbd5e1}.health-badge.info{background:#dbeafe;color:#1e40af;border-color:#93c5fd}
+.health-alert.fail{background:#fee2e2;color:#991b1b;border-color:#b91c1c}.health-table-search{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:10px 0}.health-table-search input[type=search]{flex:1 1 220px;width:auto;min-width:0;margin:0}.health-search-count,#health-category-count{font-size:13px;color:var(--muted)}.health-legend{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}.health-search-panel h2{margin-bottom:6px}body[data-page=system] summary .health-badge{margin-left:5px}
+
+/* Wider System Health workspace and severity-aware cards */
+body[data-page=system] header>div,body[data-page=system] main{max-width:1440px}
+body[data-page=system] .cards{grid-template-columns:repeat(auto-fit,minmax(min(100%,205px),1fr));align-items:stretch}
+
+/* Shared severity token set */
+.health-metric-card,.health-category-card{border:1px solid var(--metric-border);border-left:5px solid var(--metric-accent);background:var(--metric-bg);color:var(--metric-ink);transition:background-color .2s,border-color .2s;min-width:0}
+.health-metric-card.ok,.health-category-card.ok{--metric-bg:#ecfdf3;--metric-border:#86d9a4;--metric-accent:#16a34a;--metric-ink:#14532d}
+.health-metric-card.review,.health-category-card.review{--metric-bg:#fffbeb;--metric-border:#f4cb65;--metric-accent:#d97706;--metric-ink:#78350f}
+.health-metric-card.fail,.health-category-card.fail{--metric-bg:#fef2f2;--metric-border:#f5a3a3;--metric-accent:#dc2626;--metric-ink:#991b1b}
+.health-metric-card.unknown,.health-category-card.unknown{--metric-bg:#f1f5f9;--metric-border:#cbd5e1;--metric-accent:#64748b;--metric-ink:#475569}
+.health-metric-heading,.health-category-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:7px}
+.health-metric-card .metric{color:var(--metric-ink);margin-bottom:8px}
+.health-metric-alert-detail,.health-category-alert-detail{display:block;color:var(--metric-ink);margin-top:8px;overflow-wrap:anywhere}
+.health-category-card>summary{list-style:none;color:var(--metric-ink)}
+.health-category-card>summary::-webkit-details-marker{display:none}
+.health-category-card>summary .health-badge{margin-left:0}
+.health-category-card h3,.health-category-card p,.health-category-card small{color:inherit}
+.health-category-card table th{background:rgba(255,255,255,.55)}
+.health-category-card table td,.health-category-card table th{border-bottom-color:rgba(21,53,64,.12)}
+@media (max-width:1360px){body[data-page=system] .cards{grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr))}}
+
+/* Login workspace — scoped to the unauthenticated page */
+body[data-page=login]{min-height:100vh;display:flex;flex-direction:column;background:radial-gradient(ellipse at 12% 12%,#214a56 0,transparent 45%),radial-gradient(ellipse at 90% 90%,#123d43 0,transparent 50%),#0b202b;color:#e8f4f2}
+body[data-page=login] .login-shell{flex:1;display:grid;place-items:center;width:100%;max-width:1160px;padding:40px 24px;margin:auto}
+.login-layout{display:grid;grid-template-columns:1.12fr 1fr;width:100%;max-width:990px;overflow:hidden;border:1px solid #46636b;border-radius:24px;box-shadow:0 28px 90px #0006;background:#12333e}
+.login-intro{position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:center;padding:48px;color:#e8f4f2;background:linear-gradient(145deg,#153e4b,#102c38 70%)}
+.login-brand{display:flex;align-items:center;gap:13px;font-size:25px;letter-spacing:-.7px;overflow-wrap:anywhere}.login-brand img{flex:none;object-fit:contain}.login-kicker{font-size:11px;font-weight:700;letter-spacing:2px;color:#91dcca;margin-top:36px}.login-intro h2{font-size:clamp(38px,4.8vw,62px);line-height:1.04;letter-spacing:-2px;margin:16px 0 20px}.login-intro h2 span{color:#76d6bd}.login-intro p{color:#b9d0d3;max-width:370px}.login-features{display:grid;gap:13px;margin:22px 0 36px;font-size:13px;color:#d4e6e4}.login-features div{display:flex;align-items:center;gap:12px}.login-features span{font:600 12px Consolas,monospace;color:#8dddc7;border:1px solid #527a7e;border-radius:7px;padding:5px 7px}.login-decoration{color:#73d5b9;opacity:.38;position:absolute;bottom:0;left:0;width:100%;pointer-events:none}.login-decoration svg{display:block;width:100%}
+body[data-page=login] .login{max-width:none;width:100%;margin:0;border:0;border-radius:0;padding:48px 42px;display:flex;flex-direction:column;justify-content:center;background:#fff;color:#153540}.login-access{font-size:10px;letter-spacing:1.4px;font-weight:750;color:#0a655d;margin-bottom:18px}.login-access span{color:#0a9278;margin-right:6px}.login h1{font-size:36px;line-height:1.15;letter-spacing:-1.4px}.login-subtitle{margin:12px 0 25px}.login .field{margin:15px 0;font-size:13px}.login .field input{margin-top:8px;padding:13px 14px;border:1px solid #b5c7ca;border-radius:9px;background:#f7faf9;font-size:15px}.login .field input:focus{background:white}.login #signInButton{width:100%;padding:14px;margin-top:18px;border-radius:9px;background:linear-gradient(110deg,#086b62,#087e70);font-size:15px;box-shadow:0 6px 16px #0a655d24}.login #signInButton:hover:not(:disabled){background:#075b53}.login #signInButton:disabled{opacity:.7;cursor:wait}.login fieldset{min-width:0;border:1px solid #cbdad9;border-radius:10px;margin:18px 0 0;padding:14px}.login legend{font-weight:650;color:#0a655d}.login fieldset p{font-size:13px}.login-restricted{margin:24px 0 0;text-align:center;font-size:12px;color:#64777d}.login-footer{padding:18px 24px 24px;text-align:center;font-size:12px;letter-spacing:.4px;color:#b8ced1}
+@media(max-width:760px){body[data-page=login] .login-shell{padding:24px 16px}.login-layout{grid-template-columns:1fr;max-width:480px;border-radius:18px}.login-intro{padding:24px}.login-intro h2,.login-intro p,.login-features,.login-decoration{display:none}.login-kicker{margin-top:12px;font-size:10px}.login-brand{font-size:22px}.login-brand img{width:38px;height:38px}body[data-page=login] .login{padding:30px 24px}.login h1{font-size:30px}}
+
+/* Integrity uses the same metric cards and shared controls as System Health. */
+body[data-page=integrity] .integrity-metrics{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:14px 0;align-items:stretch}
+.integrity-metrics .health-metric-card{display:flex;flex-direction:column;min-width:0;margin:0}
+.integrity-metrics .health-metric-card .metric{overflow-wrap:anywhere}
+.integrity-metrics .health-metric-card>.health-badge{align-self:flex-start;margin-top:auto}
+.integrity-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0}
+.integrity-chain-detail{overflow-wrap:anywhere}
+@media(max-width:950px){body[data-page=integrity] .integrity-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:480px){body[data-page=integrity] .integrity-metrics{grid-template-columns:1fr}}
+
+body[data-page=integrity] header>div,body[data-page=integrity] main{max-width:1440px}
+body[data-page=integrity] .health-category-heading{font-size:16px}

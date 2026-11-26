@@ -9,6 +9,37 @@ function labelTime(t){
 }
 function warning(text){$('warn').textContent=text;$('warn').hidden=!text;}
 function row(cells){const tr=document.createElement('tr');for(const value of cells){const td=document.createElement('td');td.textContent=value;tr.append(td);}return tr;}
+function tileState(kind,label){
+ const k=['ok','review','fail','unknown'].includes(kind)?kind:'unknown';
+ return {kind:k,label:label||({ok:'No active alerts',review:'Warning',fail:'Critical / Error',unknown:'Data unavailable'})[k]};
+}
+function setTile(id,state){
+ const tile=$('tile-'+id),badge=$('tile-'+id+'-status');
+ tile.className='tile metric-tile '+state.kind;
+ badge.textContent=state.label;
+}
+let ackModel=null,ackPending=null,ackBusy=false;
+function resetAck(){ackModel=null;$('loss').textContent='—';$('timeouts').textContent='—';$('lost').textContent='New loss unavailable';$('timeouts-detail').textContent='New timeouts unavailable';for(const m of ['loss','timeouts']){$('ack-'+m).disabled=true;$('ack-'+m+'-detail').textContent='Loading acknowledgement status…';} $('ack-all').disabled=true;}
+function renderAck(model,d){
+ const snap=model.snapshot,last=d.latest,stale=!!last&&d.now-last[0]>Math.max(3*d.interval,15),failed=!!last&&last[1]!=='Success';
+ const historical=summarizeMetrics(d.points);
+ for(const item of snap.items){const m=item.metric,n=Number(item.unacknowledged),sent=Number(item.probesSinceAck);
+  if(m==='loss'){
+   $('loss').textContent=sent>0?(100*n/sent).toFixed(2):item.acknowledgedAt?'0.00':'—';
+   $('lost').textContent=fmt(n)+' new lost packets / '+fmt(sent)+' probes'+(sent===0&&item.acknowledgedAt?' · Awaiting new probes':'');
+  }else{
+   $('timeouts').textContent=last?fmt(n):'—';
+   $('timeouts-detail').textContent=fmt(n)+' new timeouts';
+  }
+  const historyText=m==='loss'?'Historical: '+fmt(historical.lost)+' lost · '+(historical.sent?(100*historical.lost/historical.sent).toFixed(2)+'%':'—'):'Historical: '+fmt(historical.to)+' timeouts';
+  const state=!last?tileState('unknown','Awaiting data'):stale?tileState('review','Stale data'):failed||snap.failing?tileState('fail','Active probe failure'):m==='loss'&&snap.lossAlert?tileState('review','Active loss alert'):n>0?tileState('review',n+' new'):tileState('ok',item.acknowledgedAt?'Acknowledged':'No new failures');
+  setTile(m,state);$('ack-'+m+'-detail').textContent=historyText+' · '+ranges[period]+' · New counter window: '+snap.hours+'h'+(item.acknowledgedAt?' · Acknowledged '+local(item.acknowledgedAt):'');
+  $('ack-'+m).disabled=ackBusy||!model.admin||!n;
+ } $('ack-all').disabled=ackBusy||!model.admin||!snap.items.some(x=>x.unacknowledged);$('ack-message').textContent=model.admin?'Acknowledgement resets card counters only. History and active alerts are unchanged.':'Sign in as administrator to acknowledge.';
+}
+for(const metric of ['loss','timeouts','all'])$('ack-'+metric).onclick=()=>{if(!ackModel||ackBusy)return;const snap=ackModel.snapshot;ackPending={target:snap.target,metric:metric,throughT:snap.throughT,throughRow:snap.throughRow};$('ack-confirm-text').textContent='Acknowledge '+(metric==='all'?'packet loss and timeouts':metric)+' for '+snap.target+'? Reset the displayed new counters. History and active alerts remain unchanged.';$('ack-modal').showModal();};
+$('ack-cancel').onclick=()=>$('ack-modal').close();
+$('ack-confirm').onclick=async()=>{const pending=ackPending,model=ackModel;$('ack-modal').close();if(!pending||!model||pending.target!==selected)return;ackBusy=true;renderAck(model,data);try{const res=await fetch('/ui/network-card-ack',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':model.csrf},body:JSON.stringify(pending)});if(!res.ok)throw Error('HTTP '+res.status);await refresh();}catch(e){ackBusy=false;if(ackModel&&data)renderAck(ackModel,data);$('ack-message').textContent='Acknowledgement failed: '+e.message;return;}finally{ackBusy=false;}if(ackModel&&data)renderAck(ackModel,data);};
 function render(d){
  const list=$('target'),ip=selected||d.targets[0].Address;
  list.replaceChildren(...d.targets.map(t=>new Option(t.Name+' · '+t.Address,t.Address)));list.value=ip;list.disabled=false;selected=ip;
@@ -19,10 +50,22 @@ function render(d){
  else{state=last[1]==='Success'?'Reachable':last[1]==='TimedOut'?'Timed out':'Probe failed';kind=last[1]==='Success'?'ok':'bad';}}
  $('state').className='pill '+kind;$('state').textContent=state;
  const {ok,lost,to,err,sum,lo,hi,sent}=summarizeMetrics(d.points);
+ const avgRtt=ok?sum/ok:null,lossPct=sent?100*lost/sent:null,stale=!!last&&d.now-last[0]>Math.max(3*d.interval,15),latestStatus=last?String(last[1]||''):'',latestRtt=last&&last[2]!=null?Number(last[2]):null;
+ const rttThreshold=t?.HighRttMs??null,lossThreshold=t?.LossPercent??null;
  
- $('rtt').textContent=fmt(ok?sum/ok:null,2);$('extreme').textContent=lo==null?'No successful replies':fmt(lo)+'–'+fmt(hi)+' ms range';
- $('loss').textContent=fmt(sent?100*lost/sent:null,3);$('lost').textContent=fmt(lost)+' of '+fmt(sent)+' probes';
- $('timeouts').textContent=fmt(d.points.length?to:null);$('replies').textContent=fmt(d.points.length?ok:null);$('errors').textContent=fmt(err)+' probe errors excluded from loss';
+ $('rtt').textContent=fmt(avgRtt,2);$('extreme').textContent=lo==null?'No successful replies':fmt(lo)+'–'+fmt(hi)+' ms range';
+ if(!ackModel){$('loss').textContent='—';$('lost').textContent='Loading new loss…';}
+ if(!ackModel)$('timeouts').textContent='—';$('replies').textContent=fmt(d.points.length?ok:null);$('errors').textContent=fmt(err)+' probe errors excluded from loss';if(!ackModel)$('timeouts-detail').textContent='Loading new timeouts…';
+ if(!last){setTile('rtt',tileState('unknown','Awaiting data'));setTile('loss',tileState('unknown','Awaiting data'));setTile('timeouts',tileState('unknown','Awaiting data'));setTile('replies',tileState('unknown','Awaiting data'));}
+ else if(stale){setTile('rtt',tileState('review','Stale data'));setTile('loss',tileState('review','Stale data'));setTile('timeouts',tileState('review','Stale data'));setTile('replies',tileState('review','Stale data'));}
+ else{
+   setTile('rtt', latestStatus!=='Success' ? tileState('fail','Probe failed') : (rttThreshold!=null && avgRtt!=null && avgRtt>=rttThreshold ? tileState('review','High latency') : tileState('ok','No active alerts')));
+   setTile('loss', latestStatus!=='Success' && sent>0 && lost===sent ? tileState('fail','Connection lost') : (lossThreshold!=null && lossPct!=null && lossPct>=lossThreshold ? tileState('review','High loss') : ((lossPct||0)>0 ? tileState('review','Loss observed') : tileState('ok','No active alerts'))));
+   setTile('timeouts', latestStatus==='TimedOut' ? tileState('fail','Timed out') : (latestStatus!=='Success' ? tileState('fail','Probe failed') : (to>0 ? tileState('review','Timeouts observed') : tileState('ok','No active alerts'))));
+   setTile('replies', latestStatus!=='Success' && ok===0 ? tileState('fail','No replies') : (err>0 ? tileState('review','Local probe errors') : (ok>0 ? tileState('ok','No active alerts') : tileState('unknown','Awaiting data'))));
+ }
+ if(rttThreshold!=null&&latestStatus==='Success'&&latestRtt!=null&&latestRtt>=rttThreshold)$('extreme').textContent+=' · Threshold '+fmt(rttThreshold,2)+' ms';
+
  $('nic').textContent=(d.nic||'Waiting for adapter counters')+' · Mbps';
  $('coverage').textContent=fmt(d.points.length)+' of '+fmt((d.end-d.start)/d.step)+' intervals observed · '+(d.step<3600?d.step/60+' min':d.step/3600+' h')+' per interval';
  $('zone').textContent='Display time · '+Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -35,13 +78,14 @@ async function refresh(foreground=false){
  const token=++sequence;clearTimeout(timer);
  try{const q=new URLSearchParams({range:period});if(selected)q.set('target',selected);
  const res=await fetch('/api/history?'+q,{cache:'no-store'});if(res.status===401){location.assign('/login');return;}if(!res.ok)throw Error('HTTP '+res.status);
- const d=await res.json();if(token!==sequence)return;data=d;render(d);}
- catch(e){if(token!==sequence)return;$('updated').textContent='Update failed';$('state').textContent='Offline';$('state').className='pill bad';warning('Dashboard update failed ('+e.message+'). Retrying in 5 seconds.');}
+ const d=await res.json();if(token!==sequence)return;data=d;networkGraphError=false;render(d);if(ackModel?.snapshot.target===d.target)renderAck(ackModel,d);
+ try{const a=await fetch('/ui/network-card-ack?'+new URLSearchParams({target:d.target}),{cache:'no-store'});if(!a.ok)throw Error('HTTP '+a.status);const model=await a.json();if(token!==sequence)return;ackModel=model;renderAck(model,d);}catch(e){if(token!==sequence)return;resetAck();for(const m of ['loss','timeouts'])if(d.latest?.[1]==='Success')setTile(m,tileState('unknown','Status unavailable'));$('ack-message').textContent='Acknowledgement status unavailable.';}}
+ catch(e){if(token!==sequence)return;networkGraphError=true;drawExpanded();resetAck();for(const m of ['loss','timeouts'])setTile(m,tileState('unknown','Update failed'));$('updated').textContent='Update failed';$('state').textContent='Offline';$('state').className='pill bad';warning('Dashboard update failed ('+e.message+'). Retrying in 5 seconds.');}
  finally{done?.();}
  if(token===sequence)timer=setTimeout(refresh,5000);
 }
 function selectView(change){
- change();data=null;$('name').textContent='Loading history…';$('state').className='pill';$('state').textContent='Loading';$('details').textContent='';
+ change();resetAck();data=null;$('name').textContent='Loading history…';$('state').className='pill';$('state').textContent='Loading';$('details').textContent='';
  for(const id of ['rtt','extreme','loss','lost','timeouts','replies','errors','nic','coverage'])$(id).textContent='—';
  $('events').replaceChildren();$('failure-summary').replaceChildren();$('failure-count').textContent='Loading history…';drawAll();refresh(true);
 }
@@ -53,8 +97,8 @@ function draw(id){
  const c=$(id),rect=c.getBoundingClientRect();
  drawChart(id,data,c,rect.width,rect.height,window.devicePixelRatio||1,labelTime,c.nextElementSibling);
 }
-const modal=$('network-modal'),expanded=$('network-modal-canvas');let expandedId=null,modalOpener=null;
-function drawExpanded(){if(!modal.open||!expandedId)return;const rect=expanded.getBoundingClientRect();$('network-modal-range').textContent=ranges[period]+' · '+(expandedId==='traffic'?$('nic').textContent:selected);drawChart(expandedId,data,expanded,rect.width,rect.height,window.devicePixelRatio||1,labelTime,expanded.nextElementSibling);}
+const modal=$('network-modal'),expanded=$('network-modal-canvas');let expandedId=null,modalOpener=null,networkGraphError=false;
+function drawExpanded(){if(!modal.open||!expandedId)return;const rect=expanded.getBoundingClientRect();$('network-modal-range').textContent=ranges[period]+' · '+(expandedId==='traffic'?$('nic').textContent:selected)+' · '+(networkGraphError?'Update failed — last snapshot':data?'Live · refreshed '+new Date(data.now*1000).toLocaleTimeString()+' · every 5 s':'Waiting for data');drawChart(expandedId,data,expanded,rect.width,rect.height,window.devicePixelRatio||1,labelTime,expanded.nextElementSibling);}
 for(const id of views){const canvas=$(id),panel=canvas.closest('.panel'),heading=panel.querySelector('h2'),button=document.createElement('button');button.type='button';button.className='expand-chart';button.textContent='Expand ↗';button.setAttribute('aria-label','Expand '+heading.textContent);panel.querySelector('.panelhead').append(button);const open=()=>{if(modal.open)return;expandedId=id;modalOpener=document.activeElement;$('network-modal-title').textContent=heading.textContent;$('network-modal-legend').replaceChildren(...Array.from(panel.querySelector('.legend').children).map(x=>x.cloneNode(true)));modal.showModal();drawExpanded();$('network-modal-close').focus();};button.addEventListener('click',open);canvas.addEventListener('click',open);heading.addEventListener('click',open);heading.classList.add('clickable-chart');canvas.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open();}});}
 $('network-modal-close').onclick=()=>modal.close();modal.addEventListener('close',()=>{expandedId=null;modalOpener?.focus();});
 

@@ -233,7 +233,7 @@ const LinkScopeReport = (() => {
     async function addWindowsPages(doc,lib,regular,bold,health,sections,color,trends,history,manifest) {
         if(!health||!health.categories)throw Error('Windows health snapshot is missing');
         const ctx=document.createElement('canvas').getContext('2d');
-        const names={cpu:'CPU',ram:'RAM',disk_usage:'Disk usage',smart:'Disk health and SSD replacement',events:'Event logs - previous 24 hours',firewall:'Firewall profiles',antivirus:'Antivirus',security:'Security posture',event_details:'Event messages - previous 24 hours'};
+        const names={data_integrity:'Data Integrity & Tamper Detection',cpu:'CPU',ram:'RAM',disk_usage:'Disk usage',smart:'Disk health and SSD replacement',events:'Event logs - previous 24 hours',firewall:'Firewall profiles',antivirus:'Antivirus',security:'Security posture',event_details:'Event messages - previous 24 hours'};
         let page,y,sectionTitle='';
         function newPage(){
             page=doc.addPage([pageWidth,pageHeight]);y=64;

@@ -1,6 +1,7 @@
 {
   "BrandLabel": "",
   "BindAddress": "127.0.0.1",
+  "AllowedClientIPs": [],
   "Port": 9876,
   "IntervalSeconds": 5,
   "TimeoutMs": 1500,
@@ -32,6 +33,7 @@
   "RamAlertPercent": 90,
   "DiskAlertPercent": 90,
   "ProbeAlertCount": 3,
+  "NetworkCardHours": 24,
   "Delivery": {
     "EmailEnabled": false,
     "EmailRecovery": true,
@@ -112,5 +114,14 @@
     "Age": 1,
     "Unit": "years",
     "KeepLatestMonth": true
+  },
+  "Integrity": {
+    "Enabled": false,
+    "IntervalSeconds": 300,
+    "Recursive": true,
+    "WriteEvents": false,
+    "Paths": [],
+    "ExcludedPaths": [],
+    "ExcludedPatterns": []
   }
 }

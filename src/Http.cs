@@ -14,7 +14,7 @@ namespace LinkScope {
         internal readonly int Status;internal HttpError(int status,string message):base(message){Status=status;}
     }
     internal sealed class Request {
-        internal string Method,Path,Query,Body;
+        internal string Method,Path,Query,Body,AuditActor,AuditResult;
         internal readonly Dictionary<string,string> Headers=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);
         internal string Header(string key){string v;return Headers.TryGetValue(key,out v)?v:null;}
         internal string Cookie(string name){
@@ -61,7 +61,7 @@ namespace LinkScope {
             var reason=((HttpStatusCode)Code).ToString();
             var h=new StringBuilder("HTTP/1.1 ").Append(Code).Append(" ").Append(reason).Append("\r\nContent-Type: ").Append(Mime)
                 .Append("\r\nContent-Length: ").Append(Bytes.Length).Append("\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nX-Frame-Options: DENY\r\nCross-Origin-Resource-Policy: same-origin\r\nPermissions-Policy: camera=(), microphone=(), geolocation=()\r\n");
-            h.Append("Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; form-action 'self'; base-uri 'none'; object-src 'none'\r\n");
+            h.Append("Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; img-src 'self' data:; frame-ancestors 'none'; form-action 'self'; base-uri 'none'; object-src 'none'\r\n");
             if(tls)h.Append("Strict-Transport-Security: max-age=31536000\r\n");
             if(Location!=null)h.Append("Location: ").Append(Location).Append("\r\n");
             if(Cookie!=null)h.Append("Set-Cookie: ").Append(Cookie).Append("\r\n");

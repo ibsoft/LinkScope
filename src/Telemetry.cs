@@ -13,7 +13,12 @@ namespace LinkScope {
         Config cfg;
         readonly ManualResetEvent stop=new ManualResetEvent(false);
         readonly AutoResetEvent refresh=new AutoResetEvent(false),refreshExtra=new AutoResetEvent(false),refreshFast=new AutoResetEvent(false);
-        Thread fast,slow,extra;
+        Thread fast,slow,extra,integrityThread;
+        readonly FileIntegrity integrity=new FileIntegrity();
+        readonly AutoResetEvent integrityWake=new AutoResetEvent(false);
+        internal void ScanIntegrityNow(){integrityWake.Set();}
+        internal void AuthorizeIntegrity(IntegritySettings old,IntegritySettings next){integrity.Authorize(old,next);}
+        void IntegrityLoop(){while(!stop.WaitOne(0)){Config c;lock(gate)c=cfg;object result;try{result=integrity.Scan(c.Integrity,stop);}catch(OperationCanceledException){return;}lock(gate){if(ReferenceEquals(cfg,c)){values["data_integrity"]=result;times["data_integrity"]=History.Now();try{alerts.Sample("data_integrity",result,c);}catch(Exception ex){AppJournal.Fault("Integrity","alerts",ex);}}}WaitHandle.WaitAny(new WaitHandle[]{stop,integrityWake},c.Integrity.IntervalSeconds*1000);}}
         readonly Dictionary<string,object> values=new Dictionary<string,object>();
         readonly Dictionary<string,long> times=new Dictionary<string,long>();
         readonly string smartScript=Encoding.UTF8.GetString(Program.Resource("smart.ps1"));
@@ -28,15 +33,15 @@ namespace LinkScope {
             fast=new Thread(Fast){IsBackground=true,Name="LinkScope resource sampler"};
             slow=new Thread(delegate(){Slow(false);}){IsBackground=true,Name="LinkScope Windows health"};
             extra=new Thread(delegate(){Slow(true);}){IsBackground=true,Name="LinkScope optional inventory"};
-            fast.Start();slow.Start();extra.Start();
+            fast.Start();slow.Start();extra.Start();integrityThread=new Thread(IntegrityLoop){IsBackground=true,Name="LinkScope integrity scanner"};integrityThread.Start();
         }
-        internal void Update(Config c){lock(gate){cfg=c; foreach(var key in values.Keys.Except(c.CollectedCategories()).Concat(new[]{"smart","events","event_details"}).Distinct().ToArray()){values.Remove(key);times.Remove(key);}}refresh.Set();refreshExtra.Set();refreshFast.Set();}
+        internal void Update(Config c){lock(gate){cfg=c; foreach(var key in values.Keys.Except(c.CollectedCategories()).Concat(new[]{"smart","events","event_details"}).Distinct().ToArray()){values.Remove(key);times.Remove(key);}}refresh.Set();refreshExtra.Set();refreshFast.Set();integrityWake.Set();}
         internal object Snapshot(IEnumerable<string> names){return Snapshot(names,false);}
         internal object ReportSnapshot(IEnumerable<string> names){return Snapshot(names,true);}
         object Snapshot(IEnumerable<string> names,bool includeNetwork){lock(gate){
             var data=new Dictionary<string,object>();long now=History.Now();
-            foreach(var n in names){object value;if(!values.TryGetValue(n,out value)){data[n]=new {status="collecting"};continue;}
-                long age=now-times[n];long expected=(n=="cpu"||n=="ram"||n=="disk_usage")?cfg.ResourceSeconds:cfg.InventoryMinutes*60;
+            foreach(var n in names){if(n=="data_integrity"&&!cfg.Integrity.Enabled){data[n]=new {status="disabled",result=new {status="disabled",items=new object[0]}};continue;}object value;if(!values.TryGetValue(n,out value)){data[n]=new {status="collecting"};continue;}
+                long age=now-times[n];long expected=n=="data_integrity"?cfg.Integrity.IntervalSeconds:(n=="cpu"||n=="ram"||n=="disk_usage")?cfg.ResourceSeconds:cfg.InventoryMinutes*60;
                 data[n]=new {collectedUtc=Utc(times[n]),ageSeconds=age,stale=age>expected*2+60,result=value};}
             return new {schemaVersion=1,monitorHost=Environment.MachineName,generatedUtc=Utc(now),categories=data,alerts=alerts.List(includeNetwork?names.Concat(new[]{"network"}):names,false)};}}
         internal static string Utc(long seconds){return new DateTime(1970,1,1,0,0,0,DateTimeKind.Utc).AddSeconds(seconds).ToString("o");}
@@ -103,13 +108,13 @@ namespace LinkScope {
             }if(changed)Config.Save(notices,state);
         }
         void Slow(bool optional){var wake=optional?refreshExtra:refresh;while(!stop.WaitOne(0)){Config c;lock(gate)c=cfg;
-            foreach(var key in (optional?c.CollectedCategories().Intersect(Config.Extras).ToArray():Config.Core.Skip(3).ToArray())){if(stop.WaitOne(0))return;lock(gate)if(!ReferenceEquals(cfg,c))break;
+            foreach(var key in (optional?c.CollectedCategories().Intersect(Config.Extras).ToArray():Config.Core.Skip(3).Where(x=>x!="data_integrity").ToArray())){if(stop.WaitOne(0))return;lock(gate)if(!ReferenceEquals(cfg,c))break;
                 object value;try{value=key=="security"?SecurityPosture.Read():Run(key,c);}catch(Exception ex){AppJournal.Fault("Health",key,ex);value=Unavailable();}
                 lock(gate){if(!ReferenceEquals(cfg,c))break;values[key]=value;times[key]=History.Now();try{alerts.Sample(key,value,cfg);}catch(Exception ex){AppJournal.Fault("Alerts","evaluate",ex);}
                     if(key=="smart")try{Notify(value,c);}catch(Exception ex){AppJournal.Fault("SMART","notify",ex);}}
             }
             WaitHandle.WaitAny(new WaitHandle[]{stop,wake},c.InventoryMinutes*60000);
         }}
-        public void Dispose(){stop.Set();if(fast!=null)fast.Join();if(slow!=null)slow.Join();if(extra!=null)extra.Join();stop.Dispose();refresh.Dispose();refreshExtra.Dispose();refreshFast.Dispose();}
+        public void Dispose(){stop.Set();if(integrityThread!=null)integrityThread.Join();integrityWake.Dispose();if(fast!=null)fast.Join();if(slow!=null)slow.Join();if(extra!=null)extra.Join();stop.Dispose();refresh.Dispose();refreshExtra.Dispose();refreshFast.Dispose();}
     }
 }
