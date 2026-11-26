@@ -83,7 +83,7 @@ namespace LinkScope {
         internal object Run(string database){
             using(var db=new Sqlite(database,true)){
                 db.Exec("BEGIN");
-                long head=(long)db.Rows("SELECT COALESCE(MAX(seq),0) FROM alert_events")[0][0];
+                long head=(long)db.Rows("SELECT last_seq FROM alert_sequence WHERE singleton=1")[0][0];
                 long cutoff=Math.Min(through??head,head);
                 var filters=new List<string>(predicates){"seq<=?"};var args=new List<object>(values){cutoff};
                 string where=" FROM alert_events WHERE "+string.Join(" AND ",filters);

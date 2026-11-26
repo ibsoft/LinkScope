@@ -23,7 +23,7 @@ namespace LinkScope {
             var c=Config.Load();
             instance=new FileStream(Path.Combine(Config.Data,"collector.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
             try {
-                journal=new AppJournal(AppJournal.Filename,c.Logging,true,c.Siem);journal.Start();AppJournal.Current=journal;
+                journal=new AppJournal(AppJournal.Filename,c.Logging,true,c.Siem,c.DatabaseMaintenance);journal.Start();AppJournal.Current=journal;
                 AppJournal.Event(LogLevel.Info,"Service","start","Starting monitor.");
                 AppJournal.Event(LogLevel.Debug,"Settings","load","Configuration loaded.");
                 var alerts=new Alerts();

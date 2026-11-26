@@ -23,7 +23,7 @@ LinkScope is a Windows service that pings configured IP addresses, records packe
 
 ## Installation and first sign-in
 
-1. Use 64-bit Windows 10/11 or Windows Server 2019 or later with **.NET Framework 4.8**, the 64-bit Framework C# compiler, Windows PowerShell 5.1, Task Scheduler and Windows' built-in SQLite component (`winsqlite3.dll`). The offline setup builds the service from embedded source. The ZIP includes the installer, full source, a PowerShell API client and a verification script.
+1. Use 64-bit Windows 10/11 or Windows Server 2019 or later with **.NET Framework 4.8**, Windows PowerShell 5.1, Task Scheduler and Windows' built-in SQLite component (`winsqlite3.dll`). The offline setup extracts the compiled service embedded during the Windows build. The source ZIP includes the build scripts, full source, a PowerShell API client and a verification script.
 2. Extract the ZIP. Open **64-bit PowerShell as Administrator** in the extracted folder and run the following commands. For an existing installation, use [Reinstall or upgrade](#reinstall-or-upgrade).
 
    ```powershell
@@ -527,7 +527,7 @@ A small indicator in the lower-left corner appears when a page load or foregroun
 - **Packet loss** is unanswered probes divided by successful plus unanswered probes. An unreachable response counts as an unanswered echo. Timeouts also have their own count. Local probe errors are reported separately. ICMP filtering or rate limiting can affect results.
 - **Monitor adapter traffic** shows receive and transmit Mbps calculated from byte-counter deltas and elapsed time on one local interface. Compare a latency spike with this chart to see whether it coincides with heavy traffic on the monitor. Measuring a router or switch link’s own utilization requires counters from that device.
 - **Missing observations** appear as gaps. Service downtime does not generate synthetic timeouts. The footer shows how many time buckets have at least one observation. A stale last probe is labelled on the page.
-- **Recent probe failures** lists up to 2,000 recent failures within the selected period and the last 48 hours. Filter by free text, failure category, exact result and local date/time range, sort newest/oldest, and use colored category badges and pagination. Filters persist during the five-second dashboard refresh. The existing report/API events field retains the latest 20 entries; searchEvents supplies the extended snapshot.
+- **Recent probe failures** lists up to 2,000 recent failures within the selected period and retained raw history. Filter by free text, failure category, exact result and local date/time range, sort newest/oldest, and use colored category badges and pagination. Filters persist during the five-second dashboard refresh. The existing report/API events field retains the latest 20 entries; searchEvents supplies the extended snapshot.
 
 **Example from a new installation.** The horizontal axis shows the entire selected period. If the service has run for only 15 minutes, the Day chart will show those readings at the far right of a 24-hour window. The vertical latency axis starts at zero and rounds up to a readable maximum. A highest reply of 30 ms gives a 0–50 ms scale with grid lines every 12.5 ms. The darker line shows average latency in each bucket. The pale bar shows the fastest and slowest successful replies. A blank interval means there are no measured replies to plot. Check packet loss and the observation count to distinguish failed probes from time before monitoring began.
 
@@ -593,7 +593,7 @@ The service creates `%ProgramData%\LinkScope\data\history.sqlite` on first start
 
 | Stored history | Retention | Dashboard use |
 | --- | --- | --- |
-| Individual probes | 48 hours | Latest probe status and exact failure timestamps |
+| Individual probes | 48 hours (or latest month with protection enabled) | Latest probe status and exact failure timestamps |
 | 5-minute aggregates | 35 days | Day at 5 minutes, Week at 30 minutes, Month at 2 hours |
 | Hourly aggregates | 400 days | Year at 1 day |
 
@@ -651,7 +651,7 @@ For an interactive diagnostic run, stop the service, run `LinkScope.exe --consol
 
 ## Build from C# source
 
-Run `Build.cmd` on the target Windows version to generate `LinkScope.exe` in the extracted folder. This path uses the Framework compiler without downloading packages. Alternatively, open `LinkScope.csproj` in Visual Studio with the .NET Framework 4.8 targeting pack. Run the new build with `--install` from an elevated terminal. It deploys to Program Files. An existing healthy service already running at the installed path keeps running. To deploy a new build over that running copy, stop the service before invoking `--install`. The native offline setup source and its Linux build script are in the `setup` directory.
+Run `Build.cmd` on Windows to generate `LinkScope.exe` and `LinkScopeSetup.exe` in the extracted folder. Visual Studio builds both in the configuration output folder. This path uses the Framework compiler without downloading packages. Alternatively, open `LinkScope.csproj` in Visual Studio with the .NET Framework 4.8 targeting pack. Run the new build with `--install` from an elevated terminal. It deploys to Program Files. An existing healthy service already running at the installed path keeps running. To deploy a new build over that running copy, stop the service before invoking `--install`. The managed Windows setup builder is in the `setup` directory. The legacy native Linux builder is retained for reference only.
 
 ## Verify on Windows
 
@@ -770,3 +770,5 @@ The Network page includes a manual Active network connections snapshot. Sign in 
 
 ### Advanced connection search and live polling
 Use the Network page's Active network connections panel to search all fields, or combine protocol, state, local/remote endpoint, exact local/remote port and IPv4/IPv6 filters. Colored badges identify protocol and TCP state; counters describe the loaded snapshot. Auto refresh is off by default, with selectable 1, 2, 5, 10 or 30 second polling. Polling pauses in hidden tabs, avoids overlapping requests, and stops on authorization failure. Search is limited to the first 2,000 endpoints returned by the existing administrator-only API; the UI explicitly reports truncation. This is snapshot polling, not packet capture or a complete event stream.
+
+Database cleanup settings override the legacy retention table when enabled. See the root README for retention, protection and scheduling details.

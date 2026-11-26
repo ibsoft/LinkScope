@@ -16,3 +16,5 @@ nav{display:flex;flex-wrap:wrap;gap:14px}.bar nav a{color:#d8eae5;text-decoratio
 .conn-badge.red{background:#fee2e2;color:#991b1b;border-color:#fca5a5} #failure-table .conn-badge{white-space:normal;overflow-wrap:anywhere;max-width:100%} #failure-table td:first-child{white-space:nowrap} #failure-count{font-size:13px;color:#52646b}
 
 #failure-table th:first-child{width:20%} #failure-table th:nth-child(2){width:25%} #failure-table td{vertical-align:top} #failure-table td:last-child{line-height:1.5;overflow-wrap:anywhere}
+
+.brand{display:inline-flex;align-items:center;gap:9px}.ls-brand-icon{width:32px;height:32px;object-fit:contain;flex-shrink:0}

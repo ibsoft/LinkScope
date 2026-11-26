@@ -106,9 +106,9 @@ namespace LinkScope {
                     Probe[] results=await Task.WhenAll(cfg.Targets.Select(Sample)).ConfigureAwait(false);
                     bool cleanup=t-lastCleanup>=3600 || t<lastCleanup;
                     AppJournal.Event(LogLevel.Debug,"Network","interface","Adapter counters "+(traffic==null?"unavailable or warming up.":"collected."));
-                    History.Save(writer,t,results,traffic,cleanup);
+                    History.Save(writer,t,results,traffic,cleanup,AlertRules.DatabaseMaintenance);
                     AppJournal.Event(LogLevel.Debug,"History","save-probes","Saved "+results.Length+" probe observations.");
-                    if(cleanup)AppJournal.Event(LogLevel.Debug,"History","prune","Network history retention ran.");
+                    if(cleanup&&!AlertRules.DatabaseMaintenance.Enabled)AppJournal.Event(LogLevel.Debug,"History","prune","Network history retention ran.");
                     alerts.Probes(results,AlertRules);
                     if(cleanup) lastCleanup=t;
                     lock(gate) error="";

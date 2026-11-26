@@ -37,7 +37,7 @@ namespace LinkScope {
                 }db.Exec("COMMIT");}catch{db.Exec("ROLLBACK");throw;}
             }
         }
-        internal static void Save(Sqlite db, long t, Probe[] probes, Traffic traffic, bool cleanup) {
+        internal static void Save(Sqlite db, long t, Probe[] probes, Traffic traffic, bool cleanup, DatabaseMaintenanceSettings maintenance) {
             db.Exec("BEGIN IMMEDIATE");
             try {
                 foreach (Probe p in probes) {
@@ -59,10 +59,10 @@ namespace LinkScope {
                             traffic.RxBytes,traffic.TxBytes,traffic.Seconds,traffic.Id,res,bucket);
                     }
                 }
-                if (cleanup) {
-                    db.Exec("DELETE FROM raw WHERE t<?",t-2*Day);
+                if (cleanup && !maintenance.Enabled) {
+                    db.Exec("DELETE FROM raw WHERE t<?",maintenance.Protect(t-2*Day,t));
                     foreach (int res in Resolutions) {
-                        long cutoff = t - (res==300 ? 35 : 400)*Day;
+                        long cutoff = maintenance.Protect(t - (res==300 ? 35 : 400)*Day,t)-res;
                         db.Exec("DELETE FROM ping_roll WHERE res=? AND t<?",res,cutoff);
                         db.Exec("DELETE FROM traffic_roll WHERE res=? AND t<?",res,cutoff);
                         db.Exec("DELETE FROM resource_roll WHERE res=? AND t<?",res,cutoff);
@@ -117,7 +117,7 @@ namespace LinkScope {
             var rates=db.Rows(@"SELECT (t/?4)*?4 AS bucket,8.0*SUM(rx)/SUM(seconds)/1000000,8.0*SUM(tx)/SUM(seconds)/1000000
                 FROM traffic_roll WHERE nic=?1 AND res=?2 AND t>=?3 AND t<?5 GROUP BY bucket ORDER BY bucket",nicId,res,start,step,end);
             var latest=db.Rows("SELECT t,status,rtt FROM raw WHERE target=? AND t<=? ORDER BY t DESC,rowid DESC LIMIT 1",ip,now).FirstOrDefault();
-            var searchExceptions=db.Rows("SELECT t,status FROM raw WHERE target=? AND t>=? AND t<=? AND status<>'Success' ORDER BY t DESC,rowid DESC LIMIT 2001",ip,Math.Max(start,now-2*Day),now);
+            var searchExceptions=db.Rows("SELECT t,status FROM raw WHERE target=? AND t>=? AND t<=? AND status<>'Success' ORDER BY t DESC,rowid DESC LIMIT 2001",ip,start,now);
             var exceptions=searchExceptions.Take(20).ToArray();
             var resourceUsage=db.Rows("SELECT metric,SUM(n),SUM(total)/SUM(n),MIN(lo),MAX(hi),MIN(first_sample),MAX(last_sample) FROM resource_roll WHERE res=? AND t>=? AND t<? GROUP BY metric ORDER BY metric",res,start,end)
                 .Select(r=>new {metric=r[0],samples=r[1],averagePercent=r[2],minPercent=r[3],peakPercent=r[4],firstUtc=Telemetry.Utc(Convert.ToInt64(r[5])),lastUtc=Telemetry.Utc(Convert.ToInt64(r[6]))}).ToArray();

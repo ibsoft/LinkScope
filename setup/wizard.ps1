@@ -6,6 +6,8 @@ $exe=$env:LINKSCOPE_SETUP_EXE
 if(-not [IO.File]::Exists($exe)){throw 'Setup executable not found.'}
 $form=New-Object Windows.Forms.Form
 $form.Text='LinkScope Setup'; $form.ClientSize=New-Object Drawing.Size(620,410); $form.StartPosition='CenterScreen'; $form.FormBorderStyle='FixedDialog'; $form.MaximizeBox=$false
+$form.Icon=[Drawing.Icon]::ExtractAssociatedIcon($exe)
+$form.ShowIcon=$true
 $form.Font=New-Object Drawing.Font('Segoe UI',10)
 function Label($text,$x,$y,$w,$h){$l=New-Object Windows.Forms.Label;$l.Text=$text;$l.SetBounds($x,$y,$w,$h);$form.Controls.Add($l);return $l}
 function Button($text,$x,$y,$w){$b=New-Object Windows.Forms.Button;$b.Text=$text;$b.SetBounds($x,$y,$w,34);$form.Controls.Add($b);return $b}
