@@ -41,6 +41,36 @@ namespace LinkScope {
         string AnchorPath {get{return Path.Combine(data,"integrity-checkpoint.json");}}
         public sealed class Checkpoint {public long Sequence{get;set;} public string Mac{get;set;}}
         readonly object gate=new object();
+        // The scanner owns the mutable counters. Readers see only immutable snapshots;
+        // neither HTTP reads nor the live dashboard wait for the hashing lock.
+        sealed class ActivityFrame {internal readonly IntegritySettings Policy;internal readonly object Value;internal ActivityFrame(IntegritySettings policy,object value){Policy=policy;Value=value;}}
+        sealed class ScanProgress {
+            internal readonly string Id=Guid.NewGuid().ToString("N");
+            internal readonly DateTime Started=DateTime.UtcNow;
+            internal readonly Stopwatch Clock=Stopwatch.StartNew();
+            internal long LastPublished=-1000,BytesRead;
+            internal int Files,Excluded,Errors;
+            internal string Stage="Verifying authenticated chain",CurrentPath="",State="scanning";
+        }
+        volatile ActivityFrame activity;
+        internal object Activity(IntegritySettings policy){
+            var frame=activity;
+            if(!policy.Enabled)return new {state="disabled",scanRunning=false};
+            if(frame==null||!ReferenceEquals(frame.Policy,policy))return new {state="waiting",scanRunning=false};
+            return frame.Value;
+        }
+        void PublishActivity(IntegritySettings policy,ScanProgress progress,bool force=false){
+            long elapsed=progress.Clock.ElapsedMilliseconds;
+            if(!force&&elapsed-progress.LastPublished<250)return;
+            progress.LastPublished=elapsed;
+            bool running=progress.State=="scanning";
+            DateTime now=DateTime.UtcNow;
+            activity=new ActivityFrame(policy,new {state=progress.State,scanRunning=running,scanId=progress.Id,stage=progress.Stage,
+                scanStartedUtc=progress.Started.ToString("o"),updatedUtc=now.ToString("o"),
+                scanFinishedUtc=running?null:now.ToString("o"),nextScanUtc=running||progress.State=="cancelled"||progress.State=="disabled"?null:now.AddSeconds(policy.IntervalSeconds).ToString("o"),
+                filesHashed=progress.Files,excludedEntries=progress.Excluded,reportedErrors=progress.Errors,bytesRead=progress.BytesRead,
+                currentPath=running?progress.CurrentPath:"",elapsedMilliseconds=elapsed});
+        }
         const string Genesis="0000000000000000000000000000000000000000000000000000000000000000";
         static readonly StringComparer Ignore=StringComparer.OrdinalIgnoreCase;
         internal static bool Under(string path,string root){return Ignore.Equals(path,root)||path.StartsWith(root.TrimEnd('\\')+"\\",StringComparison.OrdinalIgnoreCase);}
@@ -57,31 +87,41 @@ namespace LinkScope {
         internal void Authorize(IntegritySettings old,IntegritySettings next){if(Policy(old)==Policy(next))return;if(!Monitor.TryEnter(gate))throw new InvalidDataException("An integrity scan is running. Retry the policy change when it finishes.");try{if(!File.Exists(KeyPath)&&!File.Exists(StatePath)&&!File.Exists(AnchorPath))return;byte[] key=Key();try{var s=Load(key);if(!Equal(s.Chain.Last().Policy,Policy(old)))throw new InvalidDataException("Integrity policy authentication failed. Investigate before changing settings.");Append(s,key,s.Chain.Last().Root,Policy(next));AppJournal.Event(LogLevel.Warning,"Integrity","policy","Authorized integrity policy change; trusted baseline preserved. Previous policy: "+Policy(old)+"; new policy: "+Policy(next));}finally{Array.Clear(key,0,key.Length);}}finally{Monitor.Exit(gate);}}
         static bool Excluded(string p,IntegritySettings c){return c.ExcludedPaths.Any(x=>Under(p,x))||c.ExcludedPatterns.Any(x=>Regex.IsMatch(Path.GetFileName(p),"^"+Regex.Escape(x).Replace(@"\*",".*").Replace(@"\?",".")+"$",RegexOptions.IgnoreCase|RegexOptions.CultureInvariant,TimeSpan.FromMilliseconds(100)));}
         static bool InScope(string p,IntegritySettings c){return c.Paths.Any(x=>Ignore.Equals(x,p)||(Under(p,x)&&(c.Recursive||Ignore.Equals(Path.GetDirectoryName(p),x))))&&!Excluded(p,c);}
-        static void Walk(string p,IntegritySettings c,Dictionary<string,string> files,List<string> errors,ref int excluded,WaitHandle stop){
+        void Walk(string p,IntegritySettings c,Dictionary<string,string> files,List<string> errors,ref int excluded,WaitHandle stop,ScanProgress progress){
             if(stop.WaitOne(0))throw new OperationCanceledException();
-            if(Excluded(p,c)){excluded++;return;}
+            if(Excluded(p,c)){excluded++;progress.Excluded=excluded;PublishActivity(c,progress);return;}
             try{var attr=File.GetAttributes(p);if((attr&FileAttributes.ReparsePoint)!=0)throw new IOException("Reparse point skipped");
-                if((attr&FileAttributes.Directory)!=0){foreach(var f in Directory.EnumerateFiles(p))Walk(f,c,files,errors,ref excluded,stop);if(c.Recursive)foreach(var d in Directory.EnumerateDirectories(p))Walk(d,c,files,errors,ref excluded,stop);return;}
+                if((attr&FileAttributes.Directory)!=0){foreach(var f in Directory.EnumerateFiles(p))Walk(f,c,files,errors,ref excluded,stop,progress);if(c.Recursive)foreach(var d in Directory.EnumerateDirectories(p))Walk(d,c,files,errors,ref excluded,stop,progress);return;}
                 if(files.ContainsKey(p))return;if(files.Count>=100000)throw new InvalidOperationException("100,000-file limit reached.");
+                progress.CurrentPath=p;PublishActivity(c,progress);
                 var before=new FileInfo(p);long length=before.Length;DateTime stamp=before.LastWriteTimeUtc;
-                using(var stream=new FileStream(p,FileMode.Open,FileAccess.Read,FileShare.Read,65536,FileOptions.SequentialScan))using(var h=SHA256.Create()){byte[] buffer=new byte[65536];int n;while((n=stream.Read(buffer,0,buffer.Length))>0){if(stop.WaitOne(0))throw new OperationCanceledException();h.TransformBlock(buffer,0,n,buffer,0);}h.TransformFinalBlock(new byte[0],0,0);before.Refresh();if(before.Length!=length||before.LastWriteTimeUtc!=stamp)throw new IOException("File changed during scan");files[p]=Hex(h.Hash);}
-            }catch(OperationCanceledException){throw;}catch(InvalidOperationException){throw;}catch(Exception ex){if(errors.Count<1000)errors.Add(p+" · "+ex.GetType().Name);}}
-        internal object Scan(IntegritySettings c,WaitHandle stop){lock(gate){byte[] key=null;try{
+                using(var stream=new FileStream(p,FileMode.Open,FileAccess.Read,FileShare.Read,65536,FileOptions.SequentialScan))using(var h=SHA256.Create()){byte[] buffer=new byte[65536];int n;while((n=stream.Read(buffer,0,buffer.Length))>0){if(stop.WaitOne(0))throw new OperationCanceledException();h.TransformBlock(buffer,0,n,buffer,0);progress.BytesRead+=n;PublishActivity(c,progress);}h.TransformFinalBlock(new byte[0],0,0);before.Refresh();if(before.Length!=length||before.LastWriteTimeUtc!=stamp)throw new IOException("File changed during scan");files[p]=Hex(h.Hash);progress.Files=files.Count;PublishActivity(c,progress);}
+            }catch(OperationCanceledException){throw;}catch(InvalidOperationException){throw;}catch(Exception ex){if(errors.Count<1000)errors.Add(p+" · "+ex.GetType().Name);progress.Errors=errors.Count;PublishActivity(c,progress);}}
+        internal object Scan(IntegritySettings c,WaitHandle stop){lock(gate){
+            var progress=new ScanProgress();PublishActivity(c,progress,true);
+            try{return ScanCore(c,stop,progress);}
+            catch(OperationCanceledException){progress.State="cancelled";progress.Stage="Scan cancelled";throw;}
+            finally{PublishActivity(c,progress,true);}
+        }}
+        object ScanCore(IntegritySettings c,WaitHandle stop,ScanProgress progress){byte[] key=null;try{
             bool existing=File.Exists(KeyPath)||File.Exists(StatePath)||File.Exists(AnchorPath);IntegrityState s=null;
             if(existing){key=Key();s=Load(key);if(!Equal(s.Chain.Last().Policy,Policy(c)))throw new InvalidDataException("Integrity settings changed outside authorized workflow.");}
-            if(!c.Enabled)return new {status="disabled",items=new object[0]};
+            if(!c.Enabled){progress.State="disabled";progress.Stage="Monitoring disabled";return new {status="disabled",items=new object[0]};}
+            progress.Stage="Hashing protected files";PublishActivity(c,progress,true);
             var files=new Dictionary<string,string>(Ignore);var errors=new List<string>();int excluded=0;
-            foreach(var p in c.Paths){if(Excluded(p,c)){excluded++;continue;}try{NoLinks(p);}catch(FileNotFoundException){if(s!=null&&s.Baseline.Keys.Any(x=>Ignore.Equals(x,p)))continue;errors.Add(p+" · Protected path missing");continue;}catch(Exception ex){errors.Add(p+" · "+ex.GetType().Name);continue;}Walk(p,c,files,errors,ref excluded,stop);}
+            foreach(var p in c.Paths){if(Excluded(p,c)){excluded++;progress.Excluded=excluded;PublishActivity(c,progress);continue;}progress.CurrentPath=p;PublishActivity(c,progress);try{NoLinks(p);}catch(FileNotFoundException){if(s!=null&&s.Baseline.Keys.Any(x=>Ignore.Equals(x,p)))continue;errors.Add(p+" · Protected path missing");continue;}catch(Exception ex){errors.Add(p+" · "+ex.GetType().Name);continue;}Walk(p,c,files,errors,ref excluded,stop,progress);}
+            progress.Files=files.Count;progress.Excluded=excluded;progress.Errors=errors.Count;progress.CurrentPath="";progress.Stage="Comparing trusted baseline";PublishActivity(c,progress,true);
             bool initialized=s==null;
-            if(s==null){if(errors.Count>0||files.Count==0)return new {status="partial",chainValid=(bool?)null,monitoredFiles=files.Count,excludedEntries=excluded,items=errors.DefaultIfEmpty("No readable, non-excluded files; baseline not created").Select((x,i)=>new {path=x,change="Scan incomplete",severity="warning",status="warning",id="coverage-"+i}).ToArray()};Directory.CreateDirectory(folder);NoLinks(folder);key=new byte[32];using(var rng=RandomNumberGenerator.Create())rng.GetBytes(key);using(var f=new FileStream(KeyPath,FileMode.CreateNew)) {var b=ProtectedData.Protect(key,null,DataProtectionScope.LocalMachine);f.Write(b,0,b.Length);f.Flush(true);}s=new IntegrityState{Baseline=files,Chain=new List<IntegrityEntry>()};Append(s,key,Root(files),Policy(c));AppJournal.Event(LogLevel.Warning,"Integrity","baseline","Initial trusted baseline created: "+files.Count+" files. Verify the source files were trusted at enrollment.");}
+            if(s==null){if(errors.Count>0||files.Count==0){progress.State="partial";progress.Stage="Baseline not created: incomplete coverage";return new {status="partial",chainValid=(bool?)null,monitoredFiles=files.Count,excludedEntries=excluded,items=errors.DefaultIfEmpty("No readable, non-excluded files; baseline not created").Select((x,i)=>new {path=x,change="Scan incomplete",severity="warning",status="warning",id="coverage-"+i}).ToArray()};}progress.Stage="Creating authenticated baseline";PublishActivity(c,progress,true);Directory.CreateDirectory(folder);NoLinks(folder);key=new byte[32];using(var rng=RandomNumberGenerator.Create())rng.GetBytes(key);using(var f=new FileStream(KeyPath,FileMode.CreateNew)) {var b=ProtectedData.Protect(key,null,DataProtectionScope.LocalMachine);f.Write(b,0,b.Length);f.Flush(true);}s=new IntegrityState{Baseline=files,Chain=new List<IntegrityEntry>()};Append(s,key,Root(files),Policy(c));AppJournal.Event(LogLevel.Warning,"Integrity","baseline","Initial trusted baseline created: "+files.Count+" files. Verify the source files were trusted at enrollment.");}
             var baseline=new Dictionary<string,string>(s.Baseline,Ignore);var rows=new List<Dictionary<string,object>>();
             Action<string,string,string,string,string> add=(p,change,expected,actual,severity)=>rows.Add(new Dictionary<string,object>{{"id",Digest(p.ToUpperInvariant())},{"path",p},{"change",change},{"expectedHash",expected},{"actualHash",actual},{"severity",severity},{"status",severity}});
             foreach(var f in files){string expected;if(!baseline.TryGetValue(f.Key,out expected))add(f.Key,"New file",null,f.Value,new[]{".exe",".dll",".sys",".ps1",".bat",".cmd",".vbs",".msi",".scr"}.Contains(Path.GetExtension(f.Key),Ignore)?"critical":"warning");else if(!Equal(expected,f.Value))add(f.Key,"Modified file",expected,f.Value,"critical");}
             if(errors.Count==0)foreach(var f in baseline)if(InScope(f.Key,c)&&!files.ContainsKey(f.Key))add(f.Key,"Missing file",f.Value,null,"critical");
             foreach(var e in errors.Distinct(Ignore))add(e,"Scan incomplete",null,null,"warning");
-            if(errors.Count==0&&!initialized)Append(s,key,Root(files),Policy(c));
+            if(errors.Count==0&&!initialized){progress.Stage="Saving authenticated snapshot";PublishActivity(c,progress,true);Append(s,key,Root(files),Policy(c));}
             AppJournal.Event(errors.Count>0?LogLevel.Warning:LogLevel.Info,"Integrity","scan","Files: "+files.Count+"; excluded entries: "+excluded+"; changes or scan errors: "+rows.Count+"; chain sequence: "+s.Chain.Last().Sequence+"; chain head: "+s.Chain.Last().Mac);
+            progress.State=errors.Count>0?"partial":"completed";progress.Stage=errors.Count>0?"Scan completed with coverage errors":"Scan completed";
             return new {status=errors.Count>0?"partial":"ok",chainValid=true,sequence=s.Chain.Last().Sequence,chainHead=s.Chain.Last().Mac,protectedPaths=c.Paths,monitoredFiles=files.Count,excludedEntries=excluded,violations=rows.Count,items=rows.ToArray()};
-        }catch(OperationCanceledException){throw;}catch(Exception ex){return new {status="unavailable",chainValid=false,items=new[]{new {id="chain",path="Integrity storage / policy",change="Integrity verification failed",severity="critical",status="critical",detail=ex.Message}}};}finally{if(key!=null)Array.Clear(key,0,key.Length);}}}
+        }catch(OperationCanceledException){throw;}catch(Exception ex){progress.State="failed";progress.Stage="Integrity verification failed";return new {status="unavailable",chainValid=false,items=new[]{new {id="chain",path="Integrity storage / policy",change="Integrity verification failed",severity="critical",status="critical",detail=ex.Message}}};}finally{if(key!=null)Array.Clear(key,0,key.Length);}}
     }
 }

@@ -36,3 +36,12 @@ nav{display:flex;flex-wrap:wrap;gap:14px}.bar nav a{color:#d8eae5;text-decoratio
 .brand{display:inline-flex;align-items:center;gap:9px}.ls-brand-icon{width:32px;height:32px;object-fit:contain;flex-shrink:0}
 
 .ack-detail{display:block;margin-top:8px;overflow-wrap:anywhere}.ack-button{border:1px solid #bfcfd1;background:#fff;color:#17333c;border-radius:6px;padding:7px 10px;cursor:pointer;font:600 12px "Segoe UI",sans-serif}.ack-button:disabled{opacity:.55;cursor:default}.metric-tile .ack-button{margin-top:8px}.ack-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px}.ack-bar span{font-size:13px;color:var(--muted)}#ack-modal{max-width:min(460px,90vw);border:1px solid var(--line);border-radius:12px;padding:24px;color:var(--ink)}#ack-modal::backdrop{background:#102b39aa}#ack-modal p{margin-top:12px}
+
+/* Match System Health workspace and navigation. Keep update time outside header. */
+body[data-page=network] .bar,body[data-page=network] main{max-width:1440px;padding-left:24px;padding-right:24px}
+body[data-page=network] .bar{gap:28px;row-gap:8px;min-height:66px;flex-wrap:wrap}
+body[data-page=network] .bar>.divider{display:none}
+body[data-page=network] .bar nav{flex:1 1 auto;min-width:0;column-gap:12px;row-gap:8px;align-items:center}
+body[data-page=network] .bar .ls-tools{flex:0 0 auto;margin-left:auto}
+body[data-page=network] footer #updated{font:12px Consolas,monospace;color:var(--muted)}
+@media(max-width:630px){body[data-page=network] .bar{gap:10px;padding:8px 16px}body[data-page=network] main{padding:20px 14px}body[data-page=network] .bar nav{flex:1 1 100%;order:2;font-size:13px;column-gap:9px}}

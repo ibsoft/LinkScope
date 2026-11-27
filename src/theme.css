@@ -56,6 +56,90 @@ html[data-theme=dark] #linkscope-toasts article.ls-toast:is(.ls-error,.ls-critic
 html[data-theme=dark] #linkscope-toasts article.ls-toast.ls-success {background:#3b594b!important;color:#e8f7ee!important;border-color:#688a77!important;border-left-color:#a9d6ba!important}
 html #linkscope-toasts article.ls-toast :is(strong,p,small,a){color:inherit!important}
 
-header nav a,header nav #global-export{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+/* Authenticated header layout is defined once in navigation.css. */
 .ls-menu-icon{flex:none;display:inline-block;vertical-align:middle}
-header nav{column-gap:12px;row-gap:8px}
+
+/* Offline Font Awesome SVG artwork; no font or external CDN dependency. */
+.ls-fa-icon{display:block;flex:none;pointer-events:none}
+#ls-theme-switch .ls-fa-icon{width:15px;height:15px}
+
+/* Shared build-version footer. Normal document flow; no content overlap. */
+body:not([data-page=login]){min-height:100vh;display:flex;flex-direction:column}
+body:not([data-page=login])>main{flex:1 0 auto;width:100%;box-sizing:border-box}
+body>.ls-version-footer{flex:none;width:min(100%,1440px);box-sizing:border-box;align-self:center;display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 auto;padding:16px 24px 20px;border-top:1px solid var(--line,#cbdad9);font:12px/1.5 "Segoe UI",Arial,sans-serif;color:var(--muted,#536970)}
+.ls-version-footer .ls-version-value{font:600 12px/1.5 Consolas,monospace;overflow-wrap:anywhere}
+.login-footer .ls-version-value{margin-inline-start:12px;font:600 12px/1.5 Consolas,monospace;color:inherit}
+@media(max-width:480px){body>.ls-version-footer{padding:12px 16px;flex-wrap:wrap}.login-footer .ls-version-value{display:block;margin:4px 0 0}}
+/* Real-time endpoint activity — animation reflects actual scan/queue telemetry. */
+.endpoint-live{border-left:4px solid var(--control-border);background:var(--paper,#fff);color:var(--ink);padding:16px 20px}
+.endpoint-live-top,.endpoint-live-status,.endpoint-actions,.endpoint-live-meta{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.endpoint-live-top,.endpoint-live-meta{justify-content:space-between}.endpoint-live-status{flex:1 1 280px;min-width:0;flex-wrap:nowrap}.endpoint-live-status h2{margin:0 0 3px;font-size:16px}.endpoint-live-status span[role=status]{font-size:13px;color:var(--muted)}
+.endpoint-scan-indicator{flex:none;display:grid;place-items:center;width:46px;height:46px;border-radius:12px;background:var(--control-bg);color:var(--sea);border:1px solid var(--control-border)}
+.endpoint-live[data-state=scanning],.endpoint-live[data-state=queued],.endpoint-live[data-state=activity],.endpoint-live[data-state=watching]{border-left-color:var(--sea)}
+.endpoint-live[data-state=warning]{border-left-color:#d97706}.endpoint-live[data-state=warning] .endpoint-scan-indicator{color:#b88624}
+.endpoint-scan-ring{transform-origin:18px 18px;opacity:.45}
+.endpoint-live:is([data-state=scanning],[data-state=queued]) .endpoint-scan-ring{animation:ls-endpoint-spin 1.4s linear infinite;opacity:1}
+.endpoint-live:is([data-state=activity],[data-state=watching]) .endpoint-scan-indicator{animation:ls-endpoint-pulse 2.2s ease-in-out infinite}
+.endpoint-scan-track{height:4px;overflow:hidden;border-radius:4px;background:var(--line,#d8e2e5);margin:12px 0}.endpoint-scan-track span{display:block;width:24%;height:100%;border-radius:4px;background:var(--sea);opacity:0;transform:translateX(-100%)}
+.endpoint-live:is([data-state=scanning],[data-state=queued]) .endpoint-scan-track span{opacity:1;animation:ls-endpoint-sweep 1.7s ease-in-out infinite}
+.endpoint-live[data-state=activity] .endpoint-scan-track span{width:100%;opacity:.55;transform:none}
+.endpoint-live-meta{font-size:12px;color:var(--muted);gap:6px 14px}.endpoint-live small{display:block;margin-top:7px;overflow-wrap:anywhere;color:var(--muted)}
+.endpoint-ack-hint{font-size:12px}.endpoint-actions button{white-space:normal;min-height:36px}
+@keyframes ls-endpoint-spin{to{transform:rotate(360deg)}}@keyframes ls-endpoint-sweep{to{transform:translateX(520%)}}@keyframes ls-endpoint-pulse{0%,100%{box-shadow:0 0 0 0 #17827500}50%{box-shadow:0 0 0 5px #17827525}}
+@media(max-width:600px){.endpoint-actions{width:100%}.endpoint-actions button{flex:1 1 140px}.endpoint-live{padding:14px}}
+@media(prefers-reduced-motion:reduce){.endpoint-live *{animation:none!important}.endpoint-live:is([data-state=scanning],[data-state=queued]) .endpoint-scan-track span{transform:none;width:100%;opacity:.7}}
+
+/* Endpoint dashboard: neutral container with independent severity cards. */
+body[data-page=endpoint] #category-endpoint_protection{background:var(--paper,#fff);color:var(--ink);border:1px solid var(--line);border-left:4px solid var(--metric-accent,#90a4aa)}
+body[data-page=endpoint] #category-endpoint_protection>div:not(.cards),body[data-page=endpoint] #category-endpoint_protection>p,body[data-page=endpoint] #category-endpoint_protection>small{color:var(--ink)}
+body[data-page=endpoint] #category-endpoint_protection .health-category-alert-detail{color:var(--metric-ink)}
+body[data-page=endpoint] #category-endpoint_protection .health-category-heading{color:var(--ink)}
+body[data-page=endpoint] #category-endpoint_protection table th{background:#f2f6f5;color:var(--ink)}
+:root[data-theme=dark] body[data-page=endpoint] #category-endpoint_protection{background:var(--paper);color:var(--ink);border-color:var(--line);border-left-color:var(--dark-state-accent,#94a3b8)}
+:root[data-theme=dark] body[data-page=endpoint] #category-endpoint_protection .health-category-alert-detail{color:var(--dark-state-ink)}
+:root[data-theme=dark] body[data-page=endpoint] #category-endpoint_protection table th{background:#203541;color:var(--ink)}
+body[data-page=endpoint] .health-badge{white-space:nowrap;overflow-wrap:normal;max-width:100%}
+body[data-page=endpoint] .health-metric-card .health-badge{white-space:normal;overflow-wrap:anywhere}
+
+/* Endpoint outer panel stays neutral; individual summary cards carry severity. */
+body[data-page=endpoint] #category-endpoint_protection.health-category-card{background:#fff;border-color:var(--line);border-left-color:var(--line);color:var(--ink)}
+:root[data-theme=dark] body[data-page=endpoint] #category-endpoint_protection.health-category-card{background:#202832;border-color:var(--line);border-left-color:var(--line);color:var(--ink)}
+.endpoint-maintenance{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:12px 0}.endpoint-maintenance>div{min-width:0}.endpoint-maintenance small{display:block;overflow-wrap:anywhere}.endpoint-maintenance select{max-width:100%}.endpoint-maintenance button{margin-top:8px}.endpoint-maintenance label{display:block;font-weight:600}.endpoint-maintenance [role=status]{overflow-wrap:anywhere}
+
+/* Login subtitle: allow the longer product descriptor to wrap naturally. */
+body[data-page=login] .login-kicker{font-size:11px;line-height:1.65;letter-spacing:1.25px;white-space:normal;overflow-wrap:normal;max-width:100%}
+
+/* Account menu identity and restricted role links */
+body header.ls-header .ls-account-menu .ls-account-identity{display:block;padding:8px 10px;font-size:12px;overflow-wrap:anywhere;border-bottom:1px solid var(--line)}
+body header.ls-header .ls-account-menu [hidden],body header.ls-header #ls-main-nav [hidden]{display:none!important}
+
+body header.ls-header .ls-account-menu{min-width:180px;max-width:min(290px,90vw)}
+body header.ls-header .ls-account-menu :is(a,button){background:var(--control-bg)!important;color:var(--control-fg)!important;border:0!important;border-radius:5px;font:inherit}
+body header.ls-header .ls-account-menu :is(a,button):hover:not(:disabled){background:var(--control-hover)!important;color:var(--control-fg)!important}
+
+
+/* Shared workspace: the widest existing dashboards were 1440px. All signed-in
+   pages, header and footer now use the same outer width and horizontal gutter. */
+:root{--ls-workspace-max:1440px;--ls-workspace-gutter:clamp(12px,2vw,24px)}
+body:not([data-page=login])>main,
+body header.ls-header>.ls-header-inner,
+body>.ls-version-footer{
+    width:100%;max-width:var(--ls-workspace-max);box-sizing:border-box;
+    margin-inline:auto;padding-inline:var(--ls-workspace-gutter);
+    min-width:0;
+}
+body:not([data-page=login])>main{margin-block:0;padding-block:32px 42px}
+body:not([data-page=login])>main>.tablewrap{max-width:100%;overflow-x:auto}
+@media(max-width:630px){body:not([data-page=login])>main{padding-block:20px 32px}}
+/* Do not inherit the desktop workspace width for the dedicated login layout. */
+body[data-page=login] #mfaChallenge[hidden]{display:none!important}
+body[data-page=login] .mfa-hint{font-size:13px;margin:12px 0 6px;color:var(--muted)}
+body[data-page=login] input[name=otp]{font-variant-numeric:tabular-nums;letter-spacing:.15em}
+/* The log search form is a form rather than a section, so it needs an explicit
+   themed surface. Keep log severity chips readable in dark mode too. */
+body[data-page=logs] #log-form{background:var(--paper,#fff);color:var(--ink);border-color:var(--line)}
+:root[data-theme=dark] .log-badge.log-debug{background:#422d59;color:#e5ccff}
+:root[data-theme=dark] .log-badge.log-info{background:#203b60;color:#c0dcff}
+:root[data-theme=dark] .log-badge.log-warning{background:#513c1c;color:#ffe0a0}
+:root[data-theme=dark] .log-badge.log-error{background:#542a33;color:#ffc6cd}
+:root[data-theme=dark] .ls-pager{color:var(--muted)}

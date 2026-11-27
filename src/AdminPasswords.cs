@@ -14,7 +14,7 @@ namespace LinkScope {
 
     internal sealed class AdminPasswords {
         internal const string Starter = "admin";
-        internal const string Rules = "Use 7–128 characters with at least one A–Z, one a–z and one digit (0–9). Symbols are optional.";
+        internal const string Rules = "Use 12–128 characters with at least one A–Z, one a–z and one digit (0–9). Symbols are optional.";
         internal static readonly AdminPasswords Installed = new AdminPasswords(Config.Root, Config.SettingsDir);
         readonly string adminFile, settingsDir;
         readonly object changeGate = new object();
@@ -25,18 +25,18 @@ namespace LinkScope {
         }
 
         internal static void CheckRules(string password) {
-            if (password == null || password.Length < 7 || password.Length > 128 ||
+            if (password == null || password.Length < 12 || password.Length > 128 ||
                 !password.Any(c => c >= 'A' && c <= 'Z') || !password.Any(c => c >= 'a' && c <= 'z') ||
                 !password.Any(c => c >= '0' && c <= '9') || password.Any(char.IsControl))
                 throw new InvalidDataException(Rules);
         }
 
-        static string Derive(string password, byte[] salt) {
+        internal static string Derive(string password, byte[] salt) {
             using (var hash = new Rfc2898DeriveBytes(password, salt, 600000, HashAlgorithmName.SHA256))
                 return Convert.ToBase64String(hash.GetBytes(32));
         }
 
-        static Credential Create(string password, bool starter) {
+        internal static Credential Create(string password, bool starter) {
             // The fixed starter is local-only and must be replaced before a session is issued.
             if (!starter || !Access.Equal(password, Starter)) CheckRules(password);
             if (!starter && Access.Equal(password, Starter))

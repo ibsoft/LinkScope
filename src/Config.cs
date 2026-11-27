@@ -15,6 +15,7 @@ namespace LinkScope {
         public Target(){AlertsEnabled=true;LossWindowProbes=20;}
     }
     public sealed class Config {
+        public EndpointSettings Endpoint {get;set;}
         public IntegritySettings Integrity {get;set;}
         public AiSettings Ai {get;set;}
         public TelemetryExportSettings TelemetryExport {get;set;}
@@ -46,11 +47,11 @@ namespace LinkScope {
         public int LowLifePercent {get;set;}
         public bool WriteDiskEvents {get;set;}
         public string[] ExtraCategories {get;set;}
-        public static readonly string[] Core={"ram","cpu","disk_usage","smart","events","firewall","antivirus","security","data_integrity"};
+        public static readonly string[] Core={"ram","cpu","disk_usage","smart","events","firewall","antivirus","security","data_integrity","endpoint_protection"};
         public static readonly string[] Extras={"os","computer","bios","baseboard","processors","memory_modules","graphics","network_adapters","ip_addresses","dns","routes","volumes","partitions","services","processes","hotfixes","installed_software","drivers","pnp_devices","usb","battery","shares","printers","pagefile","time_zone","event_details"};
         public static readonly string[] Channels={"System","Application","Microsoft-Windows-Windows Defender/Operational","Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","Microsoft-Windows-WindowsUpdateClient/Operational","Microsoft-Windows-TaskScheduler/Operational","Microsoft-Windows-NTFS/Operational","Microsoft-Windows-Storage-Storport/Operational"};
         public Config() {
-            Integrity=new IntegritySettings();DatabaseMaintenance=new DatabaseMaintenanceSettings();TelemetryExport=new TelemetryExportSettings();Delivery=new DeliverySettings();Logging=new LogSettings();Ai=new AiSettings();Siem=new SiemSettings();
+            Endpoint=new EndpointSettings();Integrity=new IntegritySettings();DatabaseMaintenance=new DatabaseMaintenanceSettings();TelemetryExport=new TelemetryExportSettings();Delivery=new DeliverySettings();Logging=new LogSettings();Ai=new AiSettings();Siem=new SiemSettings();
             AllowedClientIPs=new string[0]; BrandLabel=""; BindAddress="127.0.0.1"; HostName="localhost"; CertificateThumbprint=""; Port=9876;
             IntervalSeconds=5; TimeoutMs=1500; InterfaceName=""; RequireLogin=true; ResourceSeconds=15;
             InventoryMinutes=5; EventsPerChannel=25; EventChannels=Channels.Take(5).ToArray();
@@ -79,7 +80,9 @@ namespace LinkScope {
             if(c==null || !IPAddress.TryParse(c.BindAddress,out addr) || addr.Equals(IPAddress.Any) || addr.Equals(IPAddress.IPv6Any) || addr.IsIPv6Multicast || addr.Equals(IPAddress.Broadcast))
                 throw new InvalidDataException("Choose one specific local listening IP.");
             c.BindAddress=addr.ToString();
+            c.RequireLogin=true; // Role-based access does not permit anonymous monitoring.
             c.AllowedClientIPs=ClientFirewall.Validate(c.AllowedClientIPs);
+            if(c.Endpoint==null)c.Endpoint=new EndpointSettings();c.Endpoint.Validate();
             if(c.Integrity==null)c.Integrity=new IntegritySettings();c.Integrity.Validate();
             if(c.TelemetryExport==null)c.TelemetryExport=new TelemetryExportSettings();c.TelemetryExport.Validate();
             if(c.DatabaseMaintenance==null)c.DatabaseMaintenance=new DatabaseMaintenanceSettings();c.DatabaseMaintenance.Validate();

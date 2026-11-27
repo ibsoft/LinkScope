@@ -15,7 +15,7 @@ namespace LinkScope {
             var start=Telemetry.PowerShell(Encoding.UTF8.GetString(Program.Resource("security.ps1")));
             using(var process=Process.Start(start)){
                 var stdout=process.StandardOutput.ReadToEndAsync();var stderr=process.StandardError.ReadToEndAsync();
-                if(!process.WaitForExit(45000)){process.Kill();throw new TimeoutException("Security check timed out.");}
+                if(!process.WaitForExit(45000)){process.Kill();throw new System.TimeoutException("Security check timed out.");}
                 if(process.ExitCode!=0||!stdout.Wait(2000)||!stderr.Wait(2000)||stdout.Result.Length>12000)throw new InvalidDataException("Security provider did not return a snapshot.");
                 var snap=Config.Json().Deserialize<PostureSnapshot>(stdout.Result);
                 if(!Valid(snap))throw new InvalidDataException("Incomplete security posture snapshot.");

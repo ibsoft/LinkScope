@@ -233,7 +233,7 @@ const LinkScopeReport = (() => {
     async function addWindowsPages(doc,lib,regular,bold,health,sections,color,trends,history,manifest) {
         if(!health||!health.categories)throw Error('Windows health snapshot is missing');
         const ctx=document.createElement('canvas').getContext('2d');
-        const names={data_integrity:'Data Integrity & Tamper Detection',cpu:'CPU',ram:'RAM',disk_usage:'Disk usage',smart:'Disk health and SSD replacement',events:'Event logs - previous 24 hours',firewall:'Firewall profiles',antivirus:'Antivirus',security:'Security posture',event_details:'Event messages - previous 24 hours'};
+        const names={endpoint_protection:'Endpoint Protection',data_integrity:'Data Integrity & Tamper Detection',cpu:'CPU',ram:'RAM',disk_usage:'Disk usage',smart:'Disk health and SSD replacement',events:'Event logs - previous 24 hours',firewall:'Firewall profiles',antivirus:'Antivirus',security:'Security posture',event_details:'Event messages - previous 24 hours'};
         let page,y,sectionTitle='';
         function newPage(){
             page=doc.addPage([pageWidth,pageHeight]);y=64;
@@ -323,6 +323,28 @@ const LinkScopeReport = (() => {
         const smart=health.categories.smart,smartResult=smart?.result,flagged=(smartResult?.items||[]).filter(x=>x.recommendation==='replace'||x.recommendation==='review');
         if(flagged.length){for(const d of flagged)await line((d.recommendation==='replace'?'Plan replacement':'Review disk')+' - '+d.model+' / disk '+d.device+' / remaining life '+(d.estimatedLifeRemainingPercent==null?'unavailable':d.estimatedLifeRemainingPercent+'%'),{font:bold,fill:orange});}
         else await line(smartResult?.status==='ok'?'No replacement or review flags in the available readings. See per-drive coverage below.':'Disk assessment unavailable or still collecting.',{fill:muted});
+        if(health.categories.endpoint_protection){
+            await heading('Endpoint Protection - threat and response summary');
+            const ep=health.categories.endpoint_protection,er=ep.result||ep;
+            await line('Mode: '+scalar(er.mode)+' / Coverage: '+scalar(er.status)+(ep.stale?' / STALE':'')+' / Last full scan: '+scalar(er.lastScanUtc),{font:bold,fill:er.status==='ok'&&!ep.stale?teal:orange});
+            await line('Engine: '+scalar(er.engineVersion)+' / Signature DB: '+scalar(er.signatureDatabaseVersion)+' / Engine-reported date: '+scalar(er.signatureDatabaseTimestamp));
+            await line('Active warning/critical findings: '+scalar(er.violations)+' / Files scanned: '+scalar(er.scannedFiles)+' / Canary paths: '+scalar(er.canaryCount)+' / Entropy changes: '+scalar(er.entropyChanges));
+            await line('Pending incident delivery: '+scalar(er.pendingAlertDelivery)+' / Watcher queue: '+scalar(er.queueDepth)+' / Overflow count: '+scalar(er.overflowCount)+' / Process evidence: '+scalar(er.processCorrelation));
+            await line('Definition freshness: '+scalar(er.signatureFreshness)+' / Last successful engine check: '+scalar(er.lastSignatureCheckUtc));
+            await line('Last successful LinkScope FreshClam check: '+scalar(er.lastSuccessfulSignatureRefreshUtc)+' / Last confirmed changed signature database: '+scalar(er.lastSuccessfulSignatureUpdateUtc));
+            await line('Latest database update reported by FreshClam log: '+scalar(er.lastReportedSignatureUpdateUtc)+' (log evidence, not cryptographic verification).');
+            await line('Signature maintenance: '+scalar(er.signatureMaintenance?.status)+' / '+scalar(er.signatureMaintenance?.detail),{fill:er.signatureMaintenance?.status==='Failed'?orange:muted});
+            if(er.signatureSchedule){const ss=er.signatureSchedule;await line('Scheduled signatures: '+(ss.enabled?scalar(ss.frequency)+' at '+scalar(ss.localTime)+' ('+scalar(ss.timeZone)+') / '+scalar(ss.status)+' / Next UTC: '+scalar(ss.nextRunUtc)+' / Last request UTC: '+scalar(ss.lastScheduledRequestUtc):'Disabled')+'. Native FreshClam updates remain independent.');}
+            await line('Automatic response readiness: '+scalar(er.responseEngineStatus)+' / '+scalar(er.responseEngineDetail)+' / Checked: '+scalar(er.responseCheckedUtc));
+            for(const r of er.responsePathsReadiness||[])await line('Response path access (advisory): '+scalar(r.path)+' / '+scalar(r.status)+' / '+scalar(r.detail),{fill:r.status==='warning'?orange:muted});
+            await line('Signature check outcomes (since policy start): clean '+scalar(er.cleanChecks)+' / confirmed malware '+scalar(er.infectedChecks)+' / heuristic '+scalar(er.heuristicChecks)+' / excluded '+scalar(er.excludedChecks)+' / failed or limited '+scalar(er.failedChecks)+' / quarantined '+scalar(er.quarantinedChecks));
+            await line('Active malware: '+scalar(er.activeMalware)+' / Active heuristic findings: '+scalar(er.activeHeuristic)+' / Active scan issues: '+scalar(er.activeScanIssues)+' / Quarantine payloads: '+scalar(er.quarantineCount)+' / Permanently deleted: '+scalar(er.quarantineDeletedCount));
+            for(const d of er.quarantineDeletions||[])await line('Quarantine deletion: '+scalar(d.deletedUtc)+' / '+scalar(d.actor)+' / '+scalar(d.path)+' / SHA-256 '+scalar(d.sha256));
+            for(const canary of er.canaries||[])await line('Canary: '+scalar(canary.path)+' / '+scalar(canary.status)+' / '+scalar(canary.detail),{fill:canary.status==='critical'?orange:muted});
+            for(const finding of er.items||[])await line('Detection: '+scalar(finding.change)+' / '+scalar(finding.severity)+' / '+scalar(finding.path)+' / '+scalar(finding.detail),{fill:orange});
+            if(er.truncated)await line('Active detail snapshot capped; see full Alert History and endpoint database.',{fill:orange});
+            await line('Detection and restricted response only; no kernel interception. Missing or incomplete coverage does not imply a clean endpoint.',{fill:muted});
+        }
         await heading('Network probe alert rules');
         for(const t of manifest.targets){
             const failures=t.FailureCount??manifest.probeAlertCount;
@@ -396,7 +418,7 @@ const LinkScopeReport = (() => {
     }
     async function exportAll(){
         const button=document.getElementById('global-export'),status=document.getElementById('pdf-status');
-        if(button.disabled)return;button.disabled=true;
+        if(button.getAttribute('aria-disabled')==='true')return;button.setAttribute('aria-disabled','true');button.setAttribute('aria-busy','true');
         const done=LinkScopeBusy.begin('Exporting complete PDF…');
         try{
             status.textContent='Collecting the application report…';
@@ -427,9 +449,9 @@ const LinkScopeReport = (() => {
             status.textContent='Downloaded '+filename;
             window.LinkScopeToast.message('success','PDF downloaded',filename);
         }catch(e){status.textContent='PDF export failed. '+e.message;window.LinkScopeToast.message('error','PDF export failed',e.message);}
-        finally{done();button.disabled=false;}
+        finally{done();button.removeAttribute('aria-disabled');button.removeAttribute('aria-busy');}
     }
     const button=document.getElementById('global-export');
-    if(button){button.onclick=exportAll;if(location.hash==='#report'){window.history.replaceState(null,'',location.pathname);exportAll();}}
+    if(button){button.onclick=e=>{e.preventDefault();exportAll();};if(location.hash==='#report'){window.history.replaceState(null,'',location.pathname);exportAll();}}
     return {exportAll};
 })();

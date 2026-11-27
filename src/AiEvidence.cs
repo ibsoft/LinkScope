@@ -8,6 +8,8 @@ namespace LinkScope {
     internal sealed class AiEvidence {
         readonly List<string> records=new List<string>();
         readonly List<string> facts=new List<string>();
+        readonly List<string> securityFacts=new List<string>();
+        internal string SecurityFacts(){return string.Join("\n",securityFacts);}
         internal string SystemFacts(){return string.Join("\n",facts)+"\nUnavailable or incomplete: "+(Missing.Count==0?"none reported":string.Join(", ",Missing));}
         void Exact(string section,object value){facts.Add("- "+section+": "+Config.Json().Serialize(value));}
         static object Decode(object value){var j=Config.Json();return j.DeserializeObject(j.Serialize(value));}
@@ -25,19 +27,19 @@ namespace LinkScope {
         }
         void Fact(string group,object value){if(!Sources.Contains(group))Sources.Add(group);records.Add(Config.Json().Serialize(new {source=group,data=value}));}
         void Read(string section,Action action){try{action();}catch(Exception){Missing.Add(section);Fact(section,"Evidence unavailable.");}}
-        static readonly HashSet<string> Omit=new HashSet<string>(StringComparer.OrdinalIgnoreCase){"serial","MACAddress","message","diagnostics","reason","description","commandline","password","apikey","protectedkey","token","secret"};
+        static readonly HashSet<string> Omit=new HashSet<string>(StringComparer.OrdinalIgnoreCase){"serial","MACAddress","message","diagnostics","reason","description","commandline","password","apikey","protectedkey","token","secret","databasecustomurl","providerurl","subscriptionurl","mfaProtected","authorization","cookie"};
         static object Safe(object x,int depth){
             if(x==null||depth>12)return null;
             var d=x as Dictionary<string,object>;
             if(d!=null)return d.Where(k=>!Omit.Contains(k.Key)).ToDictionary(k=>k.Key,k=>Safe(k.Value,depth+1));
-            if(x is string){string s=(string)x;return s.Length>320?s.Substring(0,320):s;}
+            if(x is string){string s=System.Text.RegularExpressions.Regex.Replace((string)x,@"(?i)https?://[^\s<>\x22]+","[URL redacted]");return s.Length>320?s.Substring(0,320):s;}
             if(x is IEnumerable){var a=AiProvider.List(x);return a.Select(i=>Safe(i,depth+1)).ToArray();}
             return x;
         }
         void Health(Telemetry monitor,Config cfg){
             var json=Config.Json();
-            var snap=json.DeserializeObject(json.Serialize(monitor.Snapshot(cfg.Categories())));
-            var cats=AiProvider.Map(AiProvider.Get(snap,"categories"));Categories=cats.Count;
+            var snap=json.DeserializeObject(json.Serialize(monitor.Snapshot(cfg.Categories().Where(x=>x!="data_integrity"&&x!="endpoint_protection"))));
+            var cats=AiProvider.Map(AiProvider.Get(snap,"categories"));Categories+=cats.Count;
             foreach(var c in cats){
                 var wrapper=AiProvider.Map(c.Value);var result=AiProvider.Map(AiProvider.Get(wrapper,"result"));
                 string state=Convert.ToString(AiProvider.Get(wrapper,"status")??AiProvider.Get(result,"status"));
@@ -68,6 +70,74 @@ namespace LinkScope {
                     }else {Fact(c.Key,Safe(item,0));if(new[]{"disk_usage","security","firewall","antivirus"}.Contains(c.Key))Exact(c.Key+" reading",Safe(item,0));}
                 }
             }
+        }
+        // Security readings are kept out of the general (potentially very large) inventory payload.
+        // The final model receives these facts even after evidence-group summarization.
+        static readonly string[] IntegrityFields={"chainValid","sequence","chainHead","monitoredFiles","excludedEntries","violations"};
+        static readonly string[] EndpointFields={"engineOnline","engineVersion","signatureDatabaseVersion","signatureDatabaseTimestamp","signatureFreshness","lastSuccessfulSignatureUpdateUtc","lastSuccessfulSignatureRefreshUtc","lastReportedSignatureUpdateUtc","signatureUpdateLogRecognized","lastSignatureCheckUtc","mode","responseEngineStatus","responseEngineDetail","responseCheckedUtc","realTime","watcherCount","queueDepth","overflowCount","scanRunning","scanStartedUtc","lastScanUtc","nextScanUtc","lastRealTimeScanUtc","lastFileScanUtc","scannedFiles","sizeLimitedFiles","excludedEntries","cleanChecks","infectedChecks","heuristicChecks","excludedChecks","failedChecks","quarantinedChecks","activeMalware","activeHeuristic","activeScanIssues","quarantineCount","quarantineDeletedCount","changedFiles","entropyChanges","canaryCount","processCorrelation","violations","pendingAlertDelivery","realTimeChecked"};
+        static Dictionary<string,object> Pick(object value,IEnumerable<string> fields){
+            var map=AiProvider.Map(value);return fields.Where(map.ContainsKey).ToDictionary(k=>k,k=>Safe(map[k],0));
+        }
+        static object[] PriorityRows(object[] rows,int count){return rows.OrderBy(v=>{
+            string severity=AiProvider.Text(v,"severity");if(severity.Length==0)severity=AiProvider.Text(v,"status");
+            return severity=="critical"||severity=="error"?0:severity=="warning"?1:2;
+        }).Take(count).ToArray();}
+        static object RowCounts(object[] rows,string field){return rows.GroupBy(x=>AiProvider.Text(x,field)).Select(g=>new {value=Safe(g.Key,0),count=g.Count()}).ToArray();}
+        static readonly string[] FindingFields={"id","path","change","severity","status","detail","expectedHash","actualHash","hash","firstUtc","lastUtc","utc"};
+        void SecurityRows(string category,string field,object[] rows,int sampleLimit,string[] fields){
+            // All returned rows contribute to counts; only a bounded subset is sent to the model.
+            var sample=field=="items"||field=="canaries"?PriorityRows(rows,sampleLimit):rows.Take(sampleLimit).ToArray();
+            Fact(category+"-"+field+"-coverage",new {returned=rows.Length,sent=sample.Length,omitted=rows.Length-sample.Length,scope="returned snapshot rows only"});
+            foreach(var row in sample)Fact(category+"-"+field,Pick(row,fields));
+        }
+        internal void SecuritySnapshot(string category,object wrapper,bool enabled){
+            Categories++;
+            var result=AiProvider.Map(AiProvider.Get(wrapper,"result"));
+            string state=Convert.ToString(AiProvider.Get(wrapper,"status")??AiProvider.Get(result,"status"));
+            if(string.IsNullOrEmpty(state))state="unavailable";
+            bool stale=Equals(AiProvider.Get(wrapper,"stale"),true),truncated=Equals(AiProvider.Get(result,"truncated"),true);
+            var items=AiProvider.List(AiProvider.Get(result,"items"));
+            bool endpoint=category=="endpoint_protection";
+            if(!enabled||stale||truncated||(state!="ok"&&state!="scanning"))Missing.Add(category+" ("+(!enabled?"disabled":stale?"stale":truncated?"truncated":state)+")");
+            // Keep raw observations separate from threat conclusions, including scan coverage limits.
+            var summary=new Dictionary<string,object>{
+                {"enabled",enabled},{"status",state},{"stale",stale},{"collectedUtc",AiProvider.Get(wrapper,"collectedUtc")},
+                {"ageSeconds",AiProvider.Get(wrapper,"ageSeconds")},{"truncated",truncated},{"returnedFindings",items.Length},
+                {"findingsBySeverity",RowCounts(items,"severity")},{"findingsByChange",RowCounts(items,"change")},
+                {"readings",Pick(result,endpoint?EndpointFields:IntegrityFields)},
+                {"priorityFindings",PriorityRows(items,8).Select(x=>Pick(x,FindingFields)).ToArray()},
+                {"findingsInExactSummary",Math.Min(8,items.Length)}
+            };
+            // Paths, file names, hashes and detection labels are evidence, never executable instructions.
+            var paths=AiProvider.List(AiProvider.Get(result,"protectedPaths"));
+            summary["protectedPathCount"]=paths.Length;
+            summary["protectedPathSample"]=paths.Take(10).Select(x=>Safe(x,0)).ToArray();
+            if(endpoint){
+                var canaries=AiProvider.List(AiProvider.Get(result,"canaries"));
+                var scans=AiProvider.List(AiProvider.Get(result,"scanActivity"));
+                var history=AiProvider.List(AiProvider.Get(result,"recentIncidents"));
+                var quarantine=AiProvider.List(AiProvider.Get(result,"quarantineItems"));
+                summary["signatureMaintenance"]=Pick(AiProvider.Get(result,"signatureMaintenance"),new[]{"status","attemptUtc","checkedUtc","updatedUtc","detail"});
+                summary["signatureSchedule"]=Pick(AiProvider.Get(result,"signatureSchedule"),new[]{"enabled","frequency","localTime","weekday","monthDay","timeZone","status","nextRunUtc","lastScheduledRequestUtc"});
+                summary["canaryStatusCounts"]=RowCounts(canaries,"status");
+                summary["canarySample"]=PriorityRows(canaries,6).Select(x=>Pick(x,new[]{"path","status","detail","expectedHash"})).ToArray();
+                summary["recentScanSampleCounts"]=RowCounts(scans,"result");
+                summary["recentScanRows"]=scans.Length;summary["recentScanLimit"]=AiProvider.Get(result,"scanActivityLimit");
+                summary["recentIncidentRows"]=history.Length;summary["incidentHistoryLimit"]=AiProvider.Get(result,"historyLimit");
+                summary["recentIncidentSampleCounts"]=RowCounts(history,"severity");
+                summary["quarantineRecentDeletionCount"]=AiProvider.List(AiProvider.Get(result,"quarantineDeletions")).Length;summary["quarantineReturnedRows"]=quarantine.Length;summary["quarantineSampleCounts"]=RowCounts(quarantine,"state");
+                summary["scopeNote"]="Scan counters are checks, not unique files; recent scan and incident rows are bounded samples, not lifetime totals. Signature version/freshness is engine-reported, not proof of every third-party feed being current.";
+                SecurityRows(category,"canaries",canaries,20,new[]{"path","status","detail","expectedHash"});
+                SecurityRows(category,"scanActivity",scans,20,new[]{"utc","path","source","result","durationMs","detail"});
+                SecurityRows(category,"recentIncidents",history,20,FindingFields);
+                SecurityRows(category,"quarantineItems",quarantine,15,new[]{"id","path","sha256","state","utc"});
+            }else summary["scopeNote"]="The authenticated chain and file integrity readings are distinct: a valid chain does not establish that protected files are unchanged. Incomplete scans and unavailable data do not prove files are safe.";
+            securityFacts.Add("- "+category+": "+Config.Json().Serialize(summary));
+            Fact(category,summary);SecurityRows(category,"items",items,30,FindingFields);
+        }
+        void SecurityHealth(Telemetry monitor,string category,bool enabled){
+            var snapshot=Decode(monitor.Snapshot(new[]{category}));
+            SecuritySnapshot(category,AiProvider.Get(AiProvider.Get(snapshot,"categories"),category),enabled);
         }
         // Keep exact recent network facts separate from model-generated summaries.
         internal static string ProbeWindowText(object[] row){
@@ -144,6 +214,8 @@ namespace LinkScope {
             long now=History.Now();var e=new AiEvidence{Utc=Telemetry.Utc(now)};
             e.Fact("monitor",new {host=Environment.MachineName,utc=e.Utc,cpuAlertPercent=rules.CpuAlertPercent,ramAlertPercent=rules.RamAlertPercent,diskAlertPercent=rules.DiskAlertPercent,lowLifePercent=rules.LowLifePercent});
             e.Read("Recent network probes",()=>e.RecentNetwork(running,now));
+            e.Read("Data Integrity",()=>e.SecurityHealth(monitor,"data_integrity",rules.Integrity.Enabled));
+            e.Read("ClamAV Endpoint Protection",()=>e.SecurityHealth(monitor,"endpoint_protection",rules.Endpoint.Enabled));
             e.Read("Windows health",()=>e.Health(monitor,rules));
             var disabled=Config.Extras.Except(rules.ExtraCategories).ToArray();e.Exact("Optional inventory not enabled",disabled);e.Fact("disabled-inventory",disabled);
             e.Read("Active connections",()=>{var snapshot=Decode(NativeConnections.Snapshot());var rows=AiProvider.List(AiProvider.Get(snapshot,"rows"));

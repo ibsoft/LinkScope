@@ -155,9 +155,10 @@ namespace LinkScope {
         }
         static void Sc(params string[] args) {
             string exe=Path.Combine(Environment.SystemDirectory,"sc.exe");
-            var info=new ProcessStartInfo(exe,string.Join(" ",args.Select(Quote))) {UseShellExecute=false};
+            var info=new ProcessStartInfo(exe,string.Join(" ",args.Select(Quote))) {UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true};
             using(var p=Process.Start(info)) {
-                p.WaitForExit();
+                var output=p.StandardOutput.ReadToEndAsync();var errors=p.StandardError.ReadToEndAsync();
+                p.WaitForExit();Console.WriteLine(output.Result);Console.Error.WriteLine(errors.Result);
                 if(p.ExitCode!=0) throw new InvalidOperationException("sc.exe "+args[0]+" failed ("+p.ExitCode+").");
             }
         }
@@ -232,6 +233,36 @@ namespace LinkScope {
                     throw new HttpError(503,"Windows could not confirm the restart task. Check Task Scheduler or run Restart-Service LinkScope on the host.");
             }
         }
+        static readonly object signatureQueueGate=new object();
+        static long lastQueuedSignature;
+        internal static void QueueSignatureUpdate(){lock(signatureQueueGate){
+            if(!ServiceMode)throw new HttpError(409,"Install LinkScope as a Windows service to use dashboard signature updates.");
+            if(History.Now()-lastQueuedSignature<60)throw new HttpError(409,"A signature update was just requested; wait for task status.");
+            var state=ClamUpdateState.Read();if(state.status=="Unavailable")throw new HttpError(503,"Trusted signature status is unavailable. Review registry permissions in Setup.");if(state.Busy||state.CoolingDown)throw new HttpError(409,"A signature update is running or was attempted within the last 60 minutes.");
+            var command=new ProcessStartInfo(Path.Combine(Environment.SystemDirectory,"schtasks.exe"),"/Run /TN "+Quote(@"\Unixfor LinkScope Signature Update")){UseShellExecute=false,CreateNoWindow=true};
+            using(var child=Process.Start(command)){if(!child.WaitForExit(5000)||child.ExitCode!=0)throw new HttpError(503,"Signature task unavailable. Upgrade LinkScope using Setup and verify the ClamAV services.");}
+            lastQueuedSignature=History.Now();
+        }}
+        static int RefreshInstalledClamPeerAccess(){
+            using(var id=WindowsIdentity.GetCurrent())if(!id.IsSystem)throw new UnauthorizedAccessException("Only the installed SYSTEM task may refresh ClamD query access.");
+            if(!Same(Assembly.GetExecutingAssembly().Location,ServiceExe)||!Same(RegisteredCommand(),ServiceCommand(ServiceExe)))throw new UnauthorizedAccessException("Unexpected installed service path.");
+            using(var gate=new FileStream(Path.Combine(Config.Root,"maintenance.lock"),FileMode.Open,FileAccess.ReadWrite,FileShare.None)){
+                var policy=Config.Load().Endpoint;
+                if(!policy.Enabled||policy.Mode=="monitor")return 0;
+                string standard=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"ClamAV","clamd.exe");
+                if(policy.Port!=3310||!Same(policy.TrustedEnginePath,standard))return 3;
+                return EndpointResponse.RefreshClamPeerAccess(ServiceSid())?0:3;
+            }
+        }
+        static int UpdateInstalledSignatures(){
+            using(var id=WindowsIdentity.GetCurrent())if(!id.IsSystem)throw new UnauthorizedAccessException("Only the installed SYSTEM task may run this operation.");
+            if(!Same(Assembly.GetExecutingAssembly().Location,ServiceExe)||!Same(RegisteredCommand(),ServiceCommand(ServiceExe)))throw new UnauthorizedAccessException("Unexpected installed service path.");
+            // The worker and setup share a cross-process mutex. Hold the same maintenance lock used by install/uninstall.
+            using(var maintenance=new FileStream(Path.Combine(Config.Root,"maintenance.lock"),FileMode.Open,FileAccess.ReadWrite,FileShare.None)){
+                // The endpoint scanner publishes failed updates through the normal alert pipeline, including Event Viewer only when enabled.
+                return ClamUpdateWorker.Update(Console.Out,true);
+            }
+        }
         static void RestartInstalledService(){
             using(var id=WindowsIdentity.GetCurrent())if(!id.IsSystem)throw new UnauthorizedAccessException("The installed restart task runs this operation.");
             using(var maintenance=new FileStream(Path.Combine(Config.Root,"maintenance.lock"),FileMode.Open,FileAccess.ReadWrite,FileShare.None))
@@ -243,7 +274,30 @@ namespace LinkScope {
                 StartAndWait();
             }
         }
-        static void Install(bool upgrade=false) {
+        static bool canarySetupWarning;
+        // Enrollment runs before starting the service, under the existing maintenance lock.
+        static void EnrollSetupCanaries(string token) {
+            if(string.IsNullOrEmpty(token))return;
+            var parts=Encoding.UTF8.GetString(Convert.FromBase64String(token)).Split('|');
+            if(parts.Length!=2)throw new InvalidDataException("Invalid canary enrollment request.");
+            string folder=parts[0],sid=new SecurityIdentifier(parts[1]).Value;
+            if(CanaryTemplates.Registered(sid))return;
+            CanaryTemplates.Verify(folder);
+            var cfg=Config.Load();var ep=cfg.Endpoint;
+            var files=CanaryTemplates.Names.Select(name=>Path.Combine(folder,name)).ToArray();
+            // Monitor only the three decoys, never the entire Documents directory.
+            if(files.Any(path=>EndpointProtection.Excluded(ep,path)))throw new InvalidDataException("Canary paths conflict with existing exclusions. Review Endpoint Protection settings.");
+            ep.Paths=ep.Paths.Concat(files.Where(path=>!ep.Paths.Any(root=>EndpointProtection.Under(path,root)))).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            ep.CanaryPaths=ep.CanaryPaths.Concat(files).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            if(!ep.Enabled&&ep.Mode=="monitor")ep.Enabled=true;
+            ep.Validate();
+            using(var endpoint=new EndpointProtection())endpoint.SeedSetupCanaries(folder);
+            Config.Save(Config.FilePath,Config.Validate(cfg));
+            CanaryTemplates.Register(sid,folder);
+            try{UserAudit.Init();UserAudit.Write("setup","local","Registered three synthetic canaries for "+sid+" in "+folder,200,"Success");}catch(Exception ex){Console.Error.WriteLine("Canary audit: "+ex.Message);}
+            Console.WriteLine("Canary files enrolled: "+folder+(ep.Enabled?" (monitoring enabled).":" (existing disabled response policy preserved; enable monitoring manually)."));
+        }
+        static void Install(bool upgrade=false,string canaryToken=null) {
             SelfCheck.Run();
             InitConfig();
             Config.Load();
@@ -290,6 +344,9 @@ namespace LinkScope {
                     Console.Error.WriteLine("Self-signed certificate unavailable: "+ex.Message+" Run --prepare-certificate before selecting it.");
                 }
                 RunSetupScript("hardware-task.ps1","install");
+                if(canaryToken!=null)try{
+                    using(var lockFile=new FileStream(Path.Combine(Config.Data,"collector.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None))EnrollSetupCanaries(canaryToken);
+                }catch(Exception ex){canarySetupWarning=true;Console.Error.WriteLine("Canary enrollment failed; service installation continues: "+ex.Message);}
                 try { StartAndWait(); }
                 catch(Exception ex) {
                     Console.Error.WriteLine("Windows could not start LinkScope. Checking service exit codes:");
@@ -321,20 +378,36 @@ namespace LinkScope {
             Sc("delete",Name);
             Console.WriteLine("Service removed. History and configuration retained in "+Config.Root);
         }
+        [STAThread]
         static int Main(string[] args) {
-            string verb=args.Length==1 ? args[0].ToLowerInvariant() : "";
+            string verb=args.Length>=1&&args.Length<=2 ? args[0].ToLowerInvariant() : "";
+            string canaryToken=args.Length==2?args[1]:null;
+            if(canaryToken!=null&&(!(verb=="--install"||verb=="--upgrade"||verb=="--upgrade-pwa")||canaryToken.Length>8192))return 2;
             try {
                 switch(verb) {
-                    case "--install": case "-install": Install(); break;
-                    case "--upgrade": Install(true); break;
-                    case "--uninstall": case "-uninstall": Uninstall(); break;
+                    case "--install": case "-install": Install(false,canaryToken); DesktopApp.Provision(false); break;
+                    case "--upgrade": Install(true,canaryToken); DesktopApp.Provision(false); break;
+                    case "--upgrade-pwa": Install(true,canaryToken); DesktopApp.Provision(true); break;
+                    case "--desktop-app": RequireAdmin(); DesktopApp.Provision(false); break;
+                    case "--register-pwa": RequireAdmin(); DesktopApp.Provision(true); break;
+                    case "--uninstall": case "-uninstall": Uninstall(); DesktopApp.Remove(); break;
                     case "--init-config": InitConfig(); break;
                     case "--self-test": SelfCheck.Run(true); break;
                     case "--smart-once": RequireAdmin(); try{SmartDisk.Capture();}finally{SecurityPosture.Capture();} break;
                     case "--set-admin": RequireAdmin(); Access.SetPassword(); break;
+                    case "--reset-admin-mfa":
+                        RequireAdmin();
+                        using(var service=new ServiceController(Name)){if(service.Status!=ServiceControllerStatus.Stopped)throw new InvalidOperationException("Stop the LinkScope service before resetting MFA.");}
+                        Console.Write("Type RESET to disable MFA for the built-in admin: ");
+                        if(Console.ReadLine()!="RESET")return 2;
+                        new UserAccounts(Path.Combine(Config.SettingsDir,"users.json"),AdminPasswords.Installed).ResetBuiltinMfa();
+                        UserAudit.Init();UserAudit.Write("Windows administrator","localhost","Offline built-in admin MFA recovery",200,"Success");
+                        Console.WriteLine("Admin MFA disabled. Restart LinkScope and enroll again.");break;
                     case "--prepare-certificate": PrepareCertificate(); break;
                     case "--check-config": Config.Load(); Console.WriteLine("Configuration is valid."); break;
                     case "--restart-installed": RestartInstalledService();break;
+                    case "--signature-update-installed": return UpdateInstalledSignatures();
+                    case "--clam-peer-access-installed": return RefreshInstalledClamPeerAccess();
                     case "--service": ServiceMode=true;ServiceBase.Run(new MonitorService()); break;
                     case "--console":
                         using(var done=new ManualResetEvent(false))
@@ -346,10 +419,10 @@ namespace LinkScope {
                         }
                         break;
                     default:
-                        Console.WriteLine("LinkScope.exe --install | --uninstall | --init-config | --check-config | --set-admin | --prepare-certificate | --console");
+                        Console.WriteLine("LinkScope.exe --install | --upgrade | --upgrade-pwa | --desktop-app | --register-pwa | --uninstall | --init-config | --check-config | --set-admin | --reset-admin-mfa | --prepare-certificate | --console");
                         return verb=="--help" || args.Length==0 ? 0 : 2;
                 }
-                MaintenanceEvents.Command(verb,true);return 0;
+                MaintenanceEvents.Command(verb,true);return canarySetupWarning?11:0;
             } catch(Exception ex) {
                 MaintenanceEvents.Command(verb,false);
                 for(Exception cause=ex;cause!=null;cause=cause.InnerException) {
