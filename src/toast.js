@@ -4,9 +4,9 @@
     const el=(tag,text)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;return n;};
     const id=k=>document.getElementById(k), toasts=new Map(), entries=new Map();
     const onHistory=document.body.dataset.page==='alerts';
-    let csrf='',admin=false,pending=false,again=false,nextPoll,through=null,historyVersion=0,historyPage=1,historySize=25;
+    let csrf='',admin=false,authenticated=false,pending=false,again=false,nextPoll,through=null,historyVersion=0,historyPage=1,historySize=25;
     let cursor=null,guestReads=[],guestSeen=[],unreadCount=0;
-    const readSignal='linkscope.alert-read-change';
+    const readSignal='linkscope.alert-read-change',categoryReadThrough=new Map();
     function stored(store,key,fallback){try{return JSON.parse(store.getItem(key))??fallback;}catch{return fallback;}}
     function keep(store,key,value){try{store.setItem(key,JSON.stringify(value));}catch{}}
     function rememberGuest(){keep(localStorage,'linkscope.read-alerts.v1',guestReads.slice(-512));keep(sessionStorage,'ls-guest-seen',guestSeen.slice(-512));}
@@ -19,19 +19,20 @@
         const item=toasts.get(key);if(!item)return;
         clearTimeout(item.timer);toasts.delete(key);item.node.remove();
     }
-    function show(key,severity,title,message,alert){
+    function show(key,severity,title,message,alert,action){
         if(toasts.has(key))return;
         const node=el('article');node.className='ls-toast ls-'+severity;
         const body=el('div');body.setAttribute('role',severity==='critical'||severity==='error'?'alert':'status');body.append(el('strong',title),el('p',message));node.append(body);
         const actions=el('div');actions.className='ls-toast-actions';
         if(alert){
             const button=el('button','Mark as read');button.type='button';button.onclick=async()=>{button.disabled=true;try{await ack(alert);}catch(ex){dismiss(key);feedback(ex);}finally{button.disabled=false;}};
-            const link=el('a','View details');link.href=alert.category==='network'?'/':alert.category==='data_integrity'?'/integrity':'/system#category-'+encodeURIComponent(alert.category);
-            link.onclick=async e=>{e.preventDefault();try{await ack(alert);location.assign(link.href);}catch(ex){dismiss(key);feedback(ex);}};
-            actions.append(button,link);
+            const link=el('a','View details');link.href=alert.category==='network'?'/':alert.category==='endpoint_protection'?'/endpoint':alert.category==='data_integrity'?'/integrity':'/system#category-'+encodeURIComponent(alert.category);
+            link.onclick=async e=>{e.preventDefault();try{if(admin)await ack(alert);location.assign(link.href);}catch(ex){dismiss(key);feedback(ex);}};
+            if(admin)actions.append(button);actions.append(link);
         }
+        if(action){const link=el('a',action.label);link.href=action.href;actions.append(link);}
         const close=el('button',alert?'Close without marking read':'Dismiss');close.type='button';close.onclick=()=>dismiss(key);actions.append(close);node.append(actions);
-        const item={node,alertSequence:alert?.sequence,timer:null};toasts.set(key,item);region.prepend(node);
+        const item={node,alertSequence:alert?.sequence,category:alert?.category,timer:null};toasts.set(key,item);region.prepend(node);
         // Expire every toast after seven seconds without acknowledging the alert.
         item.timer=setTimeout(()=>dismiss(key),7000);
     }
@@ -44,28 +45,51 @@
     function brand(label){
         const name=label?label+' LinkScope':'LinkScope',b=document.querySelector('.brand');if(!b)return;
         if(document.title.endsWith(b.textContent))document.title=document.title.slice(0,-b.textContent.length)+name;
-        b.textContent=name;
+        const nameNode=b.querySelector('.ls-brand-name');if(nameNode){if(nameNode.textContent!==name)nameNode.textContent=name;}else if(b.textContent!==name)b.textContent=name;
     }
-    window.LinkScopeToast={message:(level,title,text)=>show('ui:'+title,level,title,text),brand};
+    function applyCategoryRead(category,cutoff){categoryReadThrough.set(category,Math.max(categoryReadThrough.get(category)||0,Number(cutoff)||0));for(const [key,item] of toasts)if(item.category===category&&item.alertSequence!=null&&item.alertSequence<=cutoff)dismiss(key);}
+    window.LinkScopeToast={message:(level,title,text)=>show('ui:'+title,level,title,text),brand,categoryRead:(category,cutoff)=>{applyCategoryRead(category,cutoff);keep(localStorage,readSignal,{category,through:cutoff,at:Date.now()});poll();}};
     if(document.body.dataset.page==='login')return;
     guestReads=stored(localStorage,'linkscope.read-alerts.v1',[]);guestSeen=stored(sessionStorage,'ls-guest-seen',[]);
-    const icons={bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 20a2 2 0 0 0 4 0"/>',user:'<circle cx="12" cy="8" r="3.5"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/>'};
-    function icon(kind){const n=el('span');n.setAttribute('aria-hidden','true');n.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+icons[kind]+'</svg>';return n;}
-    const tools=el('div');tools.className='ls-tools';
-    const bell=el('a');bell.href='/alerts';bell.className='ls-icon';bell.title='Alert history';const badge=el('span');badge.className='ls-badge';badge.hidden=true;bell.append(icon('bell'),badge);
-    const account=el('details');account.className='ls-account';const summary=el('summary');summary.className='ls-icon';summary.setAttribute('aria-label','User account');summary.title='User account';summary.append(icon('user'));
-    const menu=el('div');menu.className='ls-account-menu';const login=el('a','Sign in');login.href='/login';const logoff=el('button','Log off');logoff.type='button';logoff.hidden=true;menu.append(login,logoff);account.append(summary,menu);
-    tools.append(bell,account);document.querySelector('header > div').append(tools);
+    // The authenticated response already contains all controls and initial unread count.
+    const tools=document.querySelector('.ls-tools'),bell=id('ls-bell'),badge=id('ls-unread-badge');
+    const account=tools.querySelector('.ls-account'),summary=account.querySelector('summary');
+    const who=id('ls-account-identity'),login=id('ls-account-login'),my=id('ls-account-my'),users=id('ls-account-users'),logoff=id('ls-account-logout');
+    const settings=account.querySelector('a[href="/settings"]'),report=id('global-export');
+    for(const link of account.querySelectorAll('a'))link.addEventListener('click',()=>{account.open=false;});
     document.addEventListener('pointerdown',e=>{if(!account.contains(e.target))account.open=false;});
     account.onkeydown=e=>{if(e.key==='Escape'){account.open=false;summary.focus();}};
     function badgeCount(n){unreadCount=Math.max(0,Number(n)||0);badge.hidden=unreadCount===0;badge.textContent=unreadCount>99?'99+':String(unreadCount);bell.title=unreadCount+' unread monitoring alerts';bell.setAttribute('aria-label','Alert history, '+unreadCount+' unread');}
-    badgeCount(0);
-    function session(s){admin=s.admin;csrf=s.csrf||'';login.hidden=admin;logoff.hidden=!admin;brand(s.brandLabel);}
+    // Preserve the server-rendered count until the first live feed arrives.
+    // Account security reminders are UI notifications, not monitoring incidents.
+    // Use the authenticated server state, never infer enrollment from the username or role.
+    // Keep the deadline across navigation and refresh; separate it for each account.
+    const mfaReminderPeriod=5*60*1000, mfaReminderPrefix='linkscope.mfa-reminder.v1:';
+    const mfaReminderFallback=new Map();let mfaReminderUser='';
+    function maybeRemindMfa(s){
+        const username=s.authenticated===true&&typeof s.username==='string'?s.username:'';
+        if(username!==mfaReminderUser){dismiss('mfa-reminder');mfaReminderUser=username;}
+        if(!username)return;
+        const key=mfaReminderPrefix+username;
+        if(s.mfaEnabled===true){
+            mfaReminderFallback.delete(key);try{localStorage.removeItem(key);}catch{}
+            dismiss('mfa-reminder');return;
+        }
+        if(s.mfaEnabled!==false||document.hidden)return;
+        const now=Date.now();let due=stored(localStorage,key,mfaReminderFallback.get(key)??null);
+        function schedule(){due=now+mfaReminderPeriod;mfaReminderFallback.set(key,due);keep(localStorage,key,due);}
+        // A first visit starts the interval; a backwards clock change cannot suppress reminders indefinitely.
+        if(!Number.isFinite(due)||due<=0||due>now+mfaReminderPeriod){schedule();return;}
+        if(now<due)return;
+        schedule();
+        show('mfa-reminder','warning','Protect your account','Multi-factor authentication (MFA) is not enabled. Set it up using Google Authenticator or another compatible app.',null,{label:'Set up MFA',href:'/account'});
+    }
+    function session(s){admin=s.admin===true;authenticated=s.authenticated===true||admin;csrf=s.csrf||'';login.hidden=authenticated;logoff.hidden=!authenticated;my.hidden=!authenticated;users.hidden=!admin;settings.hidden=!admin;report.hidden=!authenticated;who.hidden=!authenticated;who.textContent=authenticated?(s.username||'admin')+' · '+(s.role||(admin?'Admin':'Viewer')):'';for(const link of document.querySelectorAll('#ls-main-nav a[href="/audit"],#ls-main-nav a[href="/ai"]'))link.hidden=!admin;brand(s.brandLabel);maybeRemindMfa(s);}
     logoff.onclick=async()=>{try{await LinkScopeBusy.run('Signing out…',()=>json('/auth/logout',{}));keep(sessionStorage,'ls-notice-cursor',null);location.assign('/login');}catch(e){feedback(e);}};
     function markRow(key){const row=entries.get(key);if(row){row.state.textContent='Read';row.button.remove();row.node.classList.remove('unread');}}
     async function ack(a){
         if(admin){await LinkScopeBusy.run('Marking alert as read…',()=>json('/ui/alerts/read',{id:a.id}));markRow(a.id);if(onHistory)await history(historyPage,false);}
-        else if(!guestReads.includes(a.id)){guestReads.push(a.id);rememberGuest();}
+        else if(!authenticated&&!guestReads.includes(a.id)){guestReads.push(a.id);rememberGuest();}
         dismiss(a.id);keep(localStorage,readSignal,{id:a.id,at:Date.now()});poll();
     }
     function addRow(a){
@@ -78,7 +102,7 @@
         const state=el('span',a.read?'Read':'Unread'),cell=node.insertCell();cell.append(state);
         const button=el('button','Mark as read');button.type='button';
         button.onclick=async()=>{button.disabled=true;try{await ack(a);}catch(e){feedback(e);}finally{button.disabled=false;}};
-        if(!a.read)cell.append(button);entries.set(a.id,{node,button,state});id('history-list').append(node);
+        if(!a.read&&admin)cell.append(button);entries.set(a.id,{node,button,state});id('history-list').append(node);
     }
     let pager,applied=new URLSearchParams(),totalRows=0,totalPages=1;
     function searchFilters(){
@@ -109,7 +133,7 @@
             const cats=[...new Set([...p.categories,...(selected?[selected]:[])])].sort();
             cat.replaceChildren(new Option('All categories',''),...cats.map(x=>new Option(x,x)));cat.value=selected;
             badgeCount(p.unread);id('history-count').textContent=p.unread+' unread across all alerts';
-            id('read-all').disabled=p.unread===0||through===0;
+            id('read-all').disabled=!admin||p.unread===0||through===0;
             id('history-status').textContent=totalRows?'':(applied.toString()?'No alerts match this search.':'No alerts recorded yet.');
         }catch(e){if(tag===historyVersion)feedback(e);}
         finally{done();if(tag===historyVersion)pager.update(historyPage,totalPages,totalRows,historySize);}
@@ -128,14 +152,14 @@
     }
     function processFeed(s){
         session(s);const f=s.feed;
-        if(admin){
+        if(authenticated){
             for(const a of f.alerts){
-                if(a.read)continue;
+                if(a.read||Number(a.sequence)<=(categoryReadThrough.get(a.category)||0))continue;
                 show(a.id,a.severity,(a.resolved?'Resolved · ':'')+a.title,a.message,a);
             }
             if(f.unread===0)for(const [key,item] of toasts)if(item.alertSequence!=null)dismiss(key);
             cursor=f.cursor;keep(sessionStorage,'ls-notice-cursor',cursor);badgeCount(f.unread);
-            if(onHistory){id('history-count').textContent=f.unread+' unread across all alerts';id('read-all').disabled=f.unread===0||!through;
+            if(onHistory){id('history-count').textContent=f.unread+' unread across all alerts';id('read-all').disabled=!admin||f.unread===0||!through;
                 if(through!=null&&f.cursor>through)id('history-status').textContent='New alerts are available. Select Refresh to see them.';}
         }else{
             const unread=f.alerts.filter(a=>!guestReads.includes(a.id));badgeCount(unread.length);
@@ -147,13 +171,13 @@
     async function poll(){
         if(pending){again=true;return;}
         pending=true;clearTimeout(nextPoll);let more=false;
-        try{more=processFeed(await json('/ui/alerts'+(admin&&cursor!=null?'?after='+cursor:'')));dismiss('connection');}
+        try{more=processFeed(await json('/ui/alerts'+(authenticated&&cursor!=null?'?after='+cursor:'')));dismiss('connection');}
         catch(e){if(!document.hidden)show('connection','warning','Notification connection unavailable',e.message);}
         finally{pending=false;nextPoll=setTimeout(poll,more||again?0:5000);again=false;}
     }
-    window.addEventListener('storage',e=>{if(e.key===readSignal){try{const change=JSON.parse(e.newValue);if(change?.id)dismiss(change.id);if(change?.through!=null)for(const [key,item] of toasts)if(item.alertSequence!=null&&item.alertSequence<=change.through)dismiss(key);}catch{}if(!admin)guestReads=stored(localStorage,'linkscope.read-alerts.v1',[]);poll();}});
+    window.addEventListener('storage',e=>{if(e.key===readSignal){try{const change=JSON.parse(e.newValue);if(change?.id)dismiss(change.id);if(change?.through!=null){if(change.category)applyCategoryRead(change.category,change.through);else for(const [key,item] of toasts)if(item.alertSequence!=null&&item.alertSequence<=change.through)dismiss(key);}}catch{}if(!authenticated)guestReads=stored(localStorage,'linkscope.read-alerts.v1',[]);poll();}});
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll();});
-    (async()=>{try{session(await json('/ui/session'));cursor=admin?stored(sessionStorage,'ls-notice-cursor',null):null;
+    (async()=>{try{session(await json('/ui/session'));cursor=authenticated?stored(sessionStorage,'ls-notice-cursor',null):null;
         if(onHistory)await history(1,true);
     }catch(e){feedback(e);}poll();})();
 })();

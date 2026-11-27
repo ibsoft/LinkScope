@@ -52,7 +52,31 @@ namespace LinkScope {
             Check(monitors.List(new[]{"security"},true).Length==2,"keep finding while evidence is unavailable");
             monitors.Sample("security",new {status="ok",items=new[]{new {control="UAC",state="enabled",detail="EnableLUA policy"}}},config);
             Check(monitors.List(new[]{"security"},true).Length==0,"confirmed recovery");
+            CheckSecurityEvidence();
             TestWire("udp");TestWire("tcp");SiemChecks.Run(dir);
+        }
+        static void CheckSecurityEvidence(){
+            var j=Config.Json();var evidence=new AiEvidence();
+            var endpoint=j.DeserializeObject(j.Serialize(new {collectedUtc="2026-01-01T00:00:00Z",stale=false,result=new {
+                status="scanning",engineOnline=true,engineVersion="ClamAV fixture",signatureDatabaseVersion="12345",signatureFreshness="Current",infectedChecks=2,cleanChecks=12,failedChecks=1,violations=1,scanRunning=true,
+                signatureMaintenance=new {status="Updated",detail="Downloaded https://provider.invalid/credential-fixture/database.hdb"},
+                items=Enumerable.Range(0,41).Select(i=>new {path="C:/fixture/"+i,change="Malware signature",severity=i==40?"critical":"warning",detail="Test only",actualHash="fixture-hash"}).ToArray(),
+                canaries=new[]{new {path="C:/canary.docx",status="critical",expectedHash="baseline-fixture"}},
+                scanActivity=new[]{new {path="C:/test.txt",result="Infected",detail="Fixture.Signature FOUND",durationMs=3}},
+                recentIncidents=new[]{new {path="C:/test.txt",severity="critical",change="Malware signature"}},
+                quarantineItems=new[]{new {path="C:/test.txt",state="Quarantined",sha256="fixture-hash"}}
+            }}));
+            evidence.SecuritySnapshot("endpoint_protection",endpoint,true);
+            var integrity=j.DeserializeObject(j.Serialize(new {collectedUtc="2026-01-01T00:00:00Z",stale=true,result=new {status="ok",chainValid=true,sequence=7,violations=1,items=new[]{new {path="C:/modified.exe",change="Modified file",severity="critical",expectedHash="old",actualHash="new"}}}}));
+            evidence.SecuritySnapshot("data_integrity",integrity,true);
+            string exact=evidence.SecurityFacts(),chunks=string.Join("\n",evidence.Chunks());
+            Check(exact.Contains("ClamAV fixture")&&exact.Contains("12345")&&exact.Contains("infectedChecks")&&exact.Contains("C:/fixture/40"),"ClamAV exact facts and critical priority");
+            Check(exact.Contains("chainValid")&&exact.Contains("C:/modified.exe")&&exact.Contains("canaryStatusCounts")&&exact.Contains("quarantineSampleCounts"),"integrity and endpoint facts");
+            Check(chunks.Contains("Fixture.Signature FOUND")&&chunks.Contains("endpoint_protection-recentIncidents")&&chunks.Contains("endpoint_protection-quarantineItems")&&chunks.Contains("\"omitted\":11"),"bounded detailed evidence");
+            Check(!exact.Contains("credential-fixture")&&!chunks.Contains("credential-fixture"),"URL credential redaction");
+            Check(evidence.Missing.Contains("data_integrity (stale)")&&!evidence.Missing.Contains("endpoint_protection (scanning)"),"stale and scanning distinction");
+            var disabled=new AiEvidence();disabled.SecuritySnapshot("endpoint_protection",j.DeserializeObject("{\"status\":\"disabled\"}"),false);
+            Check(disabled.SecurityFacts().Contains("disabled")&&disabled.Missing.Count==1,"disabled protection remains explicit");
         }
         static void TestWire(string transport){
             var endpoint=new IPEndPoint(IPAddress.Loopback,0);

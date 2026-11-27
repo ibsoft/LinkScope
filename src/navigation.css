@@ -1,0 +1,121 @@
+/* Shared authenticated header. One layout definition, shared with the page
+   workspace, independent of the legacy per-page .bar/.top navigation rules. */
+html:has(body>header.ls-header){scrollbar-gutter:stable}
+@media(min-width:768px){html:has(body>header.ls-header){scrollbar-gutter:stable both-edges}}
+body>header.ls-header{
+    flex:none;width:100%;box-sizing:border-box;margin:0;padding:0;
+    background:#12333e;color:#eefaf7;border-bottom:3px solid #64c2ab;
+    font:400 15px/20px "Segoe UI",Arial,sans-serif;
+}
+body>header.ls-header>.ls-header-inner{
+    --ls-nav-control:36px;
+    position:relative;display:grid;grid-template-columns:minmax(0,max-content) minmax(0,1fr) max-content;
+    grid-template-areas:"brand navigation tools";grid-template-rows:var(--ls-nav-control);
+    align-items:center;justify-items:stretch;column-gap:12px;row-gap:0;
+    width:100%;max-width:var(--ls-workspace-max,1440px);min-width:0;
+    height:58px;min-height:58px;margin:0 auto;
+    padding:calc((58px - var(--ls-nav-control))/2) var(--ls-workspace-gutter,24px);
+    box-sizing:border-box;
+}
+body>header.ls-header .brand{
+    grid-area:brand;display:flex;align-items:center;justify-content:flex-start;gap:8px;
+    align-self:center;justify-self:start;min-width:0;max-width:210px;
+    height:var(--ls-nav-control);margin:0;padding:0;overflow:hidden;
+    /* Optical alignment: lift the logo and wordmark together, without moving the grid track. */
+    transform:translateY(-3px);
+    font:700 29px/1 "Segoe UI",Arial,sans-serif;letter-spacing:-.35px;white-space:nowrap;
+}
+body>header.ls-header .ls-brand-icon{display:block;flex:0 0 24px;width:24px;height:24px;object-fit:contain;margin:0;padding:0}
+body>header.ls-header .ls-brand-name{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0;padding:0;line-height:var(--ls-nav-control)}
+body>header.ls-header #ls-main-nav{
+    grid-area:navigation;display:flex;align-items:center;justify-content:flex-start;flex-wrap:nowrap;
+    min-width:0;width:100%;height:var(--ls-nav-control);margin:0;padding:0;
+    column-gap:4px;row-gap:0;overflow:hidden;white-space:nowrap;
+    font:400 15px/20px "Segoe UI",Arial,sans-serif;
+}
+body>header.ls-header #ls-main-nav>a{
+    display:flex;flex:0 0 auto;align-items:center;justify-content:center;gap:6px;
+    height:var(--ls-nav-control);min-height:var(--ls-nav-control);margin:0;padding:0 5px;
+    border:0;border-radius:5px;box-sizing:border-box;
+    font:inherit;color:#dfedee;text-decoration:none;white-space:nowrap;
+    background:transparent;box-shadow:none;transform:none;
+}
+body>header.ls-header #ls-main-nav>a>.ls-nav-label{display:block;flex:none;font:inherit;line-height:20px;margin:0;padding:0;white-space:nowrap}
+body>header.ls-header #ls-main-nav>a>svg{display:block;flex:0 0 15px;width:15px;height:15px;margin:0;padding:0;align-self:center;color:inherit}
+body>header.ls-header #ls-main-nav>a[aria-current=page]{background:#294c57;color:#fff;box-shadow:inset 0 0 0 1px #547983;text-decoration:none}
+body>header.ls-header #ls-main-nav>a:hover{background:#294c57;color:#fff}
+body>header.ls-header #ls-main-nav>a:focus-visible{outline:2px solid #80d5bf;outline-offset:-2px}
+body>header.ls-header .ls-tools{
+    grid-area:tools;display:flex;flex-wrap:nowrap;align-items:center;justify-content:flex-end;
+    gap:6px;justify-self:end;min-width:max-content;height:var(--ls-nav-control);margin:0;padding:0;white-space:nowrap;
+}
+body>header.ls-header .ls-tools .ls-account{position:relative;display:block;flex:none;margin:0;padding:0;line-height:1;background:transparent;border:0}
+body>header.ls-header .ls-tools :is(.ls-icon,#ls-theme-switch),body>header.ls-header #ls-menu-toggle{
+    position:relative;box-sizing:border-box;display:flex;flex:none;align-items:center;justify-content:center;
+    width:var(--ls-nav-control);height:var(--ls-nav-control);margin:0;padding:0;
+    border:1px solid #65838b;border-radius:6px;background:transparent;color:#eefaf7;
+    font:inherit;line-height:1;text-decoration:none;cursor:pointer;list-style:none;
+}
+body>header.ls-header .ls-tools :is(.ls-icon,#ls-theme-switch)>svg{display:block;flex:0 0 13px;width:13px;height:13px;margin:0;padding:0;color:inherit}
+body>header.ls-header .ls-tools :is(.ls-icon,#ls-theme-switch):hover,body>header.ls-header #ls-menu-toggle:hover{background:#294c57;color:#fff}
+body>header.ls-header :is(.ls-icon,#ls-theme-switch,#ls-menu-toggle):focus-visible{outline:2px solid #80d5bf;outline-offset:2px}
+body>header.ls-header .ls-tools .ls-account>summary::marker{content:""}
+body>header.ls-header .ls-tools .ls-account>summary::-webkit-details-marker{display:none}
+body>header.ls-header #ls-theme-switch svg[data-fa=sun]{display:none}
+:root[data-theme=dark] body>header.ls-header #ls-theme-switch svg[data-fa=moon]{display:none}
+:root[data-theme=dark] body>header.ls-header #ls-theme-switch svg[data-fa=sun]{display:block}
+body>header.ls-header #ls-menu-toggle{display:none;grid-area:toggle}
+body>header.ls-header #ls-menu-toggle>svg{display:block;flex:none;width:18px;height:18px}
+/* Dropdown paint must use the same foreground for all links and glyphs. */
+body>header.ls-header .ls-account-menu{width:238px;min-width:0;max-width:calc(100vw - 28px);padding:6px;box-shadow:0 8px 24px #102b3926;line-height:1.4}
+body>header.ls-header .ls-account-menu :is(a,button){display:flex;align-items:center;justify-content:flex-start;gap:10px;width:100%;box-sizing:border-box;margin:2px 0;padding:9px 10px;min-height:38px;font:400 14px/20px "Segoe UI",Arial,sans-serif;text-align:left;white-space:normal;text-decoration:none;background:var(--control-bg)!important;color:var(--control-fg)!important;border:0!important;border-radius:5px}
+body>header.ls-header .ls-account-menu :is(a,button):hover:not(:disabled){background:var(--control-hover)!important;color:var(--control-fg)!important}
+body>header.ls-header .ls-account-menu :is(a,button) .ls-menu-icon{color:inherit!important;display:block;flex:0 0 16px;width:16px;height:16px;margin:0;opacity:1}
+body>header.ls-header .ls-account-menu .ls-menu-icon[fill="currentColor"],body>header.ls-header .ls-account-menu .ls-menu-icon[fill="currentColor"] *{fill:currentColor!important;stroke:none!important}
+body>header.ls-header .ls-account-menu .ls-menu-icon[stroke="currentColor"],body>header.ls-header .ls-account-menu .ls-menu-icon[stroke="currentColor"] *{fill:none!important;stroke:currentColor!important}
+body>header.ls-header .ls-account-menu .ls-account-identity{display:block;padding:10px;margin:0 0 4px;font-size:12px;overflow-wrap:anywhere;border-bottom:1px solid var(--line)}
+body>header.ls-header .ls-account-menu [aria-current=page]{box-shadow:inset 3px 0 var(--sea)}
+body>header.ls-header #global-export[aria-disabled=true]{opacity:.55;cursor:progress}
+body>header.ls-header [hidden]{display:none!important}
+/* CSS establishes compact mode at first paint; theme.js also sets this class
+   when the actual link widths exceed the available desktop track. */
+body>header.ls-header>.ls-header-inner.ls-nav-compact{
+    --ls-nav-control:44px;grid-template-columns:minmax(0,1fr) max-content 44px;
+    grid-template-areas:"brand tools toggle";column-gap:8px;
+}
+body>header.ls-header .ls-nav-compact .brand{max-width:none;width:100%;font-size:22px}
+body>header.ls-header .ls-nav-compact #ls-menu-toggle{display:flex}
+body>header.ls-header .ls-nav-compact #ls-main-nav{
+    display:none;position:absolute;top:100%;right:12px;left:auto;z-index:50;
+    width:min(320px,calc(100% - 24px));height:auto;max-height:calc(100vh - 78px);max-height:calc(100dvh - 78px);
+    overflow:auto;overscroll-behavior:contain;padding:8px;flex-direction:column;align-items:stretch;
+    justify-content:flex-start;gap:3px;background:#12333e;border:1px solid #65838b;
+    border-radius:8px;box-shadow:0 12px 26px #102b3940;grid-area:auto;
+}
+body>header.ls-header .ls-nav-compact.ls-nav-open #ls-main-nav{display:flex}
+body>header.ls-header .ls-nav-compact #ls-main-nav>a{justify-content:flex-start;min-height:44px;height:auto;padding:10px 12px;gap:10px;font-size:16px;white-space:normal}
+body>header.ls-header .ls-nav-compact #ls-main-nav>a>.ls-nav-label{line-height:22px;white-space:normal}
+body>header.ls-header .ls-nav-compact #ls-main-nav>a>svg{flex-basis:18px;width:18px;height:18px}
+body>header.ls-header .ls-nav-compact .ls-account-menu :is(a,button){min-height:44px}
+@media(max-width:1299px){
+    body>header.ls-header>.ls-header-inner{--ls-nav-control:44px;grid-template-columns:minmax(0,1fr) max-content 44px;grid-template-areas:"brand tools toggle";column-gap:8px}
+    body>header.ls-header .brand{max-width:none;width:100%;font-size:22px}
+    body>header.ls-header #ls-menu-toggle{display:flex}
+    body>header.ls-header #ls-main-nav{display:none;position:absolute;top:100%;right:12px;left:auto;z-index:50;width:min(320px,calc(100% - 24px));height:auto;max-height:calc(100vh - 78px);max-height:calc(100dvh - 78px);overflow:auto;overscroll-behavior:contain;padding:8px;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:3px;background:#12333e;border:1px solid #65838b;border-radius:8px;box-shadow:0 12px 26px #102b3940;grid-area:auto}
+    body>header.ls-header .ls-nav-open #ls-main-nav{display:flex}
+    body>header.ls-header #ls-main-nav>a{justify-content:flex-start;min-height:44px;height:auto;padding:10px 12px;gap:10px;font-size:16px;white-space:normal}
+    body>header.ls-header #ls-main-nav>a>.ls-nav-label{line-height:22px;white-space:normal}
+    body>header.ls-header #ls-main-nav>a>svg{flex-basis:18px;width:18px;height:18px}
+    body>header.ls-header .ls-account-menu :is(a,button){min-height:44px}
+}
+@media(max-width:400px){
+    body>header.ls-header>.ls-header-inner,body>header.ls-header>.ls-header-inner.ls-nav-compact{column-gap:6px}
+    body>header.ls-header .brand,body>header.ls-header .ls-nav-compact .brand{font-size:18px;gap:4px}
+    body>header.ls-header .ls-tools{gap:4px}
+    body>header.ls-header .ls-brand-icon{flex-basis:20px;width:20px;height:20px}
+}
+/* No fade/slide at navigation boundaries. */
+@view-transition { navigation: auto; }
+::view-transition-group(root),::view-transition-old(root),::view-transition-new(root){animation:none!important}
+::view-transition-old(root){display:none}
+::view-transition-new(root){mix-blend-mode:normal}

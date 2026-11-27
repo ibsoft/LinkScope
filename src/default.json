@@ -123,5 +123,30 @@
     "Paths": [],
     "ExcludedPaths": [],
     "ExcludedPatterns": []
+  },
+  "Endpoint": {
+    "Enabled": false,
+    "WriteEvents": false,
+    "IntervalSeconds": 300,
+    "ChangeThreshold": 50,
+    "Port": 3310,
+    "Paths": [],
+    "ExcludedPaths": [],
+    "RealTime": true,
+    "ProcessCorrelation": false,
+    "MaxFileMiB": 25,
+    "BehaviorWindowSeconds": 60,
+    "Mode": "monitor",
+    "ExcludedPatterns": [],
+    "CanaryPaths": [],
+    "ResponsePaths": [],
+    "ContainmentExecutables": [],
+    "TrustedEnginePath": "",
+    "TrustedEngineSha256": "",
+    "SignatureScheduleEnabled": false,
+    "SignatureScheduleFrequency": "daily",
+    "SignatureScheduleTime": "03:00",
+    "SignatureScheduleWeekday": 1,
+    "SignatureScheduleMonthDay": 1
   }
 }

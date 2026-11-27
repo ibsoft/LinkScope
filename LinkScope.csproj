@@ -1,17 +1,35 @@
 <Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
     <Configuration Condition="'$(Configuration)'==''">Release</Configuration>
     <Platform Condition="'$(Platform)'==''">x64</Platform>
-    <ProjectGuid>{95E2FF2D-82C8-4163-94A6-FE293A34DF01}</ProjectGuid>
+    <ProjectGuid>{07518A51-C677-4518-94E1-2767846AC462}</ProjectGuid>
     <ApplicationIcon>linkscope.ico</ApplicationIcon><OutputType>Exe</OutputType><AssemblyName>LinkScope</AssemblyName><RootNamespace>LinkScope</RootNamespace>
-    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion><PlatformTarget>x64</PlatformTarget>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion><PlatformTarget>x64</PlatformTarget><Prefer32Bit>false</Prefer32Bit>
     <OutputPath>bin\$(Configuration)\</OutputPath><Optimize>true</Optimize>
     <DisableFastUpToDateCheck>true</DisableFastUpToDateCheck>
     <DebugSymbols>false</DebugSymbols><DebugType>none</DebugType><LangVersion>5</LangVersion>
   </PropertyGroup>
+  <!-- These conditional groups are required for legacy Visual Studio configuration discovery.
+       Solution x86/Any CPU aliases map to these real x64 project configurations. -->
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|x64' ">
+    <OutputPath>bin\Debug\</OutputPath>
+    <PlatformTarget>x64</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x64' ">
+    <OutputPath>bin\Release\</OutputPath>
+    <PlatformTarget>x64</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
   <ItemGroup>
-    <Reference Include="System" /><Reference Include="System.Numerics" /><Reference Include="System.Core" /><Reference Include="System.Web" />
+    <Reference Include="System" /><Reference Include="System.Xml" /><Reference Include="System.Numerics" /><Reference Include="System.Core" /><Reference Include="System.Web" />
     <Reference Include="System.Web.Extensions" /><Reference Include="System.Security" /> <Reference Include="System.ServiceProcess" />
+    <EmbeddedResource Include="src\users.html"><LogicalName>users.html</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\account.html"><LogicalName>account.html</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\users.js"><LogicalName>users.js</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\users.css"><LogicalName>users.css</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\local-qr.js"><LogicalName>local-qr.js</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="src\audit.html"><LogicalName>audit.html</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="src\audit.js"><LogicalName>audit.js</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="src\pwa.js"><LogicalName>pwa.js</LogicalName></EmbeddedResource>
@@ -19,9 +37,58 @@
     <EmbeddedResource Include="src\manifest.webmanifest"><LogicalName>manifest.webmanifest</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="src\pwa-192.png"><LogicalName>pwa-192.png</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="src\pwa-512.png"><LogicalName>pwa-512.png</LogicalName></EmbeddedResource>
-    <Compile Include="src\*.cs" />
+    <!-- Explicit entries for the legacy Visual Studio project system. The real build also refreshes these from disk. -->
+    <Compile Include="src\Access.cs" />
+    <Compile Include="src\AdminPasswords.cs" />
+    <Compile Include="src\AiAssist.cs" />
+    <Compile Include="src\AiEvidence.cs" />
+    <Compile Include="src\AiProvider.cs" />
+    <Compile Include="src\AiSettings.cs" />
+    <Compile Include="src\AlertDelivery.cs" />
+    <Compile Include="src\AlertFiles.cs" />
+    <Compile Include="src\AlertSearch.cs" />
+    <Compile Include="src\Alerts.cs" />
+    <Compile Include="src\AppJournal.cs" />
+    <Compile Include="src\CanaryTemplates.cs" />
+    <Compile Include="src\ClamUpdateWorker.cs" />
+    <Compile Include="src\ClientFirewall.cs" />
+    <Compile Include="src\Collector.cs" />
+    <Compile Include="src\Config.cs" />
+    <Compile Include="src\DatabaseMaintenance.cs" />
+    <Compile Include="src\DeliveryChecks.cs" />
+    <Compile Include="src\DeliverySettings.cs" />
+    <Compile Include="src\DesktopApp.cs" />
+    <Compile Include="src\EndpointProtection.cs" />
+    <Compile Include="src\EndpointResponse.cs" />
+    <Compile Include="src\FileIntegrity.cs" />
+    <Compile Include="src\History.cs" />
+    <Compile Include="src\Http.cs" />
+    <Compile Include="src\LogAiChecks.cs" />
+    <Compile Include="src\LogSearch.cs" />
+    <Compile Include="src\LogSettings.cs" />
+    <Compile Include="src\MaintenanceEvents.cs" />
+    <Compile Include="src\NativeConnections.cs" />
+    <Compile Include="src\NetworkCardAck.cs" />
+    <Compile Include="src\Program.cs" />
+    <Compile Include="src\SecurityPosture.cs" />
+    <Compile Include="src\SelfCheck.cs" />
+    <Compile Include="src\SiemChecks.cs" />
+    <Compile Include="src\SiemForwarder.cs" />
+    <Compile Include="src\SiemSender.cs" />
+    <Compile Include="src\SiemSettings.cs" />
+    <Compile Include="src\SmartDisk.cs" />
+    <Compile Include="src\SmtpTransport.cs" />
+    <Compile Include="src\Sqlite.cs" />
+    <Compile Include="src\SyslogSender.cs" />
+    <Compile Include="src\Telemetry.cs" />
+    <Compile Include="src\TelemetryExport.cs" />
+    <Compile Include="src\UserAccounts.cs" />
+    <Compile Include="src\UserAudit.cs" />
+    <Compile Include="src\Web.cs" />
     <EmbeddedResource Include="linkscope.ico"><LogicalName>linkscope.ico</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="obj\LinkScopeVersion.txt"><LogicalName>build-version.txt</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="src\theme.js"><LogicalName>theme.js</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\navigation.css"><LogicalName>navigation.css</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="src\theme.css"><LogicalName>theme.css</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="src\logs.html"><LogicalName>logs.html</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="src\logs.js"><LogicalName>logs.js</LogicalName></EmbeddedResource>
@@ -49,15 +116,89 @@
     <EmbeddedResource Include="src\settings.html"><LogicalName>settings.html</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="src\smart.ps1"><LogicalName>smart.ps1</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="src\system.html"><LogicalName>system.html</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="src\endpoint.html"><LogicalName>endpoint.html</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="src\integrity.html"><LogicalName>integrity.html</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="src\toast.css"><LogicalName>toast.css</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="src\toast.js"><LogicalName>toast.js</LogicalName></EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
-  <Target Name="BuildLinkScopeSetup" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
-    <Exec Command="&quot;$(MSBuildProjectDirectory)\setup\BuildSetup.cmd&quot; &quot;$(TargetPath)&quot; &quot;$(TargetDir)LinkScopeSetup.exe&quot;" />
+  <Target Name="LinkScopeBuildStarted" BeforeTargets="PrepareForBuild" Condition="'$(DesignTimeBuild)' != 'true' And '$(SkipCompilerExecution)' != 'true'">
+    <Message Text="LinkScope project build started: $(Configuration)|$(Platform) (target x64)." Importance="high" />
   </Target>
-  <Target Name="CleanLinkScopeSetup" AfterTargets="Clean">
-    <Delete Files="$(TargetDir)LinkScopeSetup.exe" />
+  <Target Name="GenerateLinkScopeVersion" BeforeTargets="PrepareForBuild" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\tools\Write-BuildVersion.ps1&quot; -OutputPath &quot;$(MSBuildProjectDirectory)\obj\LinkScopeVersion.txt&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" />
+    <ItemGroup><FileWrites Include="$(MSBuildProjectDirectory)\obj\LinkScopeVersion.txt" /></ItemGroup>
+  </Target>
+  <Target Name="RefreshLinkScopeCompileItems" BeforeTargets="BeforeCompile;CoreCompile" Condition="'$(DesignTimeBuild)' != 'true' And '$(SkipCompilerExecution)' != 'true'">
+    <!-- Legacy VS can retain a stale evaluated item list. Re-enumerate flat src at execution time,
+         preserving framework-generated and other non-src Compile items and their metadata. -->
+    <ItemGroup>
+      <_LinkScopeFreshSources Include="$(MSBuildProjectDirectory)\src\*.cs" />
+      <_LinkScopeOtherSources Include="@(Compile)" Condition="'%(Compile.RootDir)%(Compile.Directory)' != '$(MSBuildProjectDirectory)\src\'" />
+      <Compile Remove="@(Compile)" />
+      <Compile Include="@(_LinkScopeFreshSources);@(_LinkScopeOtherSources)" />
+    </ItemGroup>
+    <Error Condition="'@(_LinkScopeFreshSources)' == ''" Text="LinkScope source directory is empty: $(MSBuildProjectDirectory)\src" />
+    <Message Text="LinkScope refreshed @(_LinkScopeFreshSources->Count()) application C# inputs from disk." Importance="high" />
+  </Target>
+  <Target Name="VerifyEndpointProtectionSource" BeforeTargets="CoreCompile" DependsOnTargets="RefreshLinkScopeCompileItems" Condition="'$(DesignTimeBuild)' != 'true' And '$(SkipCompilerExecution)' != 'true'">
+    <!-- Write actual compiler item identities; the preflight resolves them relative to the project root. -->
+    <MakeDir Directories="$(IntermediateOutputPath)" />
+    <WriteLinesToFile File="$(IntermediateOutputPath)LinkScopeCompileItems.txt" Lines="@(Compile)" Overwrite="true" Encoding="UTF-8" />
+    <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\tools\Assert-EndpointSources.ps1&quot; -CompileList &quot;$(IntermediateOutputPath)LinkScopeCompileItems.txt&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" />
+    <ItemGroup><FileWrites Include="$(IntermediateOutputPath)LinkScopeCompileItems.txt" /></ItemGroup>
+  </Target>
+  <!-- Keep setup compilation part of the application build, even when building only this project.
+       Do not add the nested setup project as an independent solution build: it consumes this payload. -->
+  <ItemGroup>
+    <None Include="tools\Write-BuildVersion.ps1" />
+    <None Include="tools\Assert-EndpointSources.ps1" />
+    <None Include="tools\RequiredSources.txt" />
+    <None Include="tools\Invoke-ProjectBuild.ps1" />
+    <None Include="Build-VisualStudio.cmd" />
+    <None Include="Rebuild-VisualStudio.cmd" />
+    <None Include="Clean-VisualStudio.cmd" />
+    <None Include="VISUAL-STUDIO-CONFIGURATION-REPAIR.md" />
+    <None Include="SOURCE-BUILD-REPAIR.md" />
+    <None Include="setup\LinkScope.Setup.csproj" />
+    <None Include="setup\Setup.cs" />
+    <None Include="setup\ClamSetup.cs" />
+    <None Include="setup\ClamSignature.cs" />
+    <None Include="setup\cisco-talos.gpg" />
+    <None Include="setup\wizard.ps1" />
+    <None Include="setup\BuildSetup.cmd" />
+    <None Include="deploy\README.md" />
+    <None Include="deploy\clamav-latest.msi" Condition="Exists('deploy\clamav-latest.msi')" />
+    <None Include="deploy\clamav-latest.msi.sig" Condition="Exists('deploy\clamav-latest.msi.sig')" />
+    <None Include="tests\Verify-VisualStudioSetup.ps1" />
+    <None Include="tests\Verify-SourceBuild.ps1" />
+    <None Include="VISUAL-STUDIO-SETUP.md" />
+  </ItemGroup>
+  <Target Name="BuildLinkScopeSetup" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true' And '$(SkipCompilerExecution)' != 'true'">
+    <PropertyGroup>
+      <_SetupProject>$(MSBuildProjectDirectory)\setup\LinkScope.Setup.csproj</_SetupProject>
+      <_SetupStage>$(MSBuildProjectDirectory)\setup\bin\$(Configuration)\</_SetupStage>
+      <_SetupDestination>$(TargetDir)LinkScopeSetup.exe</_SetupDestination>
+      <_SetupMsi>$(MSBuildProjectDirectory)\deploy\clamav-latest.msi</_SetupMsi>
+      <_SetupSig>$(_SetupMsi).sig</_SetupSig>
+    </PropertyGroup>
+    <Message Text="Building LinkScopeSetup.exe from $(TargetPath)" Importance="high" />
+    <Error Condition="!Exists('$(TargetPath)')" Text="Cannot build LinkScope Setup: compiled LinkScope.exe was not found at $(TargetPath)." />
+    <Delete Files="$(_SetupDestination)" />
+    <MSBuild Projects="$(_SetupProject)" Targets="Rebuild"
+             Properties="Configuration=$(Configuration);Platform=x64;LinkScopePayload=$(TargetPath);OutputPath=$(_SetupStage);OutDir=$(_SetupStage)"
+             RemoveProperties="TargetFramework;TargetFrameworkVersion;TargetFrameworkIdentifier;TargetFrameworkProfile;PlatformTarget;AssemblyName;TargetName;TargetExt;IntermediateOutputPath;BaseIntermediateOutputPath;MSBuildProjectExtensionsPath;StartupObject;OutputType;ApplicationIcon;DesignTimeBuild;SkipCompilerExecution;BuildingProject;BuildProjectReferences"
+             BuildInParallel="false" />
+    <Error Condition="!Exists('$(_SetupStage)LinkScopeSetup.exe')" Text="Setup compilation did not produce LinkScopeSetup.exe." />
+    <Copy SourceFiles="$(_SetupMsi)" DestinationFolder="$(TargetDir)deploy" SkipUnchangedFiles="true" Condition="Exists('$(_SetupMsi)')" />
+    <Copy SourceFiles="$(_SetupSig)" DestinationFolder="$(TargetDir)deploy" SkipUnchangedFiles="true" Condition="Exists('$(_SetupSig)')" />
+    <Copy SourceFiles="$(_SetupStage)LinkScopeSetup.exe" DestinationFiles="$(_SetupDestination)" />
+    <Error Condition="!Exists('$(_SetupDestination)')" Text="LinkScope Setup output is missing: $(_SetupDestination)." />
+    <Message Text="Setup generated: $(_SetupDestination)" Importance="high" />
+  </Target>
+  <Target Name="CleanLinkScopeSetup" AfterTargets="Clean" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Delete Files="$(TargetDir)LinkScopeSetup.exe" Condition="'$(TargetDir)' != ''" />
+    <Delete Files="$(MSBuildProjectDirectory)\bin\$(Configuration)\LinkScopeSetup.exe" />
+    <RemoveDir Directories="$(MSBuildProjectDirectory)\setup\bin\$(Configuration);$(MSBuildProjectDirectory)\setup\obj\$(Configuration)" />
   </Target>
 </Project>

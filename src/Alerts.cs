@@ -72,6 +72,8 @@ namespace LinkScope {
         }
         static long Head(Sqlite db){return (long)db.Rows("SELECT last_seq FROM alert_sequence WHERE singleton=1")[0][0];}
         static long Unread(Sqlite db){return (long)db.Rows("SELECT COUNT(*) FROM alert_events WHERE is_read=0")[0][0];}
+        // Header count is a best-effort snapshot; a database read failure must not block navigation.
+        internal long? HeaderUnread(){try{lock(this)using(var db=new Sqlite(database,true))return Unread(db);}catch(Exception){return null;}}
         internal object Page(long before){
             lock(this)using(var db=new Sqlite(database,true)){
                 var rows=(before==0?db.Rows("SELECT "+Columns+" FROM alert_events ORDER BY seq DESC LIMIT ?",PageSize+1):
@@ -103,6 +105,19 @@ namespace LinkScope {
                 db.Exec("UPDATE alert_events SET is_read=1 WHERE seq<=? AND is_read=0",through);
                 foreach(var a in current.Values)if(a.Sequence<=through)a.Read=true;
                 Changed();
+            }
+        }
+        static object EndpointAckState(Sqlite db){
+            var row=db.Rows("SELECT COALESCE(MAX(seq),0),COALESCE(SUM(CASE WHEN is_read=0 THEN 1 ELSE 0 END),0),COALESCE(SUM(CASE WHEN is_read=0 AND resolved=0 THEN 1 ELSE 0 END),0) FROM alert_events WHERE category='endpoint_protection'")[0];
+            return new {through=Convert.ToInt64(row[0]),unread=Convert.ToInt64(row[1]),activeUnread=Convert.ToInt64(row[2])};
+        }
+        internal object EndpointAcknowledgement(){lock(this)using(var db=new Sqlite(database,true))return EndpointAckState(db);}
+        internal object ReadEndpointThrough(long through){
+            lock(this)using(var db=Open()){
+                if(through<0||through>Head(db))throw new HttpError(400,"Invalid endpoint acknowledgement cursor.");
+                db.Exec("UPDATE alert_events SET is_read=1 WHERE category='endpoint_protection' AND seq<=? AND is_read=0",through);
+                foreach(var a in current.Values)if(a.Category=="endpoint_protection"&&a.Sequence<=through)a.Read=true;
+                Changed();return EndpointAckState(db);
             }
         }
         internal void Trim(string[] categories){
@@ -152,6 +167,38 @@ namespace LinkScope {
                 Changed();
             }
         }
+        // Apply durable endpoint transitions independently of the bounded dashboard snapshot.
+        // The cursor and central alerts are committed together; a crash can replay safely.
+        internal void EndpointTransitions(string stream,List<object[]> events,Config cfg){
+            lock(this){var changed=new Dictionary<string,HealthAlert>();var opened=new List<HealthAlert>();var closed=new List<HealthAlert>();
+                using(var db=Open()){
+                    db.Exec("CREATE TABLE IF NOT EXISTS endpoint_delivery_cursor(stream TEXT PRIMARY KEY,seq INTEGER NOT NULL)");
+                    db.Exec("BEGIN IMMEDIATE");try{
+                        var saved=db.Rows("SELECT seq FROM endpoint_delivery_cursor WHERE stream=?",stream);long through=saved.Count==0?0:Convert.ToInt64(saved[0][0]);
+                        foreach(var e in events){long seq=Convert.ToInt64(e[0]);if(seq<=through)continue;string key="endpoint_protection/"+(string)e[2];HealthAlert old;
+                            if(!changed.TryGetValue(key,out old))current.TryGetValue(key,out old);
+                            long utc=Convert.ToInt64(e[1]);bool active=Convert.ToInt64(e[8])!=0;
+                            if(old!=null){db.Exec("UPDATE alert_events SET resolved=1,ended=? WHERE id=?",utc,old.Id);if(Policy.EmailEnabled&&Policy.EmailRecovery)AlertDelivery.Queue(db,old,true,utc);closed.Add(old);}
+                            if(active){string message=(string)e[3]+" · "+(string)e[6]+(string.IsNullOrEmpty((string)e[7])?"":" · SHA-256: "+(string)e[7]);var alert=Signal("endpoint_protection",(string)e[2],(string)e[5],(string)e[4],message,stream+":"+seq);alert.Id=Guid.NewGuid().ToString("N");alert.Since=utc;Insert(db,alert);if(Policy.EmailEnabled)AlertDelivery.Queue(db,alert,false,utc);changed[key]=alert;opened.Add(alert);}else changed[key]=null;through=seq;
+                        }
+                        db.Exec("INSERT OR REPLACE INTO endpoint_delivery_cursor VALUES(?,?)",stream,through);db.Exec("COMMIT");
+                    }catch{db.Exec("ROLLBACK");throw;}
+                }
+                foreach(var x in changed){if(x.Value==null)current.Remove(x.Key);else current[x.Key]=x.Value;}
+                foreach(var a in closed)AppJournal.Event(LogLevel.Info,"Endpoint","resolve",a.Title+" · "+a.Message);
+                foreach(var a in opened){var level=a.Severity=="critical"?LogLevel.Error:a.Severity=="warning"?LogLevel.Warning:LogLevel.Info;AppJournal.Event(level,"Endpoint",a.Title,a.Message);if(cfg.Endpoint.WriteEvents)try{System.Diagnostics.EventLog.WriteEntry("Unixfor LinkScope",a.Title+" · "+a.Message,a.Severity=="critical"?System.Diagnostics.EventLogEntryType.Error:a.Severity=="warning"?System.Diagnostics.EventLogEntryType.Warning:System.Diagnostics.EventLogEntryType.Information,4201);}catch(Exception ex){AppJournal.Fault("Endpoint","event-log",ex);}}
+                if(changed.Count>0)Changed();
+            }
+        }
+        // The endpoint database is the source of truth for active findings. Keep
+        // coverage/limit notices under Sample, and preserve the history/read flags.
+        internal void ReconcileEndpointFindings(HashSet<string> activeIds){
+            const string cat="endpoint_protection",prefix=cat+"/";
+            lock(this){
+                var live=current.Values.Where(a=>a.Category==cat&&(a.Key==prefix+"coverage"||a.Key==prefix+"limit"||(a.Key.StartsWith(prefix,StringComparison.Ordinal)&&activeIds.Contains(a.Key.Substring(prefix.Length))))).ToList();
+                Update(cat,live);
+            }
+        }
         static Dictionary<string,object> Map(object v){return v as Dictionary<string,object>??new Dictionary<string,object>();}
         static object Field(Dictionary<string,object> o,string key){object v;return o.TryGetValue(key,out v)?v:null;}
         static string S(Dictionary<string,object> o,string key){return Convert.ToString(Field(o,key),System.Globalization.CultureInfo.InvariantCulture);}
@@ -166,15 +213,20 @@ namespace LinkScope {
             AppJournal.Event(LogLevel.Debug,"Alerts","evaluate","Evaluated "+cat+" alert rules.");
             if(status=="warming_up")return;
             if(status=="unavailable"||status=="partial")list.Add(Signal(cat,"coverage","warning",cat+" coverage is "+status,"Check the Windows provider, driver or access permissions."));
-            if(S(value,"truncated")=="True")list.Add(Signal(cat,"limit","info",cat+" inventory limit reached","The response contains the first 256 records."));
+            if(S(value,"truncated")=="True")list.Add(Signal(cat,"limit","info",cat+" inventory limit reached",cat=="endpoint_protection"?"Dashboard snapshot is limited; durable incidents continue through the alert queue.":"The response contains the first 256 records."));
+            if(cat=="endpoint_protection"){
+                // The endpoint worker publishes every durable finding transition, including ones
+                // outside the display cap. Sampling may update only the coverage/limit notices.
+                lock(this){list.AddRange(current.Values.Where(x=>x.Category==cat&&x.Key!=cat+"/coverage"&&x.Key!=cat+"/limit"));Update(cat,list);}return;
+            }
             if(cat=="data_integrity"){
                 lock(this){
                     foreach(var item in Rows(value)){
                         string id=S(item,"id"),severity=S(item,"severity"),title=S(item,"change"),message=S(item,"path")+" · "+S(item,"detail")+" Expected: "+S(item,"expectedHash")+" Actual: "+S(item,"actualHash");
                         var a=Signal(cat,id,severity,title,message,S(item,"actualHash"));list.Add(a);HealthAlert previous;
                         if(!current.TryGetValue(a.Key,out previous)||previous.Revision!=a.Revision||previous.Severity!=a.Severity){
-                            AppJournal.Event(severity=="critical"?LogLevel.Error:LogLevel.Warning,"Integrity",title,message);
-                            if(cfg.Integrity.WriteEvents)try{System.Diagnostics.EventLog.WriteEntry("Unixfor LinkScope",title+" · "+message,severity=="critical"?System.Diagnostics.EventLogEntryType.Error:System.Diagnostics.EventLogEntryType.Warning,4201);}catch(Exception ex){AppJournal.Fault("Integrity","event-log",ex);}
+                            AppJournal.Event(severity=="critical"?LogLevel.Error:LogLevel.Warning,cat=="data_integrity"?"Integrity":"Endpoint",title,message);
+                            if(cat=="data_integrity"?cfg.Integrity.WriteEvents:cfg.Endpoint.WriteEvents)try{System.Diagnostics.EventLog.WriteEntry("Unixfor LinkScope",title+" · "+message,severity=="critical"?System.Diagnostics.EventLogEntryType.Error:System.Diagnostics.EventLogEntryType.Warning,4201);}catch(Exception ex){AppJournal.Fault("Integrity","event-log",ex);}
                         }
                     }
                     if(status=="unavailable"||status=="partial")list.AddRange(current.Values.Where(x=>x.Category==cat&&!list.Any(y=>y.Key==x.Key)));

@@ -14,7 +14,7 @@ namespace LinkScope {
         internal readonly int Status;internal HttpError(int status,string message):base(message){Status=status;}
     }
     internal sealed class Request {
-        internal string Method,Path,Query,Body,AuditActor,AuditResult;
+        internal string Method,Path,Query,Body,AuditActor,AuditResult,AuditAction;
         internal readonly Dictionary<string,string> Headers=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);
         internal string Header(string key){string v;return Headers.TryGetValue(key,out v)?v:null;}
         internal string Cookie(string name){
