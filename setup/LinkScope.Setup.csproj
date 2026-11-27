@@ -12,6 +12,7 @@
     <Optimize>true</Optimize>
     <DebugSymbols>false</DebugSymbols>
     <DebugType>none</DebugType>
+    <ApplicationManifest>setup.manifest</ApplicationManifest>
     <ApplicationIcon>..\linkscope.ico</ApplicationIcon>
     <IntermediateOutputPath>obj\$(Configuration)\</IntermediateOutputPath>
     <OutputPath Condition="'$(OutputPath)' == ''">bin\$(Configuration)\</OutputPath>
@@ -24,6 +25,7 @@
     <Reference Include="System.Drawing" />
     <Reference Include="System.ServiceProcess" />
     <Reference Include="System.Security" />
+    <Reference Include="System.Web.Extensions" />
     <Compile Include="Setup.cs" />
     <Compile Include="..\src\CanaryTemplates.cs" />
     <Compile Include="..\src\ClamUpdateWorker.cs" />

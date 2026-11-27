@@ -21,15 +21,24 @@ internal static partial class Setup {
         return s;
     }
     static int Wizard() {
-        string script;
-        using (var reader = new StreamReader(Resource("wizard.ps1"))) script = reader.ReadToEnd();
-        string ps = Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe");
-        var start = new ProcessStartInfo(ps, "-NoLogo -NoProfile -NonInteractive -STA -WindowStyle Hidden -EncodedCommand " + Convert.ToBase64String(Encoding.Unicode.GetBytes(script)));
-        start.UseShellExecute = false;
-        start.CreateNoWindow = true;
-        start.WorkingDirectory = Environment.SystemDirectory;
-        start.EnvironmentVariables["LINKSCOPE_SETUP_EXE"] = Self;
-        using (var child = Process.Start(start)) { child.WaitForExit(); return child.ExitCode; }
+        // A short -File invocation avoids CreateProcess's 32767-character limit.
+        string folder=Path.Combine(Path.GetTempPath(),"LinkScopeWizard-"+Guid.NewGuid().ToString("N"));
+        string script=Path.Combine(folder,"wizard.ps1");
+        using(var identity=WindowsIdentity.GetCurrent()) {
+            if(new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator))SecureDirectory(folder);
+            else Directory.CreateDirectory(folder);
+        }
+        try {
+            using(var input=Resource("wizard.ps1"))using(var output=new FileStream(script,FileMode.CreateNew,FileAccess.Write,FileShare.None))input.CopyTo(output);
+            // Hold a read-only sharing lock for the entire wizard lifetime.
+            using(var guard=new FileStream(script,FileMode.Open,FileAccess.Read,FileShare.Read)) {
+                string ps=Path.Combine(Environment.SystemDirectory,@"WindowsPowerShell\v1.0\powershell.exe");
+                var start=new ProcessStartInfo(ps,"-NoLogo -NoProfile -NonInteractive -STA -WindowStyle Hidden -ExecutionPolicy Bypass -File \""+script+"\"");
+                start.UseShellExecute=false;start.CreateNoWindow=true;start.WorkingDirectory=Environment.SystemDirectory;
+                start.EnvironmentVariables["LINKSCOPE_SETUP_EXE"]=Self;
+                using(var child=Process.Start(start)) {child.WaitForExit();return child.ExitCode;}
+            }
+        } finally {try{File.Delete(script);Directory.Delete(folder);}catch(IOException){}catch(UnauthorizedAccessException){}}
     }
     static void RequireAdmin() {
         using (var identity = WindowsIdentity.GetCurrent())
@@ -54,7 +63,9 @@ internal static partial class Setup {
                !owner.Equals(new SecurityIdentifier(WellKnownSidType.LocalSystemSid,null)) && !owner.Equals(identity.User))
                 throw new UnauthorizedAccessException("Unexpected setup directory owner: "+path);
         }
-        dir.SetAccessControl(acl);
+        // Do not reapply inheritable ACLs to an already secured directory.
+        if(dir.GetAccessControl(AccessControlSections.Access).GetSecurityDescriptorSddlForm(AccessControlSections.Access)!=acl.GetSecurityDescriptorSddlForm(AccessControlSections.Access))
+            dir.SetAccessControl(acl);
     }
     static string NewLogPath(string action) {
         SecureDirectory(LogDirectory);
@@ -64,8 +75,14 @@ internal static partial class Setup {
         var start=new ProcessStartInfo(exe,arguments) {UseShellExecute=false,CreateNoWindow=true,
             WorkingDirectory=workingDirectory,RedirectStandardOutput=true,RedirectStandardError=true};
         using(var child=Process.Start(start)) {
-            var output=child.StandardOutput.ReadToEndAsync();var errors=child.StandardError.ReadToEndAsync();
-            child.WaitForExit();log.WriteLine(output.Result);log.WriteLine(errors.Result);log.WriteLine("Exit code: "+child.ExitCode);log.Flush();return child.ExitCode;
+            // Drain both pipes concurrently and persist each line immediately.
+            object sync=new object();
+            DataReceivedEventHandler write=(sender,e)=>{if(e.Data!=null)lock(sync){log.WriteLine(DateTime.UtcNow.ToString("o")+" "+e.Data);log.Flush();}};
+            child.OutputDataReceived+=write;child.ErrorDataReceived+=write;
+            log.WriteLine("Started worker PID="+child.Id+" executable="+Path.GetFileName(exe));log.Flush();
+            child.BeginOutputReadLine();child.BeginErrorReadLine();
+            child.WaitForExit(); // never kill an active MSI/service mutation automatically
+            log.WriteLine("Exit code: "+child.ExitCode);log.Flush();return child.ExitCode;
         }
     }
     // No Win32_Product WMI query (which can trigger MSI repairs); no execution of discovered binaries.
@@ -102,8 +119,8 @@ internal static partial class Setup {
             return name.ToString();
         }finally{if(record!=0)MsiCloseHandle(record);if(view!=0)MsiCloseHandle(view);if(db!=0)MsiCloseHandle(db);}
     }
-    static int InstallClamAv(string stage,TextWriter log,string logPath) {
-        if(ClamAvInstalled()){log.WriteLine("ClamAV already detected; skipped.");return 0;}
+    static int InstallClamAv(string stage,TextWriter log,string logPath,bool repair=false) {
+        if(!repair && File.Exists(ClamdExe) && File.Exists(FreshExe)){log.WriteLine("ClamAV binaries already detected; skipped.");return 0;}
         if(!File.Exists(MsiPath))throw new FileNotFoundException("Place clamav-latest.msi in the deploy folder beside setup.",MsiPath);
         string package=Path.Combine(stage,"clamav-latest.msi");
         // Stage the exact bytes in an administrator-only directory before inspection/installation.
@@ -124,8 +141,8 @@ internal static partial class Setup {
             "\r\n\r\nConfirm this is the intended official x64 package and version. Install ClamAV?",
             "LinkScope Setup | ClamAV",MessageBoxButtons.YesNo,MessageBoxIcon.Information,MessageBoxDefaultButton.Button2)!=DialogResult.Yes){log.WriteLine("ClamAV installation declined.");return 1602;}
         string msiLog=Path.ChangeExtension(logPath,"msi.log");
-        int result=RunHidden(Path.Combine(Environment.SystemDirectory,"msiexec.exe"),"/i \""+package+"\" /qn /norestart /L*v \""+msiLog+"\"",stage,log);
-        if(result==0&&!ClamAvInstalled()){log.WriteLine("Windows Installer returned success, but ClamAV installation was not detected. Verify the installation.");return 4;}
+        int result=RunHidden(Path.Combine(Environment.SystemDirectory,"msiexec.exe"),"/i \""+package+"\" "+(repair?"REINSTALL=ALL REINSTALLMODE=omus ":"")+"/qn /norestart /L*v \""+msiLog+"\"",stage,log);
+        if(result==0&&(!File.Exists(ClamdExe)||!File.Exists(FreshExe))){log.WriteLine("Windows Installer returned success, but ClamAV installation was not detected. Verify the installation.");return 4;}
         return result;
     }
     static int Execute(string verb,string canaryToken=null) {
@@ -134,22 +151,27 @@ internal static partial class Setup {
         using(var log=new StreamWriter(new FileStream(logPath,FileMode.CreateNew,FileAccess.Write,FileShare.Read),Encoding.UTF8)) {
             string stage=Path.Combine(ProgramFiles,"LinkScope-setup-"+Guid.NewGuid().ToString("N"));
             try {
+                log.WriteLine("Preparing secure staging directory: "+stage);log.Flush();
                 SecureDirectory(stage);
                 log.WriteLine(DateTime.UtcNow.ToString("o")+" "+verb);log.Flush();
                 if(verb=="--install-clamav") {
                     int before=CheckClamAv(log);
-                    if(before!=ClamMissing)return ConfigureClamAv(log); // do not install over a partial/custom installation
-                    int installed=InstallClamAv(stage,log,logPath);
+                    if(before!=ClamMissing && before!=ClamPartial)return ConfigureClamAv(log);
+                    bool repair=before==ClamPartial;
+                    if(repair && (!StandardRegistryPaths(log)||!NativeService("clamd",ClamdExe)||!NativeService("freshclam",FreshExe)))throw new IOException("Custom installation detected. Automatic MSI repair is unsafe; inspect the installation first.");
+                    if(repair && ClamMsiProducts().Count==0 && ClamAvInstalled())throw new IOException("Unmanaged ClamAV installation detected; automatic MSI repair is unsafe.");
+                    int installed=InstallClamAv(stage,log,logPath,repair && ClamMsiProducts().Count!=0);
                     if(installed!=0)return installed; // Includes reboot-required; configure after restart.
                     return ConfigureClamAv(log);
                 }
+                if(verb=="--uninstall-clamav")return UninstallClamAv(log,logPath);
                 if(verb=="--configure-clamav")return ConfigureClamAv(log);
                 if(verb=="--update-clamav")return UpdateClamSignatures(log);
                 if(verb=="--clamav-providers")return EditProviderSources(log);
                 string exe=Path.Combine(stage,"LinkScope.exe");
                 using(var input=Resource("LinkScope.exe"))using(var output=new FileStream(exe,FileMode.CreateNew,FileAccess.Write,FileShare.None))input.CopyTo(output);
                 return RunHidden(exe,verb+(canaryToken==null?"":" "+canaryToken),stage,log);
-            }catch(Exception ex){if(verb=="--clamav-providers"){string detail=ProviderFailureDetail(ex);log.WriteLine("Provider configuration failed during: "+providerStage+Environment.NewLine+detail);log.Flush();MessageBox.Show("Could not complete provider configuration.\r\n\r\nStep: "+providerStage+"\r\n"+detail+"\r\n\r\nSetup log: "+logPath,"LinkScope | Third-party signatures",MessageBoxButtons.OK,MessageBoxIcon.Error);}else log.WriteLine(ex);return 1;}
+            }catch(Exception ex){if(verb=="--clamav-providers"){string detail=ProviderFailureDetail(ex);log.WriteLine("Provider configuration failed during: "+providerStage+Environment.NewLine+detail);log.Flush();MessageBox.Show("Could not complete provider configuration.\r\n\r\nStep: "+providerStage+"\r\n"+detail+"\r\n\r\nSetup log: "+logPath,"LinkScope | Third-party signatures",MessageBoxButtons.OK,MessageBoxIcon.Error);}else {log.WriteLine(ex);log.Flush();MessageBox.Show(ex.Message+"\r\n\r\nSetup log: "+logPath,"LinkScope Setup",MessageBoxButtons.OK,MessageBoxIcon.Error);}return 1;}
             finally {
                 try{foreach(string file in new[]{"LinkScope.exe","clamav-latest.msi","clamav-latest.msi.sig","cisco-talos.gpg"})File.Delete(Path.Combine(stage,file));string home=Path.Combine(stage,"gnupg");if(Directory.Exists(home))Directory.Delete(home,true);Directory.Delete(stage);}
                 catch(Exception ex){log.WriteLine("Could not clean installer staging directory: "+ex.Message);}
@@ -159,7 +181,7 @@ internal static partial class Setup {
     [STAThread]
     static int Main(string[] args) {
         try {
-            if(args.Length==0)return Wizard();
+            if(args.Length==0){int rc=Wizard();if(rc!=0)MessageBox.Show("Setup wizard failed (exit "+rc+"). Check Windows Application event logs and PowerShell policy.","LinkScope Setup",MessageBoxButtons.OK,MessageBoxIcon.Error);return rc;}
             if(args.Length==2){
                 string verb=args[0].ToLowerInvariant();
                 if((verb=="--upgrade"||verb=="--upgrade-pwa"||verb=="--install")&&args[1].Length<=8192){
@@ -172,14 +194,14 @@ internal static partial class Setup {
             }
             if(args.Length==1) {
                 string verb=args[0].ToLowerInvariant();
-                if(verb=="--prepare-canaries"){try{return LinkScope.CanaryTemplates.Prepare();}catch(Exception ex){MessageBox.Show(ex.Message,"LinkScope | Canary files",MessageBoxButtons.OK,MessageBoxIcon.Warning);return 1;}}
+                if(verb=="--prepare-canaries"||verb=="--repair-canaries"){try{LinkScope.CanaryTemplates.Trace("Worker entered; PID="+Process.GetCurrentProcess().Id);int rc=LinkScope.CanaryTemplates.Prepare(verb=="--repair-canaries");LinkScope.CanaryTemplates.Trace("Worker completed; exit="+rc);return rc;}catch(Exception ex){LinkScope.CanaryTemplates.Trace("Worker failed; LinkScope-Canary-errors.log: "+ex);return 1;}}
                 if(verb=="--check-clamav")return CheckClamAvForWizard();
                 if(verb=="-install")verb="--install";
-                if(verb=="--install"||verb=="--upgrade"||verb=="--upgrade-pwa"||verb=="--desktop-app"||verb=="--register-pwa"||verb=="--uninstall"||verb=="--install-clamav"||verb=="--configure-clamav"||verb=="--update-clamav"||verb=="--clamav-providers")return Execute(verb);
+                if(verb=="--install"||verb=="--upgrade"||verb=="--upgrade-pwa"||verb=="--desktop-app"||verb=="--register-pwa"||verb=="--uninstall"||verb=="--uninstall-clamav"||verb=="--install-clamav"||verb=="--configure-clamav"||verb=="--update-clamav"||verb=="--clamav-providers")return Execute(verb);
             }
             return 2;
         }catch(Exception ex){
-            if(args.Length==0)MessageBox.Show(ex.Message,"LinkScope Setup",MessageBoxButtons.OK,MessageBoxIcon.Error);
+            if(args.Length==0 || (args.Length>0 && args[0]!="--check-clamav"))MessageBox.Show(ex.Message,"LinkScope Setup",MessageBoxButtons.OK,MessageBoxIcon.Error);
             return 1;
         }
     }

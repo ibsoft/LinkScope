@@ -25,14 +25,17 @@ else:
     assert 'security decoy' in Document(io.BytesIO(files['Reference_Document.docx'])).paragraphs[1].text
     assert 'security decoy' in load_workbook(io.BytesIO(files['Reference_Inventory.xlsx']),read_only=True).active['A2'].value
     print('PASS: Word and Excel templates opened by portable document readers')
-assert 'FileMode.CreateNew' in t and 'if(Registered(user.User.Value))return 12' in t and 'if(Directory.Exists(folder)){Verify(folder)' in t
-assert 'InheritanceFlags.None,PropagationFlags.None' in t and 'FileSystemRights.Traverse|FileSystemRights.ReadAttributes' in t
+assert 'FileMode.CreateNew' in t and 'if(registered!=null&&!repair)return 12' in t and 'Modified canary preserved' in t and 'Restoring missing original' in t
+assert 'AllowParentMetadata' not in t and 'SetAccessControl(' not in t
+assert 'FileSystemRights.ReadAndExecute,inherit' in t
+assert 'if(!fixedCanary)SafePath(p)' in e and 'if(fixedCanary)EndpointResponse.VerifyHandle(file.SafeFileHandle,p)' in e
+assert 'now-lastCanary>=10' in e
 assert '$canaries.Checked=$true' in w and '--prepare-canaries' in w and 'MyDocuments' in w and 'RunAs' in w
 assert p.index('EnrollSetupCanaries(canaryToken);') < p.index('try { StartAndWait(); }',p.index('EnrollSetupCanaries(canaryToken);'))
 assert 'ep.CanaryPaths=ep.CanaryPaths.Concat(files)' in p and 'CanaryTemplates.Register(sid,folder)' in p
 assert 'CanaryTemplates.ExpectedForPath(p)' in e and 'expected??hash' in e and 'INSERT OR IGNORE INTO canaries(path,hash)' in e
 assert 'Existing canary baseline differs; no replacement permitted' in e
-print('PASS: setup opt-in default, original user creation, explicit baseline seed, no overwrite/recreation and fixed-original recovery wiring (source assertions)')
+print('PASS: setup opt-in default, original user creation, explicit baseline seed, no overwrite/explicit recovery and fixed-original recovery wiring (source assertions)')
 db=sqlite3.connect(':memory:')
 for sql in re.findall(r'db\.Exec\("(CREATE (?:TABLE|INDEX) IF NOT EXISTS [^"\n]+)"',e):db.execute(sql)
 def sql(prefix):return re.search(r'db\.Exec\("('+re.escape(prefix)+r'[^"\n]*)"',e).group(1)
@@ -53,3 +56,20 @@ assert 'UpdateClamSignatures' in (r/'setup/ClamSetup.cs').read_text() and '--upd
 assert 'svc.Start()' in (r/'setup/ClamSetup.cs').read_text()
 print('PASS: immutable baseline INSERT, 1,000-row activity retention, detection outbox, dashboard/API/report data, local signature update controls')
 print('Windows compilation, ACLs, Office compatibility in Microsoft Office, ClamAV runtime, notifications and PDF/API end-to-end tests remain pending.')
+
+assert "-ArgumentList '--prepare-canaries' -Wait" not in w
+assert "$prepTimer.Add_Tick" in w and "AddSeconds(30)" in w and "$script:prepProcess.Kill()" in w
+setup=(r/"setup/Setup.cs").read_text()
+branch=setup.split('if(verb=="--prepare-canaries"||verb=="--repair-canaries")',1)[1].split('if(verb=="--check-clamav")',1)[0]
+assert "MessageBox.Show" not in branch and "LinkScope-Canary-errors.log" in branch
+print("PASS: nonblocking canary worker, timeout, cancellation and noninteractive error handling (source checks)")
+
+assert "$start.UseShellExecute=$false" in w and "[Diagnostics.Process]::Start($start)" in w
+assert "Installation paused; canaries remain selected." in w
+assert 'level="asInvoker"' in (r/"setup/setup.manifest").read_text()
+assert "<ApplicationManifest>setup.manifest</ApplicationManifest>" in (r/"setup/LinkScope.Setup.csproj").read_text()
+assert "/win32manifest:" in (r/"setup/BuildSetup.cmd").read_text()
+print("PASS: direct worker execution, explicit UAC manifest on both build paths, no automatic skip on preparation failure")
+
+assert "Repair enrolled canaries" in w and "--repair-canaries" in w and "RegisteredFolder(sid)" in p
+print("PASS: explicit enrolled recovery, fixed originals only, baseline preservation wiring (source checks)")

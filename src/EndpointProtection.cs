@@ -144,8 +144,10 @@ namespace LinkScope {
   void CheckFile(Sqlite db,EndpointSettings c,string p,WaitHandle stop,Func<bool> authorized,bool full){
    var activityTimer=Stopwatch.StartNew();
    if(!c.Paths.Any(x=>Under(p,x)))return;if(Excluded(c,p)){if(full)excluded++;Activity(db,p,full,"Excluded",activityTimer,"Excluded by policy");return;}bool canary=c.CanaryPaths.Contains(p,StringComparer.OrdinalIgnoreCase);
-   try{SafePath(p);var attr=File.GetAttributes(p);if((attr&FileAttributes.Directory)!=0){if(full)foreach(var child in Directory.EnumerateFileSystemEntries(p)){if(pending.Count>=MaxEntries)throw new IOException("Traversal limit");pending.Push(child);}else {nextScan=0;if(running)rescan=true;}return;}
-    using(var file=new FileStream(p,FileMode.Open,FileAccess.Read,FileShare.Read)){if(file.Length>c.MaxFileMiB*1048576L){
+   try{bool fixedCanary=canary&&CanaryTemplates.ExpectedForPath(p)!=null;
+    if(!fixedCanary)SafePath(p);var attr=File.GetAttributes(p);
+    if(fixedCanary&&(attr&(FileAttributes.Directory|FileAttributes.ReparsePoint))!=0)throw new IOException("Invalid fixed canary file type.");if((attr&FileAttributes.Directory)!=0){if(full)foreach(var child in Directory.EnumerateFileSystemEntries(p)){if(pending.Count>=MaxEntries)throw new IOException("Traversal limit");pending.Push(child);}else {nextScan=0;if(running)rescan=true;}return;}
+    using(var file=new FileStream(p,FileMode.Open,FileAccess.Read,FileShare.Read)){if(fixedCanary)EndpointResponse.VerifyHandle(file.SafeFileHandle,p);if(file.Length>c.MaxFileMiB*1048576L){
      if(canary&&CanaryTemplates.ExpectedForPath(p)!=null)CanaryIssue(db,c,p,"Canary size exceeds scan limit and differs from the fixed original.","",stop,authorized);if(full)limited++;Issue(db,p,"File scan limited","warning","File exceeds configured size cap; not verified.");Activity(db,p,full,"Limited",activityTimer,"Size cap exceeded");return;}
      byte[] b=new byte[65536];int n=0,r;while(n<b.Length&&(r=file.Read(b,n,b.Length-n))>0)n+=r;double entropy=Entropy(b,n);file.Position=0;string hash=FileHash(file);file.Position=0;
      var old=db.Rows("SELECT hash,entropy FROM files WHERE scope=? AND path=?",scope,p).FirstOrDefault();if(old!=null&&!Equals(old[0],hash))Observe(p,n>=4096&&entropy>=7.5&&entropy-Convert.ToDouble(old[1])>=1.0);else if(old==null&&!full)Observe(p,false);

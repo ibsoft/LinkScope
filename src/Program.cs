@@ -107,7 +107,13 @@ namespace LinkScope {
             }
             if(!admin.Equals(owner) && !system.Equals(owner) && !ownedByInstaller)
                 throw new UnauthorizedAccessException("Unexpected owner of "+path+". Verify that directory before installing.");
-            info.SetAccessControl(sec);
+            Console.WriteLine("Checking directory permissions: "+path);
+            var sections=AccessControlSections.Access|AccessControlSections.Owner;
+            if(info.GetAccessControl(sections).GetSecurityDescriptorSddlForm(sections)!=sec.GetSecurityDescriptorSddlForm(sections)){
+                Console.WriteLine("Applying directory permissions: "+path);
+                info.SetAccessControl(sec);
+            }
+            Console.WriteLine("Directory permissions ready: "+path);
         }
         static SecurityIdentifier ServiceSid() {
             // Service SID is deterministic and available before the first SCM registration.
@@ -281,7 +287,9 @@ namespace LinkScope {
             var parts=Encoding.UTF8.GetString(Convert.FromBase64String(token)).Split('|');
             if(parts.Length!=2)throw new InvalidDataException("Invalid canary enrollment request.");
             string folder=parts[0],sid=new SecurityIdentifier(parts[1]).Value;
-            if(CanaryTemplates.Registered(sid))return;
+            string registered=CanaryTemplates.RegisteredFolder(sid);
+            if(registered!=null&&!string.Equals(registered,folder,StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Registered canary folder differs from recovery request.");
+            Console.WriteLine("Canary enrollment: verify originals");
             CanaryTemplates.Verify(folder);
             var cfg=Config.Load();var ep=cfg.Endpoint;
             var files=CanaryTemplates.Names.Select(name=>Path.Combine(folder,name)).ToArray();
@@ -291,14 +299,19 @@ namespace LinkScope {
             ep.CanaryPaths=ep.CanaryPaths.Concat(files).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             if(!ep.Enabled&&ep.Mode=="monitor")ep.Enabled=true;
             ep.Validate();
+            Console.WriteLine("Canary enrollment: seed immutable baselines");
             using(var endpoint=new EndpointProtection())endpoint.SeedSetupCanaries(folder);
+            Console.WriteLine("Canary enrollment: save policy");
             Config.Save(Config.FilePath,Config.Validate(cfg));
+            Console.WriteLine("Canary enrollment: register owner");
             CanaryTemplates.Register(sid,folder);
             try{UserAudit.Init();UserAudit.Write("setup","local","Registered three synthetic canaries for "+sid+" in "+folder,200,"Success");}catch(Exception ex){Console.Error.WriteLine("Canary audit: "+ex.Message);}
             Console.WriteLine("Canary files enrolled: "+folder+(ep.Enabled?" (monitoring enabled).":" (existing disabled response policy preserved; enable monitoring manually)."));
         }
         static void Install(bool upgrade=false,string canaryToken=null) {
+            Console.WriteLine("Setup: self-check");
             SelfCheck.Run();
+            Console.WriteLine("Setup: initialize configuration");
             InitConfig();
             Config.Load();
             using(var gate=new FileStream(Path.Combine(Config.Root,"maintenance.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None)) {
@@ -326,6 +339,7 @@ namespace LinkScope {
                 if(active && Same(old,command)) {
                     throw new InvalidOperationException("The installed service is busy or paused. Check sc.exe queryex LinkScope.");
                 }
+                Console.WriteLine("Setup: deploy service executable");
                 DeployExecutable();
                 if(old==null) Sc("create",Name,"binPath=",command,"start=","auto","obj=","NT AUTHORITY\\LocalService","DisplayName=","LinkScope Network Monitor");
                 else if(!Same(old,command)) {
@@ -338,15 +352,19 @@ namespace LinkScope {
                 }
                 Sc("sidtype",Name,"unrestricted");
                 if(!EventLog.SourceExists("Unixfor LinkScope")) EventLog.CreateEventSource("Unixfor LinkScope","Application");
+                Console.WriteLine("Setup: prepare certificate");
                 try { PrepareCertificate(); }
                 catch(Exception ex) {
                     if(Config.Load().UseHttps && Config.Load().CertificateThumbprint.Length==0)throw;
                     Console.Error.WriteLine("Self-signed certificate unavailable: "+ex.Message+" Run --prepare-certificate before selecting it.");
                 }
+                Console.WriteLine("Setup: register hardware task");
                 RunSetupScript("hardware-task.ps1","install");
                 if(canaryToken!=null)try{
+                    Console.WriteLine("Setup: enroll canaries");
                     using(var lockFile=new FileStream(Path.Combine(Config.Data,"collector.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None))EnrollSetupCanaries(canaryToken);
                 }catch(Exception ex){canarySetupWarning=true;Console.Error.WriteLine("Canary enrollment failed; service installation continues: "+ex.Message);}
+                Console.WriteLine("Setup: start service");
                 try { StartAndWait(); }
                 catch(Exception ex) {
                     Console.Error.WriteLine("Windows could not start LinkScope. Checking service exit codes:");

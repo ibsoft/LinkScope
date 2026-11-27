@@ -9,6 +9,9 @@ assert pin=='5BADCA2665EF59DCF8A23D8B707F0DB480836771'
 block=setup[setup.index('static int InstallClamAv('):setup.index('static int Execute(')]
 assert block.index('VerifyClamPackage(stage,package,log)')<block.index('ProductName(package)')<block.index('RunHidden(')
 assert 'return ClamSignatureRejected;' in block and 'msiexec.exe' in block
+assert 'if(algorithm=="2")' in verify and 'RequireOfficialReleaseDigest(package,log)' in verify
+assert 'https://api.github.com/repos/Cisco-Talos/clamav/releases?per_page=20' in verify and 'AllowAutoRedirect=false' in verify
+assert 'String.Equals(value,"sha256:"+hash,StringComparison.OrdinalIgnoreCase)' in verify
 assert 'Resource("cisco-talos.gpg")' in verify and 'VerifyClamTree' in verify
 for option in ['--no-options','--no-auto-key-retrieve','--no-auto-key-import','--auto-key-locate clear','--status-fd 1','--verify']:
     assert option in verify
@@ -20,11 +23,11 @@ assert 'clamav-latest.msi.sig' in (root/'setup/BuildSetup.cmd').read_text()
 assert '_SetupSig' in (root/'LinkScope.csproj').read_text()
 assert 'clamav-latest.msi.sig' in (root/'setup/wizard.ps1').read_text()
 # Fixture mirrors the documented GnuPG status contract; C# parser itself is not executed here.
-def acceptable(output, rc, expected):
+def acceptable(output, rc, expected, independent_digest=False):
     records=[line[9:].split() for line in output.splitlines() if line.startswith('[GNUPG:] ')]
     rejects={'BADSIG','ERRSIG','NO_PUBKEY','EXPSIG','EXPKEYSIG','REVKEYSIG','KEYEXPIRED','SIGEXPIRED','KEYREVOKED','NODATA','FAILURE','ERROR','BADARMOR','UNEXPECTED'}
     valid=[r for r in records if r and r[0]=='VALIDSIG']
-    return rc==0 and not any(r and r[0] in rejects for r in records) and sum(r[0]=='GOODSIG' for r in records if r)==1 and len(valid)==1 and len(valid[0])>=10 and (valid[0][10] if len(valid[0])>=11 else valid[0][1])==expected and valid[0][8] in {'8','9','10'} and valid[0][9]=='00'
+    return rc==0 and not any(r and r[0] in rejects for r in records) and sum(r[0]=='GOODSIG' for r in records if r)==1 and len(valid)==1 and len(valid[0])>=10 and (valid[0][10] if len(valid[0])>=11 else valid[0][1])==expected and (valid[0][8] in {'8','9','10','11'} or (valid[0][8]=='2' and independent_digest)) and valid[0][9]=='00'
 with tempfile.TemporaryDirectory() as tmp:
     d=Path(tmp); home=d/'vendor'; home.mkdir(mode=0o700)
     def gpg(h,*args,check=True,isolated=True):
@@ -48,6 +51,18 @@ with tempfile.TemporaryDirectory() as tmp:
     assert not acceptable(result.stdout+'\n[GNUPG:] EXPKEYSIG test\n',0,fpr)
     assert not acceptable(result.stdout+'\n[GNUPG:] REVKEYSIG test\n',0,fpr)
     assert not acceptable(result.stdout+'\n'+result.stdout,0,fpr)
+    for digest in ['SHA224','SHA384','SHA512']:
+        extra=d/(digest+'.sig')
+        gpg(signer,'--pinentry-mode','loopback','--passphrase','','--digest-algo',digest,'--output',extra,'--detach-sign',payload,isolated=False)
+        verified=gpg(signer,'--verify',extra,payload)
+        assert acceptable(verified.stdout,verified.returncode,fpr),digest
+    for hashid, sigclass in [('2','00'),('1','00'),('8','01')]:
+        lines=result.stdout.splitlines()
+        for i,line in enumerate(lines):
+            if line.startswith('[GNUPG:] VALIDSIG '):
+                fields=line.split();fields[9]=hashid;fields[10]=sigclass;lines[i]=' '.join(fields)
+        assert not acceptable('\n'.join(lines),0,fpr)
+        assert acceptable('\n'.join(lines),0,fpr,True)==(hashid=='2' and sigclass=='00')
     wrong=gpg(home,'--verify',sig,payload,check=False)
     assert not acceptable(wrong.stdout,wrong.returncode,pin)
     payload.write_bytes(payload.read_bytes()+b'changed')

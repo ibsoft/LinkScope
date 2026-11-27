@@ -20,6 +20,82 @@ using Microsoft.Win32;
 
 // Standard, local Windows ClamAV provisioning. Existing custom installations are read-only.
 internal static partial class Setup {
+    // Explicit removal only: never execute arbitrary registry UninstallString commands.
+    static List<Guid> ClamMsiProducts() {
+        var result=new List<Guid>();
+        foreach(var view in new[]{RegistryView.Registry64,RegistryView.Registry32})
+            using(var hive=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,view))
+            using(var products=hive.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall")) {
+                if(products==null)continue;
+                foreach(string key in products.GetSubKeyNames())using(var product=products.OpenSubKey(key)) {
+                    if(product==null)continue;
+                    string name=Convert.ToString(product.GetValue("DisplayName")); Guid id;
+                    if((name.Equals("ClamAV",StringComparison.OrdinalIgnoreCase)||name.StartsWith("ClamAV ",StringComparison.OrdinalIgnoreCase)) &&
+                        Convert.ToString(product.GetValue("WindowsInstaller"))=="1" && Guid.TryParse(key,out id) && !result.Contains(id))result.Add(id);
+                }
+            }
+        return result;
+    }
+    static bool IsRemovableClamService(string name) {
+        string image=ServiceImage(name);if(String.IsNullOrWhiteSpace(image))return false;
+        image=Environment.ExpandEnvironmentVariables(image.Trim());
+        string path;
+        if(image.StartsWith("\"")){int end=image.IndexOf('"',1);if(end<0)return false;path=image.Substring(1,end-1);}
+        else {int end=image.IndexOf(".exe",StringComparison.OrdinalIgnoreCase);if(end<0)return false;path=image.Substring(0,end+4);}
+        foreach(string root in new[]{ClamRoot,Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),"ClamAV")})
+            foreach(string file in new[]{"clamd.exe","freshclam.exe"})if(SamePath(path,Path.Combine(root,file)))return true;
+        return false;
+    }
+    static List<string> ClamServices() {
+        var names=new List<string>();
+        using(var key=Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services"))
+            if(key!=null)foreach(string name in key.GetSubKeyNames())if(IsRemovableClamService(name))names.Add(name);
+        return names;
+    }
+    static int UninstallClamAv(TextWriter log,string logPath) {
+        using(var mutex=new Mutex(false,@"Global\LinkScopeClamProvision")) {
+            bool locked=false;
+            try {
+                try{locked=mutex.WaitOne(0);}catch(AbandonedMutexException){locked=true;}
+                if(!locked){log.WriteLine("ClamAV maintenance is active; retry later.");return 10;}
+                var services=ClamServices();var products=ClamMsiProducts();
+                if(MessageBox.Show("Remove registered ClamAV MSI packages and their native Windows services? Other applications using ClamAV may lose antivirus scanning. Custom installations and remaining configuration/database files are not manually deleted.","Confirm ClamAV removal",MessageBoxButtons.YesNo,MessageBoxIcon.Warning,MessageBoxDefaultButton.Button2)!=DialogResult.Yes)return 1602;
+                // Stop only services whose registered executable points to standard ClamAV paths.
+                foreach(string name in services) {
+                    if(!IsRemovableClamService(name))throw new IOException("Service identity changed: "+name);
+                    log.WriteLine("Stopping ClamAV service: "+name);log.Flush();
+                    using(var svc=new ServiceController(name)) {
+                        if(svc.Status==ServiceControllerStatus.StartPending)svc.WaitForStatus(ServiceControllerStatus.Running,TimeSpan.FromSeconds(60));
+                        svc.Refresh();
+                        if(svc.Status!=ServiceControllerStatus.Stopped && svc.Status!=ServiceControllerStatus.StopPending) {
+                            foreach(var dependent in svc.DependentServices)using(dependent)if(dependent.Status!=ServiceControllerStatus.Stopped)throw new IOException("Active dependent service: "+dependent.ServiceName+". Stop it explicitly before removing ClamAV.");
+                            svc.Stop();
+                        }
+                        svc.WaitForStatus(ServiceControllerStatus.Stopped,TimeSpan.FromSeconds(90));
+                    }
+                }
+                int reboot=0;
+                foreach(Guid id in products) {
+                    string msiLog=Path.ChangeExtension(logPath,id.ToString("N")+".msi.log");
+                    int rc=RunHidden(Path.Combine(Environment.SystemDirectory,"msiexec.exe"),"/x "+id.ToString("B")+" /qn /norestart /L*v \""+msiLog+"\"",LogDirectory,log);
+                    if(rc==3010||rc==1641)reboot=3010;
+                    else if(rc!=0&&rc!=1605&&rc!=1614)return rc;
+                }
+                // MSI may already have removed the services; delete only verified leftovers.
+                foreach(string name in ClamServices()) {
+                    if(!IsRemovableClamService(name))throw new IOException("Service identity changed: "+name);
+                    if(name.IndexOf('"')>=0)throw new IOException("Unsupported service name: "+name);
+                    int rc=RunHidden(Path.Combine(Environment.SystemDirectory,"sc.exe"),"delete \""+name+"\"",LogDirectory,log);
+                    if(rc!=0&&rc!=1060&&rc!=1072)return rc;
+                }
+                if(ClamServices().Count!=0){log.WriteLine("ClamAV service deletion pending; restart Windows.");reboot=3010;}
+                if(ClamMsiProducts().Count!=0&&reboot==0){log.WriteLine("ClamAV MSI registration remains.");return 1;}
+                if((ClamAvInstalled()||File.Exists(ClamdExe)||File.Exists(FreshExe)||ServiceImage("clamd")!=null||ServiceImage("freshclam")!=null)&&products.Count==0){log.WriteLine("No registered MSI product; non-MSI installation retained. Remove manually.");return 4;}
+                if(reboot==0 && CheckClamAv(log)!=ClamMissing){log.WriteLine("Residual ClamAV files or configuration detected; removal incomplete.");return 4;}
+                log.WriteLine("ClamAV removal completed; unmanaged residual files, if any, are preserved.");return reboot;
+            } finally {if(locked)mutex.ReleaseMutex();}
+        }
+    }
     const int ClamPort = 3310;
     const int ClamMissing = 3, ClamUnconfigured = 4, ClamNotReady = 5,
         ClamCustom = 6, ClamUpdaterNotReady = 7, ClamPartial = 8, ClamStale = 9;
@@ -205,10 +281,11 @@ internal static partial class Setup {
     static int CheckClamAv(TextWriter log) {
         bool installed=File.Exists(ClamdExe)&&File.Exists(FreshExe);
         if(!installed) {
-            if(ClamAvInstalled() || File.Exists(ClamdExe) || File.Exists(FreshExe) || File.Exists(ClamdConfig) || File.Exists(FreshConfig) || ServiceImage("clamd")!=null || ServiceImage("freshclam")!=null || !StandardRegistryPaths(log)) {
+            if(!StandardRegistryPaths(log)||!NativeService("clamd",ClamdExe)||!NativeService("freshclam",FreshExe)){log.WriteLine("Custom ClamAV installation detected.");return ClamCustom;}
+            if(ClamAvInstalled() || File.Exists(ClamdExe) || File.Exists(FreshExe) || ClamServices().Count!=0 || ServiceImage("clamd")!=null || ServiceImage("freshclam")!=null || !StandardRegistryPaths(log)) {
                 log.WriteLine("ClamAV registration or partial/custom install detected, but standard x64 binaries are missing.");return ClamPartial;
             }
-            log.WriteLine("ClamAV not installed.");return ClamMissing;
+            log.WriteLine("ClamAV not installed. Existing configuration/database files, if any, are retained for reinstall.");return ClamMissing;
         }
         log.WriteLine("ClamAV binaries detected: "+ClamRoot);
         if(!StandardRegistryPaths(log)||!NativeService("clamd",ClamdExe)||!NativeService("freshclam",FreshExe)) {log.WriteLine("Custom configuration path or service registration; no automatic takeover.");return ClamCustom;}
@@ -332,7 +409,10 @@ internal static partial class Setup {
     static int CheckClamAvForWizard(){
         // A normal wizard cannot inspect a configuration containing private subscription URLs.
         if(!IsElevated()&&Directory.Exists(Path.Combine(ClamRoot,"signature-logs")))return 13;
-        try{return CheckClamAv(TextWriter.Null);}catch(UnauthorizedAccessException){return 13;}
+        try {
+            if(IsElevated())using(var log=new StreamWriter(NewLogPath("check-clamav"))){try{return CheckClamAv(log);}catch(Exception ex){log.WriteLine(ex);throw;}}
+            return CheckClamAv(TextWriter.Null);
+        }catch(UnauthorizedAccessException){return 13;}catch(System.Security.SecurityException){return 13;}catch(Exception){return 14;}
     }
     static FileSecurity PrivateFeedFileAcl(bool serviceRead){
         var security=new FileSecurity();security.SetAccessRuleProtection(true,false);
