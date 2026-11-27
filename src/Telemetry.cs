@@ -17,6 +17,7 @@ namespace LinkScope {
         readonly EndpointProtection endpoint=new EndpointProtection();
         readonly AutoResetEvent endpointWake=new AutoResetEvent(false);
         internal void ScanEndpointNow(){endpointWake.Set();}
+        internal void ResetEndpointScan(){endpoint.RequestReset();endpointWake.Set();}
         internal object QuarantineStatus(){return endpoint.QuarantineStatus();}
         internal object DeleteQuarantine(string[] ids,string actor,string ip){var result=endpoint.DeleteQuarantine(ids,actor,ip);endpointWake.Set();return result;}
         internal void CreateEndpointCanaries(EndpointSettings policy,string directory){endpoint.CreateManagedCanaries(policy,directory);}

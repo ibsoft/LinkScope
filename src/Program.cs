@@ -115,7 +115,7 @@ namespace LinkScope {
             }
             Console.WriteLine("Directory permissions ready: "+path);
         }
-        static SecurityIdentifier ServiceSid() {
+        internal static SecurityIdentifier ServiceSid() {
             // Service SID is deterministic and available before the first SCM registration.
             using(var sha=System.Security.Cryptography.SHA1.Create()){
                 var hash=sha.ComputeHash(Encoding.Unicode.GetBytes(Name.ToUpperInvariant()));
@@ -164,7 +164,7 @@ namespace LinkScope {
             var info=new ProcessStartInfo(exe,string.Join(" ",args.Select(Quote))) {UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true};
             using(var p=Process.Start(info)) {
                 var output=p.StandardOutput.ReadToEndAsync();var errors=p.StandardError.ReadToEndAsync();
-                p.WaitForExit();Console.WriteLine(output.Result);Console.Error.WriteLine(errors.Result);
+                if(!p.WaitForExit(30000)){try{p.Kill();}catch{}throw new System.TimeoutException("sc.exe "+args[0]+" timed out.");}Console.WriteLine(output.Result);Console.Error.WriteLine(errors.Result);
                 if(p.ExitCode!=0) throw new InvalidOperationException("sc.exe "+args[0]+" failed ("+p.ExitCode+").");
             }
         }
@@ -191,6 +191,24 @@ namespace LinkScope {
                 throw new InvalidOperationException("A different registration uses the name LinkScope. Inspect it with sc.exe qc LinkScope.");
             }
         }
+        static string UsnCommand(){return "\""+ServiceExe+"\" --usn-service";}
+        static bool UsnRegistered(){
+            using(var key=Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\"+UsnJournalService.Name)){
+                if(key==null)return false;
+                if(!Same(Convert.ToString(key.GetValue("ImagePath")),UsnCommand())||!Same(Convert.ToString(key.GetValue("ObjectName")),"LocalSystem")||Convert.ToInt32(key.GetValue("Type"))!=16)
+                    throw new InvalidOperationException("Unexpected LinkScopeUsn service registration; inspect sc.exe qc LinkScopeUsn.");
+                return true;
+            }
+        }
+        static void StopUsn(){if(!UsnRegistered())return;using(var svc=new ServiceController(UsnJournalService.Name)){
+            if(svc.Status==ServiceControllerStatus.StartPending)svc.WaitForStatus(ServiceControllerStatus.Running,TimeSpan.FromSeconds(20));
+            svc.Refresh();if(svc.Status!=ServiceControllerStatus.Stopped){if(svc.Status!=ServiceControllerStatus.StopPending)svc.Stop();svc.WaitForStatus(ServiceControllerStatus.Stopped,TimeSpan.FromSeconds(20));}
+        }}
+        static void InstallUsn(){
+            if(!UsnRegistered())Sc("create",UsnJournalService.Name,"binPath=",UsnCommand(),"start=","auto","obj=","LocalSystem","DisplayName=","LinkScope NTFS Journal Reader");
+            using(var svc=new ServiceController(UsnJournalService.Name)){if(svc.Status==ServiceControllerStatus.Stopped)svc.Start();svc.WaitForStatus(ServiceControllerStatus.Running,TimeSpan.FromSeconds(20));}
+        }
+        static void RemoveUsn(){if(!UsnRegistered())return;StopUsn();Sc("delete",UsnJournalService.Name);}
         static void DeployExecutable() {
             SecureDir(InstallDir,false,true);
             string source=Assembly.GetExecutingAssembly().Location;
@@ -308,7 +326,49 @@ namespace LinkScope {
             try{UserAudit.Init();UserAudit.Write("setup","local","Registered three synthetic canaries for "+sid+" in "+folder,200,"Success");}catch(Exception ex){Console.Error.WriteLine("Canary audit: "+ex.Message);}
             Console.WriteLine("Canary files enrolled: "+folder+(ep.Enabled?" (monitoring enabled).":" (existing disabled response policy preserved; enable monitoring manually)."));
         }
+        // SID comes from the unelevated wizard, not the account used to approve UAC.
+        static string SetupProfileRoot(string sid) {
+            if(string.IsNullOrEmpty(sid))return null;
+            sid=new SecurityIdentifier(sid).Value;
+            if((!sid.StartsWith("S-1-5-21-",StringComparison.Ordinal)&&!sid.StartsWith("S-1-12-1-",StringComparison.Ordinal))||sid.Length>184)return null;
+            using(var key=Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\"+sid)){
+                string raw=key==null?null:key.GetValue("ProfileImagePath") as string;
+                if(string.IsNullOrWhiteSpace(raw)||raw.Length<3||raw[1]!=':'||raw[2]!='\\')return null;
+                string path=Path.GetFullPath(raw).TrimEnd('\\');string root=Path.GetPathRoot(path);
+                if(root==null||root.Length!=3||path.Length<=3||path.Substring(2).Contains(":")||new DriveInfo(root).DriveType!=DriveType.Fixed||!Directory.Exists(path))return null;
+                if(EndpointProtection.Under(path,Environment.GetFolderPath(Environment.SpecialFolder.Windows))||EndpointProtection.Under(path,Config.Root)||EndpointProtection.Under(Config.Root,path))return null;
+                EndpointProtection.SafePath(path);return path;
+            }
+        }
+        internal static void ApplyProfileDefaults(EndpointSettings ep,string profile,bool fresh) {
+            if(ep.ProfileDefaultsApplied||string.IsNullOrEmpty(profile))return;
+            // Preserve a deliberate disabled policy on upgrade, including its scope and exclusions.
+            if(!fresh&&!ep.Enabled&&ep.Paths.Length>0){ep.ProfileDefaultsApplied=true;return;}
+            bool unconfigured=!ep.Enabled&&ep.Paths.Length==0;
+            if(!ep.Paths.Any(root=>EndpointProtection.Under(profile,root)))ep.Paths=ep.Paths.Concat(new[]{profile}).ToArray();
+            // Existing explicit exclusions are preserved. Only narrowly scoped, background-only caches are seeded.
+            var relative=new[]{@"AppData\Local\Microsoft\Windows\INetCache",@"AppData\Local\Google\Chrome\User Data\Default\Cache",@"AppData\Local\Google\Chrome\User Data\Default\Code Cache",@"AppData\Local\Google\Chrome\User Data\Default\GPUCache",@"AppData\Local\Microsoft\Edge\User Data\Default\Cache",@"AppData\Local\Microsoft\Edge\User Data\Default\Code Cache",@"AppData\Local\Microsoft\Edge\User Data\Default\GPUCache","NTUSER.DAT","NTUSER.DAT.LOG1","NTUSER.DAT.LOG2",@"AppData\Local\Microsoft\Windows\UsrClass.dat",@"AppData\Local\Microsoft\Windows\UsrClass.dat.LOG1",@"AppData\Local\Microsoft\Windows\UsrClass.dat.LOG2"};
+            var defaults=relative.Select(p=>Path.Combine(profile,p)).ToList();
+            // Firefox names profiles dynamically. Enumerate only immediate profile directories, never their contents.
+            string firefox=Path.Combine(profile,@"AppData\Local\Mozilla\Firefox\Profiles");
+            try{if(Directory.Exists(firefox)){EndpointProtection.SafePath(firefox);foreach(var sub in Directory.EnumerateDirectories(firefox).Take(20)){if((File.GetAttributes(sub)&FileAttributes.ReparsePoint)!=0)continue;defaults.Add(Path.Combine(sub,"cache2"));defaults.Add(Path.Combine(sub,"startupCache"));}}}
+            catch(IOException){}catch(UnauthorizedAccessException){}
+            ep.BackgroundExcludedPaths=(ep.BackgroundExcludedPaths??new string[0]).Concat(defaults).Distinct(StringComparer.OrdinalIgnoreCase).Take(100).ToArray();
+            if(fresh||unconfigured){ep.Enabled=true;ep.RealTime=true;ep.Mode="monitor";ep.IntervalSeconds=86400;ep.MaxFileMiB=100;}
+            ep.ProfileDefaultsApplied=true;ep.Validate();
+        }
         static void Install(bool upgrade=false,string canaryToken=null) {
+            string profileSid=null;
+            if(!string.IsNullOrEmpty(canaryToken)){
+                var payload=Encoding.UTF8.GetString(Convert.FromBase64String(canaryToken)).Split('|');
+                if(payload.Length==3&&payload[0]=="profile-v1"){
+                    profileSid=new SecurityIdentifier(payload[1]).Value;
+                    canaryToken=string.IsNullOrEmpty(payload[2])?null:payload[2];
+                }else if(payload.Length==2)profileSid=new SecurityIdentifier(payload[1]).Value;
+            }
+            // CLI fallback is the invoking interactive account; never select a service profile.
+            if(profileSid==null&&Environment.UserInteractive&&Process.GetCurrentProcess().SessionId!=0)profileSid=WindowsIdentity.GetCurrent().User.Value;
+            bool fresh=!File.Exists(Config.FilePath)&&!File.Exists(Path.Combine(Config.Root,"config.json"));
             Console.WriteLine("Setup: self-check");
             SelfCheck.Run();
             Console.WriteLine("Setup: initialize configuration");
@@ -316,6 +376,7 @@ namespace LinkScope {
             Config.Load();
             using(var gate=new FileStream(Path.Combine(Config.Root,"maintenance.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None)) {
                 string old=RegisteredCommand(), command=ServiceCommand(ServiceExe);
+                UsnRegistered(); // validate ownership before stopping the existing monitor
                 Console.WriteLine("Service executable: "+ServiceExe);
                 Console.WriteLine("Service account: NT AUTHORITY\\LocalService");
                 bool active=false;
@@ -339,6 +400,8 @@ namespace LinkScope {
                 if(active && Same(old,command)) {
                     throw new InvalidOperationException("The installed service is busy or paused. Check sc.exe queryex LinkScope.");
                 }
+                Console.WriteLine("Setup: stop NTFS journal reader before deployment");
+                StopUsn();
                 Console.WriteLine("Setup: deploy service executable");
                 DeployExecutable();
                 if(old==null) Sc("create",Name,"binPath=",command,"start=","auto","obj=","NT AUTHORITY\\LocalService","DisplayName=","LinkScope Network Monitor");
@@ -360,10 +423,20 @@ namespace LinkScope {
                 }
                 Console.WriteLine("Setup: register hardware task");
                 RunSetupScript("hardware-task.ps1","install");
+                var profileConfig=Config.Load();
+                if(!profileConfig.Endpoint.ProfileDefaultsApplied){
+                    try {
+                        string profile=SetupProfileRoot(profileSid);
+                        if(profile!=null){ApplyProfileDefaults(profileConfig.Endpoint,profile,fresh);Config.Save(Config.FilePath,Config.Validate(profileConfig));Console.WriteLine("Setup: user profile default evaluated: "+profile);}
+                        else Console.Error.WriteLine("Setup: no verified interactive profile found. Configure Endpoint Protection paths manually.");
+                    }catch(Exception ex){Console.Error.WriteLine("Setup: profile defaults not applied; saved policy retained. Configure Endpoint Protection paths manually. "+ex.Message);}
+                }
                 if(canaryToken!=null)try{
                     Console.WriteLine("Setup: enroll canaries");
                     using(var lockFile=new FileStream(Path.Combine(Config.Data,"collector.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None))EnrollSetupCanaries(canaryToken);
                 }catch(Exception ex){canarySetupWarning=true;Console.Error.WriteLine("Canary enrollment failed; service installation continues: "+ex.Message);}
+                Console.WriteLine("Setup: register NTFS journal reader");
+                try{InstallUsn();}catch(Exception ex){Console.Error.WriteLine("USN reader unavailable; watcher fallback remains enabled: "+ex.Message);}
                 Console.WriteLine("Setup: start service");
                 try { StartAndWait(); }
                 catch(Exception ex) {
@@ -382,7 +455,7 @@ namespace LinkScope {
         }
         static void UninstallRegistered() {
             string registered=RegisteredCommand();
-            if(registered==null) { Console.WriteLine("Service is already removed."); return; }
+            if(registered==null) { RemoveUsn(); Console.WriteLine("Service is already removed."); return; }
             using(var svc=new ServiceController(Name)) {
                 if(svc.Status==ServiceControllerStatus.StartPending)
                     svc.WaitForStatus(ServiceControllerStatus.Running,TimeSpan.FromSeconds(60));
@@ -392,6 +465,7 @@ namespace LinkScope {
                     svc.WaitForStatus(ServiceControllerStatus.Stopped,TimeSpan.FromSeconds(65));
                 }
             }
+            RemoveUsn();
             RunSetupScript("hardware-task.ps1","remove");
             Sc("delete",Name);
             Console.WriteLine("Service removed. History and configuration retained in "+Config.Root);
@@ -400,6 +474,8 @@ namespace LinkScope {
         static int Main(string[] args) {
             string verb=args.Length>=1&&args.Length<=2 ? args[0].ToLowerInvariant() : "";
             string canaryToken=args.Length==2?args[1]:null;
+            if(verb=="--endpoint-scan-file"){try{RequireAdmin();if(args.Length!=2)throw new ArgumentException("Supply one absolute file path.");return EndpointProtection.RequestFileProbe(args[1]);}catch(Exception ex){Console.Error.WriteLine(ex.Message);return 1;}}
+            if(verb=="--endpoint-file-status"){try{RequireAdmin();if(args.Length!=2)throw new ArgumentException("Supply one absolute file path.");EndpointProtection.DiagnoseFile(args[1]);return 0;}catch(Exception ex){Console.Error.WriteLine(ex.Message);return 1;}}
             if(canaryToken!=null&&(!(verb=="--install"||verb=="--upgrade"||verb=="--upgrade-pwa")||canaryToken.Length>8192))return 2;
             try {
                 switch(verb) {
@@ -410,6 +486,7 @@ namespace LinkScope {
                     case "--register-pwa": RequireAdmin(); DesktopApp.Provision(true); break;
                     case "--uninstall": case "-uninstall": Uninstall(); DesktopApp.Remove(); break;
                     case "--init-config": InitConfig(); break;
+                    case "--endpoint-engine-self-test": RequireAdmin(); return EndpointProtection.TestEngineSignature();
                     case "--self-test": SelfCheck.Run(true); break;
                     case "--smart-once": RequireAdmin(); try{SmartDisk.Capture();}finally{SecurityPosture.Capture();} break;
                     case "--set-admin": RequireAdmin(); Access.SetPassword(); break;
@@ -426,6 +503,8 @@ namespace LinkScope {
                     case "--restart-installed": RestartInstalledService();break;
                     case "--signature-update-installed": return UpdateInstalledSignatures();
                     case "--clam-peer-access-installed": return RefreshInstalledClamPeerAccess();
+                    case "--usn-self-test": UsnJournalService.SelfTest();return 0;
+                    case "--usn-service": RequireAdmin();ServiceBase.Run(new UsnJournalService());return 0;
                     case "--service": ServiceMode=true;ServiceBase.Run(new MonitorService()); break;
                     case "--console":
                         using(var done=new ManualResetEvent(false))

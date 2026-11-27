@@ -289,7 +289,7 @@ const integrityLines=id=>byId(id).value.split(/\r?\n/).map(x=>x.trim()).filter(B
 function readIntegrity(){return {Enabled:byId('IntegrityEnabled').checked,IntervalSeconds:Number(byId('IntegrityInterval').value),Recursive:byId('IntegrityRecursive').checked,WriteEvents:byId('IntegrityWriteEvents').checked,Paths:integrityLines('IntegrityPaths'),ExcludedPaths:integrityLines('IntegrityExcludedPaths'),ExcludedPatterns:integrityLines('IntegrityExcludedPatterns')};}
 const endpointFlags=['Enabled','WriteEvents','RealTime','ProcessCorrelation','SignatureScheduleEnabled'];
 const endpointNumbers={IntervalSeconds:'EndpointInterval',ChangeThreshold:'EndpointThreshold',Port:'EndpointPort',MaxFileMiB:'EndpointMaxFileMiB',BehaviorWindowSeconds:'EndpointBehaviorWindowSeconds'};
-const endpointArrays=['Paths','ExcludedPaths','ExcludedPatterns','CanaryPaths','ResponsePaths','ContainmentExecutables'];
+const endpointArrays=['Paths','ExcludedPaths','BackgroundExcludedPaths','ExcludedPatterns','CanaryPaths','ResponsePaths','ContainmentExecutables'];
 function fillEndpoint(c){const e=c.Endpoint;for(const k of endpointFlags)byId('Endpoint'+k).checked=!!e[k];for(const [k,id] of Object.entries(endpointNumbers))byId(id).value=e[k];for(const k of endpointArrays)byId('Endpoint'+k).value=(e[k]||[]).join('\n');byId('EndpointMode').value=e.Mode;byId('EndpointTrustedEnginePath').value=e.TrustedEnginePath||'';byId('EndpointTrustedEngineSha256').value=e.TrustedEngineSha256||'';byId('EndpointSignatureScheduleFrequency').value=e.SignatureScheduleFrequency||'daily';byId('EndpointSignatureScheduleTime').value=e.SignatureScheduleTime||'03:00';byId('EndpointSignatureScheduleWeekday').value=String(e.SignatureScheduleWeekday??1);byId('EndpointSignatureScheduleMonthDay').value=e.SignatureScheduleMonthDay??1;signatureScheduleFields();}
 function signatureScheduleFields(){const enabled=byId('EndpointSignatureScheduleEnabled').checked,f=byId('EndpointSignatureScheduleFrequency').value;byId('signature-schedule-fields').hidden=!enabled;byId('signature-weekday-field').hidden=f!=='weekly';byId('signature-monthday-field').hidden=f!=='monthly';for(const id of ['Frequency','Time','Weekday','MonthDay'])byId('EndpointSignatureSchedule'+id).disabled=!enabled||(id==='Weekday'&&f!=='weekly')||(id==='MonthDay'&&f!=='monthly');byId('signature-schedule-summary').textContent=enabled?'Saved schedules run while Endpoint Protection is enabled and LinkScope is installed as a Windows service. Next run appears under Endpoint Protection → Signature maintenance.':'No additional LinkScope-scheduled updates.';}
 let endpointResponseSuggestions={paths:[],executables:[],engine:null};
@@ -380,6 +380,14 @@ function settingsPage(){
         let done=()=>{};
         try{const next={...config,...deliveryInput(),...readAi(),...readSiem(),Logging:readLogs(),TelemetryExport:readTelemetryExport(),DatabaseMaintenance:readDatabaseMaintenance()};numbers.forEach(k=>next[k]=Number(byId(k).value));strings.forEach(k=>next[k]=byId(k).value.trim());flags.forEach(k=>next[k]=byId(k).checked);
             next.Endpoint=readEndpoint();
+            // Preserve explicit canaries when an administrator narrows scan roots.
+            // Never silently re-add a parent directory or an entire volume.
+            const missingCanaryPaths=next.Endpoint.CanaryPaths.filter(p=>!next.Endpoint.Paths.some(root=>responseUnder(p,root)));
+            if(missingCanaryPaths.length){
+                if(!(await confirmAction('Keep enrolled canary files monitored?', 'Your new scan scope does not contain these canaries. Add only the exact files below (not their parent folders or drives)?\n'+missingCanaryPaths.join('\n'), 'Keep canaries')))return;
+                next.Endpoint.Paths=[...new Set([...next.Endpoint.Paths,...missingCanaryPaths])];
+            }
+
             if(Object.keys(next.Endpoint).some(k=>JSON.stringify(next.Endpoint[k])!==JSON.stringify(config.Endpoint[k]))&&!(await confirmAction("Apply endpoint monitoring settings?",next.Endpoint.Mode==='monitor'?"Verify scan paths, exclusions and canary baselines before enabling monitoring.":"Automatic response can remove confirmed malicious files and, in Contain mode, stop explicitly eligible processes. Verify response paths, trusted signatures, backups and testing. Continue?","Apply settings",next.Endpoint.Mode!=='monitor')))return;
             next.Integrity=readIntegrity();
             if(Object.keys(next.Integrity).some(k=>JSON.stringify(next.Integrity[k])!==JSON.stringify(config.Integrity[k]))){
@@ -537,10 +545,14 @@ function endpointActivity(v,generatedUtc){
     else if(r.realTime){state='warning';message='Real-time watcher unavailable';}
     else {state='idle';message='Scheduled monitoring · waiting for next scan';}
     panel.dataset.state=state;byId('endpoint-live-state').textContent=message;
-    byId('endpoint-live-counts').textContent='Full scan: '+(r.scannedFiles??'—')+' files · Real-time checks: '+(r.realTimeChecked??'—')+' since policy start · Pending: '+(r.queueDepth??'—');
+    if(byId('endpoint-active-scope'))byId('endpoint-active-scope').textContent=!fresh?'Active scan scope: awaiting fresh telemetry':r.status==='disabled'?'Active scan scope: disabled':'Active scan scope: '+(Array.isArray(r.protectedPaths)&&r.protectedPaths.length?r.protectedPaths.join(' · '):'Not reported');
+    if(byId('endpoint-usn-state')){const volumes=Array.isArray(r.usnVolumes)?r.usnVolumes:[];byId('endpoint-usn-state').textContent=!fresh?'NTFS journal: awaiting fresh telemetry':!r.realTime?'NTFS journal: real-time disabled':volumes.length?'NTFS journal · '+volumes.map(v=>v.volume+' '+v.status).join(' · ')+' · Durable pending: '+(r.usnQueueDepth??'—'):'NTFS journal: no configured local volumes';byId('endpoint-usn-detail').textContent=fresh?volumes.map(v=>v.volume+' '+v.detail+(v.status==='Live'||v.status==='Replaying'?' · checkpoint '+v.checkpoint+' / '+v.tail:'')).concat((r.privilegedWatcherDetails||[]).map(w=>w.path+' · '+(w.active?'Privileged watcher active':w.detail))).join(' | '):'';}
+    byId('endpoint-live-counts').textContent='Full scan: '+(r.scannedFiles??'—')+' files · Real-time checks: '+(r.realTimeChecked??'—')+' since reset / policy start · SYSTEM-assisted checks: '+(r.privilegedFileChecks??'—')+' · Pending: '+(r.queueDepth??'—')+' · Priority arrivals: '+(r.priorityQueueDepth??'—');
+    if(byId('endpoint-download-state'))byId('endpoint-download-state').textContent='Downloads: '+(r.downloadStatus??'Not available')+' · Attempts: '+(r.downloadChecks??'—')+' · Pending: '+(r.downloadPending??'—')+(r.downloadRoots?.length?' · Folders: '+r.downloadRoots.join(' · '):'')+(r.downloadLastPath?' · Last: '+r.downloadLastPath+' · '+(r.downloadLastResult??''):'');
     byId('endpoint-live-file').textContent=r.lastFileScanUtc?'Last successful signature check: '+new Date(r.lastFileScanUtc).toLocaleString()+(r.lastScannedPath?' · '+r.lastScannedPath:''):'No successful file signature check reported yet.';
     if(byId('endpoint-signature-schedule')){const schedule=r.signatureSchedule,day=schedule?.frequency==='weekly'?' on '+(['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][schedule.weekday]||'—'):schedule?.frequency==='monthly'?' on day '+schedule.monthDay:'';byId('endpoint-signature-schedule').textContent=r.status==='disabled'?'Scheduled refresh · Paused (Endpoint Protection disabled)':!fresh?'Scheduled refresh · Awaiting fresh status':schedule?.enabled?'Scheduled refresh · '+schedule.frequency+day+' at '+schedule.localTime+' (monitoring host) · '+schedule.status+' · Next: '+localEndpointDate(schedule.nextRunUtc)+' · Last request: '+localEndpointDate(schedule.lastScheduledRequestUtc):schedule?'Scheduled refresh · Disabled':'Scheduled refresh · Status not recorded';}
     if(byId('endpoint-signature-log'))byId('endpoint-signature-log').textContent='Latest database update reported by FreshClam log: '+localEndpointDate(r.lastReportedSignatureUpdateUtc)+(r.signatureUpdateLogRecognized?'':' · No recent matching log record');
+    const reset=byId('endpoint-reset');if(reset)reset.disabled=!csrf||!fresh||r.status==='disabled'||endpointScanBusy||!!endpointScanRequested;
     const b=byId('endpoint-scan-now');b.disabled=!csrf||endpointScanBusy||!!endpointScanRequested||r.status==='disabled'||!!r.scanRunning||!fresh;b.textContent=r.scanRunning&&fresh?'Scanning…':endpointScanRequested?'Scan queued…':'Scan now';
 }
 let signatureBusy=false,signatureRequested=null,signatureState=null,canaryBusy=false,maintenanceLast=0,maintenanceBusy=false;
@@ -656,6 +668,12 @@ function setupEndpointControls(){
         endpointScanBusy=true;const r=endpointLastSample?.result||{};byId('endpoint-scan-now').disabled=true;
         try{await request('/ui/endpoint-scan',{});endpointScanRequested={at:Date.now(),previous:r.lastScanUtc,started:r.scanStartedUtc};notice('Endpoint scan queued.');byId('endpoint-live').dataset.state='queued';byId('endpoint-live-state').textContent='Scan requested · waiting for scanner';byId('endpoint-scan-now').textContent='Scan queued…';}catch(e){failure(e);}finally{endpointScanBusy=false;}
     };
+    byId('endpoint-reset').onclick=async()=>{
+        if(endpointScanBusy||endpointScanRequested)return;
+        if(!(await confirmAction('Reset scan counters and rescan?','Retire operational scan warnings and start a fresh scan. Current malware and canary violations, historical incidents, quarantine evidence, and pending journal events are preserved. Unresolved coverage problems will be reported again.','Reset & rescan')))return;
+        endpointScanBusy=true;byId('endpoint-reset').disabled=true;
+        try{await request('/ui/endpoint-reset',{});const r=endpointLastSample?.result||{};endpointScanRequested={at:Date.now(),previous:r.lastScanUtc,started:r.scanStartedUtc};notice('Reset and rescan requested.');}catch(e){failure(e);}finally{endpointScanBusy=false;}
+    };
     refreshEndpointMaintenance();
     byId('endpoint-ack-previous').onclick=async()=>{
         if(!endpointAck||!endpointAck.unread||endpointAckBusy)return;
@@ -749,7 +767,23 @@ async function renderHealth(){
         if(key==='endpoint_protection'&&result.status==='scanning'&&categoryState.kind==='ok')categoryState.status='Scanning';
         if(key==='endpoint_protection'&&result.status==='disabled'&&!categoryState.messages.length){categoryState.kind='unknown';categoryState.status='Disabled';}
         const infoState=(result.truncated?'Showing the first 256 records. ':'')+state;
-        decorateHealthSection(section,label(key),infoState,kind,categoryState,time);
+        // Endpoint overview is deliberately concise. Preserve the actual severity,
+        // but keep raw alert messages (paths, hashes, exceptions) in the evidence area.
+        const endpointAlerts=key==='endpoint_protection'?activeAlerts.filter(a=>!a.resolved&&a.category===key&&['critical','error','warning'].includes(String(a.severity||'').toLowerCase())):[];
+        decorateHealthSection(section,label(key),infoState,kind,key==='endpoint_protection'?{...categoryState,messages:[]}:categoryState,time);
+        if(key==='endpoint_protection'&&(result.status!=='disabled'||endpointAlerts.length)){
+            const summary=element('p');summary.className='endpoint-overview-note';
+            const malware=Number(result.activeMalware||0),heuristic=Number(result.activeHeuristic||0);
+            const critical=endpointAlerts.filter(a=>['critical','error'].includes(String(a.severity||'').toLowerCase())).length;
+            const warnings=endpointAlerts.length-critical;
+            const parts=[];
+            if(malware>0)parts.push(malware+' active malware finding'+(malware===1?'':'s'));
+            if(heuristic>0)parts.push(heuristic+' active heuristic finding'+(heuristic===1?'':'s'));
+            if(critical>0)parts.push(critical+' critical/error alert'+(critical===1?'':'s'));
+            if(warnings>0)parts.push(warnings+' warning'+(warnings===1?'':'s'));
+            if(!parts.length&&categoryState.kind!=='ok')parts.push('Protection status requires review');
+            if(parts.length){summary.append(element('span',parts.join(' · ')+'. '));const link=element('a','View findings and diagnostics');link.href=result.status==='disabled'?'/alerts':'#endpoint-alert-diagnostics';if(result.status!=='disabled')link.onclick=()=>{const d=byId('endpoint-alert-diagnostics');if(d)d.open=true;};summary.append(link);section.append(summary);}
+        }
         if(key==='smart'&&rows.length){for(const disk of rows)section.append(renderDrive(disk));}
         else if(key==='events'||key==='event_details'){for(const group of rows){const heading=element('h3',group.channel+' ');heading.append(healthBadge(group.status,healthKind(group.status)));if(group.truncated)heading.append(' · capped');section.append(heading,table(group.items||[],key+' · '+group.channel));}}
         else if(key==='endpoint_protection'){
@@ -757,20 +791,22 @@ async function renderHealth(){
             else {
                 const stats=element('div');stats.className='cards integrity-metrics';
                 const danger=rows.some(r=>r.severity==='critical'),warnings=rows.some(r=>r.severity==='warning');
-                const cards=[['ClamAV engine',result.engineOnline===true?'Online':result.engineOnline===false?'Unavailable':'—',v.stale?'review':result.engineOnline===true?(rows.some(r=>r.path==='ClamAV'&&r.severity==='warning')?'review':'ok'):result.engineOnline===false?'review':'unknown',(result.engineVersion||'Waiting for scan')+' · DB '+(result.signatureDatabaseVersion||'Unknown')],['Files scanned',result.scannedFiles,kind,result.scanRunning?'Full scan running':'Last full scan'],['Real-time queue',result.queueDepth,rows.some(r=>r.change==='Real-time queue overflow')?'review':kind,'Watchers: '+(result.watcherCount??0)+' · Historical overflows: '+(result.overflowCount??0)],['File changes',result.changedFiles,rows.some(r=>r.change==='Possible ransomware activity')?'review':'ok','Behavior window'],['Entropy changes',result.entropyChanges,rows.some(r=>r.change==='Possible ransomware activity')?'review':kind,'Distinct files in behavior window'],['Canary files',result.canaryCount,rows.some(r=>r.change==='Canary integrity violation')?'fail':result.canaryCount===0?'unknown':kind,result.canaryCount===0?'Not configured':'Configured canaries'],['Active findings',result.violations,danger?'fail':warnings?'review':kind,'Persistent threat records'],['Mode',result.mode,result.mode==='monitor'?'ok':result.responseEngineStatus==='Ready'?'ok':'review',(result.mode==='monitor'?'Detection only':'Response: '+(result.responseEngineStatus||'Not checked'))+' · Process correlation: '+(result.processCorrelation||'Unavailable')]];
-                for(const [name,val,k,foot] of cards)stats.append(metric(name,val==null?'—':String(val),foot,val==null?'unknown':k,{kind:val==null?'unknown':k,status:name==='Files scanned'&&result.scanRunning&&k==='ok'?'Scanning':alertStateLabel(val==null?'unknown':k),messages:[]}));section.append(stats);
+                const independent=v.stale?'review':'ok',coverage=Number(result.activeScanIssues||0)>0||Number(result.coverageIssueCount||0)>0;
+                const canaryState=(result.canaries||[]).some(c=>c.status==='critical')?'fail':(result.canaries||[]).some(c=>c.status!=='Enrolled')?'review':independent;
+                const cards=[['ClamAV engine',result.engineOnline===true?'Online':result.engineOnline===false?'Unavailable':'—',v.stale?'review':result.engineOnline===true?(rows.some(r=>r.path==='ClamAV'&&r.severity==='warning')?'review':'ok'):result.engineOnline===false?'review':'unknown',(result.engineVersion||'Waiting for scan')+' · DB '+(result.signatureDatabaseVersion||'Unknown')],['Files scanned',result.scannedFiles,coverage?'review':independent,result.scanRunning?'Full scan running':'Last full scan'],['Real-time queue',result.queueDepth,rows.some(r=>r.change==='Real-time queue overflow')||(result.usnVolumes||[]).some(v=>v.status==='Backpressure')?'review':independent,'USN pending: '+(result.usnQueueDepth??'—')+' · Watcher pending: '+(result.watcherQueueDepth??'—')+' · Overflows: '+(result.overflowCount??0)+' · Journal-backed roots: '+(result.watcherRootsCoveredByJournal??0)+' · Privileged watcher roots: '+(result.watcherRootsCoveredByPrivileged??0)],['File changes',result.changedFiles,rows.some(r=>r.change==='Possible ransomware activity')?'review':'ok','Behavior window'],['Entropy changes',result.entropyChanges,rows.some(r=>r.change==='Possible ransomware activity')?'review':independent,'Distinct files in behavior window'],['Canary files',result.canaryCount,rows.some(r=>r.change==='Canary integrity violation')?'fail':result.canaryCount===0?'unknown':canaryState,result.canaryCount===0?'Not configured':'Configured canaries'],['Active findings',result.violations,danger?'fail':warnings||coverage?'review':independent,'Persistent threat records'],['Mode',result.mode,result.mode==='monitor'?'ok':result.responseEngineStatus==='Ready'?'ok':'review',(result.mode==='monitor'?'Detection only':'Response: '+(result.responseEngineStatus||'Not checked'))+' · Process correlation: '+(result.processCorrelation||'Unavailable')]];
+                for(const [name,val,k,foot] of cards)stats.append(metric(name,val==null?'—':String(val),foot,val==null?'unknown':k,{kind:val==null?'unknown':k,status:name==='Files scanned'&&result.scanRunning&&k==='ok'?'Scanning':name==='Real-time queue'&&k==='ok'&&Number(val)>0?'Queued':alertStateLabel(val==null?'unknown':k),messages:[]}));section.append(stats);
                 section.append(element('h3','Active threats and scan statistics'));
                 const counts=element('div');counts.className='cards integrity-metrics';
                 // Severity is driven by unresolved findings, not cumulative historical scan checks.
-                const currentKind=v.stale?'review':kind;
+                const currentKind=independent;
                 const currentCount=(name)=>result[name]==null?null:Number(result[name]);
                 const malware=currentCount('activeMalware'),heuristic=currentCount('activeHeuristic'),scanIssues=currentCount('activeScanIssues'),vault=currentCount('quarantineCount');
                 const counterCards=[
-                    ['Clean signature checks',result.cleanChecks,currentKind,'Historical checks since policy start'],
+                    ['Clean signature checks',result.cleanChecks,currentKind,'Checks since reset / policy start'],
                     ['Active confirmed malware',malware,malware>0?'fail':currentKind,'Historical infected checks: '+(result.infectedChecks??'—')],
                     ['Active heuristic findings',heuristic,heuristic>0?'review':currentKind,'Historical heuristic checks: '+(result.heuristicChecks??'—')],
                     ['Excluded checks',result.excludedChecks,'unknown','Excluded by policy'],
-                    ['Active scan issues',scanIssues,scanIssues>0?'review':currentKind,'Historical failed / missing / limited checks: '+(result.failedChecks??'—')],
+                    ['Active scan issues',scanIssues,scanIssues>0||coverage?'review':currentKind,'Historical failed / missing / limited checks: '+(result.failedChecks??'—')],
                     ['Quarantine vault',vault,vault==null?'unknown':vault>0?'review':currentKind,'Historical quarantined checks: '+(result.quarantinedChecks??'—')+' · Deleted payloads: '+(result.quarantineDeletedCount??'—')]
                 ];
                 for(const [name,val,k,foot] of counterCards){const state=val==null?'unknown':k;counts.append(metric(name,val==null?'—':String(val),foot,state,{kind:state,status:val==null?'Not available':name==='Excluded checks'?'Excluded by policy':name==='Quarantine vault'&&val>0?'Isolated evidence':alertStateLabel(state),messages:[]}));}section.append(counts);
@@ -792,8 +828,15 @@ async function renderHealth(){
                 metrics.append(section);
                 section=element('section');section.id='endpoint-evidence';
                 section.append(element('h2','Scan activity & threat evidence'));
+                const diagnostics=element('details');diagnostics.id='endpoint-alert-diagnostics';diagnostics.dataset.category='endpoint-alert-diagnostics';diagnostics.open=opened.has('endpoint-alert-diagnostics');
+                diagnostics.append(element('summary','Active alert diagnostics ('+endpointAlerts.length+')'));
+                diagnostics.append(element('p','Detailed alert messages, including file paths, signatures, hashes and technical coverage errors. Operational warnings are not malware verdicts.'));
+                diagnostics.append(endpointAlerts.length?table(endpointAlerts.map(a=>({severity:a.severity,change:a.title,detail:a.message})),'endpoint active alert diagnostics'):element('p','No active warning, error or critical alerts reported.'));
+                section.append(diagnostics);
                 section.append(element('h3','Registered canary files'),(result.canaries||[]).length?table(result.canaries,'endpoint canaries'):element('p','No canaries configured. Use Canary manager above, LinkScope Setup, or register existing decoys under Settings → Endpoint Protection. Do not edit or delete enrolled decoys.'));
                 section.append(element('h3','Live file scan activity (latest 100)'),(result.scanActivity||[]).length?table(result.scanActivity,'endpoint scan activity'):element('p','No file scan results yet.'));
+                section.append(element('h3','Scan coverage details'),element('p',result.coverageIssueCount==null?'Coverage details not reported by this service.':String(result.coverageIssueCount)+' outstanding file/path scan issues. Showing up to 100 recent paths. These are coverage gaps, not malware detections.'));
+                if((result.coverageDetails||[]).length)section.append(table(result.coverageDetails,'endpoint scan coverage'));
                 section.append(element('h3','Active detections and response evidence'),rows.length?table(rows,key):element('p',result.status==='ok'?'No active findings.':'Scan pending or incomplete.'));
                 section.append(element('h3','Recent threat and response history (latest 100)'),(result.recentIncidents||[]).length?table(result.recentIncidents,'endpoint incident history'):element('p','No recorded incidents.'));
                 section.append(element('p','Use Quarantine manager above to review or permanently delete isolated payloads. Full detection history remains in the endpoint database.'));

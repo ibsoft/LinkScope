@@ -59,6 +59,7 @@
     <Compile Include="src\DeliverySettings.cs" />
     <Compile Include="src\DesktopApp.cs" />
     <Compile Include="src\EndpointProtection.cs" />
+    <Compile Include="src\UsnJournal.cs" />
     <Compile Include="src\EndpointResponse.cs" />
     <Compile Include="src\FileIntegrity.cs" />
     <Compile Include="src\History.cs" />

@@ -1,0 +1,9 @@
+# V25 — privileged watcher fallback
+
+When the LocalService FileSystemWatcher cannot open a configured directory and the USN journal does not cover it, the existing LocalSystem LinkScopeUsn helper can start a recursive watcher for that exact saved local directory. The dedicated named pipe is restricted to the service SID and SYSTEM, verifies the reader identity, returns only bounded change metadata, and does not change file ACLs. Existing ClamAV scanning and the independent Downloads reconciliation are unchanged. Copies and rename destinations use the existing priority queue. Watchers expire when not renewed (120-second lease); the main service requires a successful response within 30 seconds to count coverage. Overflow requests reconciliation. This is not a durable journal replacement: watcher events may be lost during outages or overflow, and other scan coverage warnings remain meaningful.
+
+## Windows acceptance check
+
+Rebuild Release, upgrade both services, confirm Get-Service LinkScope,LinkScopeUsn, and save Downloads as an explicit monitored directory with real-time monitoring enabled. In Protection activity, check whether journal-backed or privileged watcher coverage is shown. If neither is verified the warning must remain; inspect the helper detail. Download or copy a harmless test file into Downloads and check scan activity; test EICAR using an official test file if it remains accessible. Repeat for a subdirectory. Stop the helper and verify coverage warnings recur if the journal and local watcher are unavailable; restart it and verify recovery. Existing EICAR findings and canary baselines must survive. No broad ACL changes are needed for this fallback.
+
+Native Windows compilation and testing have not been performed. The fallback is limited to exact saved local directory roots; it is not kernel interception and cannot scan locked/encrypted/inaccessible files or files removed before scanning.

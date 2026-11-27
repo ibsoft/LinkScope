@@ -12,7 +12,7 @@ assert policy['Mode']=='monitor' and policy['Enabled'] is False
 assert policy['ResponsePaths']==policy['ContainmentExecutables']==[]
 assert 'endpointResponseSuggestions=EndpointResponse.SuggestedTargets(settings.Endpoint)' in web
 assert '"/ui/settings"' not in web.split('static readonly HashSet<string> ViewerReads=')[1].split(';',1)[0]
-assert '/assets/app-signature-schedule-v17.js' in settings and '/assets/app-signature-schedule-v17.js' in web
+assert '/assets/app-profile-defaults-v26.js' in settings and '/assets/app-profile-defaults-v26.js' in web
 suggest=response.split('internal static object SuggestedTargets(')[1].split('internal static EndpointWriter FindWriter(',1)[0]
 for term in ['c.Paths','SafeScope(path)','EndpointProtection.Excluded(c,path)','EndpointProtection.SafePath(path)','SearchOption.TopDirectoryOnly','.Take(64)','executables.Count>=200','EndpointProtection.SafePath(file)','CanaryTemplates.FolderName']:
     assert term in suggest,term

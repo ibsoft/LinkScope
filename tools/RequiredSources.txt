@@ -19,6 +19,7 @@ DeliveryChecks.cs
 DeliverySettings.cs
 DesktopApp.cs
 EndpointProtection.cs
+UsnJournal.cs
 EndpointResponse.cs
 FileIntegrity.cs
 History.cs

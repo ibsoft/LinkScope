@@ -130,3 +130,48 @@ credential handling and Windows acceptance tests.
 ## User management and MFA
 
 Use the account icon → Users (Admin only) or My account & MFA (all signed-in users). Admin and Viewer roles are enforced at the server; anonymous localhost viewing is no longer available. See [USER-MANAGEMENT-MFA.md](USER-MANAGEMENT-MFA.md) for migration, credentials, MFA recovery, and acceptance tests.
+
+See [SCAN-COVERAGE-AGGREGATION.md](SCAN-COVERAGE-AGGREGATION.md) for whole-volume scan warning consolidation and acceptance checks.
+
+### V17 priority arrival scanning
+
+See [PRIORITY-ARRIVALS.md](PRIORITY-ARRIVALS.md) for the new download/copy scheduling, retry policy and Windows acceptance tests.
+
+### V18 file scan diagnostics
+See [FILE-SCAN-DIAGNOSTICS.md](FILE-SCAN-DIAGNOSTICS.md) for exact-file service activity, direct ClamAV probing, and priority scheduling/retry changes.
+
+## V19 exact-file service probe
+
+See [SERVICE-FILE-PROBE.md](SERVICE-FILE-PROBE.md) for the actual service-account scan, in-memory EICAR engine check, and explicit scoped read-access troubleshooting.
+
+### V20: user profile scanning permissions
+
+See [Profile scan access](PROFILE-SCAN-ACCESS.md) for the administrator-only `Grant-LinkScopeScanAccess.ps1` utility and failed-watcher recovery. Upgrade alone does not change Windows user-profile ACLs.
+
+### V21 — protected-directory access and priority arrival scanning
+
+See [PRIVILEGED-ARRIVAL-SCANNING.md](PRIVILEGED-ARRIVAL-SCANNING.md) for the read-only SYSTEM-assisted scan fallback, downloaded/copied-file priority, reset behavior and Windows acceptance procedure. Upgrade both services together.
+
+### V22 — independent Downloads reconciliation
+
+In addition to USN and watcher events, the service enumerates the immediate files in standard Windows profile `Downloads` directories within the saved scan scope. Include the exact Downloads directory or a parent in Endpoint Protection settings; a Desktop-only scope does not include Downloads. See `DOWNLOAD-RECONCILIATION.md` for diagnostics, coverage limits and the Windows acceptance test.
+
+### V23 — concise Endpoint Protection overview
+
+The overview retains its real severity badge and independent metric cards, but replaces raw alert messages with counts and a link to **Active alert diagnostics** in the evidence area. Detailed paths, signatures, hashes, and exception text remain available there and in the existing evidence/history tables. Expanded diagnostics stay open during telemetry refresh. This is a presentation-only change; scan policy, notifications, incident history, ClamAV and USN processing remain unchanged.
+
+Windows acceptance: upgrade, refresh `/endpoint`, and verify a retained EICAR finding still produces a critical badge and a malware count. Technical coverage warnings should be summarized rather than printed above the cards. Open the diagnostics link, confirm the full messages, and verify that the panel remains open after refresh. Portable renderer regression: `python tests/validate_endpoint_summary.py`.
+
+V25: See [privileged watcher fallback](PRIVILEGED-WATCHER-FALLBACK.md) for coverage diagnostics and Windows acceptance checks.
+
+### Default user profile protection (V26)
+
+Setup now seeds current-user profile protection and editable background-only exclusions; existing enabled policies retain their additional paths. See [USER-PROFILE-PROTECTION.md](USER-PROFILE-PROTECTION.md) for upgrade behavior and Windows acceptance checks.
+
+### Watcher coverage and alert recovery (V27)
+
+See [WATCHER-ALERT-RECOVERY.md](WATCHER-ALERT-RECOVERY.md). Keeps the privileged watcher warm alongside USN, refreshes the exact watcher warning without reopening it, and avoids duplicate alerts from the application’s own endpoint audit events. Genuine coverage failures remain visible.
+
+### Independent watcher and ClamD deadline (V28)
+
+See [WATCHER-CLAMD-RECOVERY.md](WATCHER-CLAMD-RECOVERY.md) for the watcher heartbeat, bounded ClamD transport and persistent retry behavior. Genuine coverage and security alerts remain visible.

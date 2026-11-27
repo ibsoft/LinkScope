@@ -237,6 +237,15 @@ namespace LinkScope {
         return pid;
     }
 
+    // Privileged scanner sends file bytes only to the actual registered standard
+    // ClamD service, never to an arbitrary configured listener or client-supplied port.
+    internal static void VerifyPrivilegedScanPeer(TcpClient client){
+        if(ServiceImage("clamd")==null||!NativeService("clamd",ClamdExe)||!LoopbackOnly())throw new IOException("Standard loopback ClamD service required for privileged scanning.");
+        VerifyClamPath(ProgramFiles);VerifyClamPath(ClamRoot);VerifyClamPath(ClamdExe);
+        uint pid=ClamdPid();if(pid<=4||!OwnsConnection(client,pid)||ClamdPid()!=pid)throw new IOException("Privileged scan peer identity mismatch.");
+        using(var proc=Process.GetProcessById((int)pid)){if(proc.HasExited||!SamePath(proc.MainModule.FileName,ClamdExe)||ClamdPid()!=pid)throw new IOException("Privileged scan live ClamD image mismatch.");}
+    }
+
     static uint ServicePid(string name) {
         IntPtr manager=OpenSCManager(null,null,1),service=IntPtr.Zero;
         if (manager==IntPtr.Zero) return 0;

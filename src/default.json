@@ -126,6 +126,8 @@
   },
   "Endpoint": {
     "Enabled": false,
+    "ProfileDefaultsApplied": false,
+    "BackgroundExcludedPaths": [],
     "WriteEvents": false,
     "IntervalSeconds": 300,
     "ChangeThreshold": 50,

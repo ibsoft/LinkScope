@@ -61,8 +61,8 @@ assert 'nav.scrollWidth>nav.clientWidth' in js
 web=(SRC/'Web.cs').read_text()
 assert 'Asset("/assets/theme-workspace-v11.css","theme.css","text/css")' in web
 assert 'Asset("/assets/theme-stable-v9.js","theme.js","application/javascript")' in web
-assert 'Asset("/assets/navigation-v16.css","navigation.css","text/css")' in web
-assert all('/assets/navigation-v16.css' in (SRC/(name+'.html')).read_text() for name in PAGES)
+assert 'Asset("/assets/navigation-v24.css","navigation.css","text/css")' in web
+assert all('/assets/navigation-v24.css' in (SRC/(name+'.html')).read_text() for name in PAGES)
 assert '@view-transition { navigation: auto; }' in (SRC/'navigation.css').read_text()
 assert 'PageAsset(r.Path,session)' in web and 'alerts.HeaderUnread()' in web
 assert 'tools.append(bell,account)' not in (SRC/'toast.js').read_text()
