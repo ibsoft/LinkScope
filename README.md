@@ -1,3 +1,7 @@
+# Build notice — Windows 11 installer update
+
+This source archive intentionally excludes old compiled executables. Rebuild using `Build-VisualStudio.cmd Release` (Visual Studio with .NET Framework 4.8 targeting pack) or `Build.cmd` before running setup. The legacy native bootstrap is retired. See [ClamAV removal](CLAMAV-SETUP.md).
+
 # LinkScope
 
 Read the [administrator guide](docs/README.md) for installation, uninstallation, network alert rules, searching and paging alert history, module logging, syslog and SIEM forwarding (Seq, Wazuh, Elasticsearch), dashboard service restart, AI Assist, security posture, SMTP email and test delivery, JSON file retention, System health graphs, the full PDF report, HTTPS and the API.

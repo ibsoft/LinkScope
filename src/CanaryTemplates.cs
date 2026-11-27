@@ -24,35 +24,32 @@ namespace LinkScope {
         internal static string HashFile(string path){using(var sha=SHA256.Create())using(var f=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.Read))return BitConverter.ToString(sha.ComputeHash(f)).Replace("-","").ToLowerInvariant();}
         internal static SecurityIdentifier ServiceSid(){using(var sha=SHA1.Create()){var hash=sha.ComputeHash(Encoding.Unicode.GetBytes("LINKSCOPE"));var parts=new string[5];for(int i=0;i<5;i++)parts[i]=BitConverter.ToUInt32(hash,i*4).ToString(System.Globalization.CultureInfo.InvariantCulture);return new SecurityIdentifier("S-1-5-80-"+string.Join("-",parts));}}
         static string RegistryPath(string sid){return @"SOFTWARE\IBSoft\LinkScope\SetupCanaries\"+new SecurityIdentifier(sid).Value;}
-        internal static bool Registered(string sid){using(var k=Registry.LocalMachine.OpenSubKey(RegistryPath(sid)))return k!=null&&k.GetValue("Folder") is string;}
+        internal static string RegisteredFolder(string sid){using(var k=Registry.LocalMachine.OpenSubKey(RegistryPath(sid)))return k==null?null:k.GetValue("Folder") as string;}
+        internal static bool Registered(string sid){return RegisteredFolder(sid)!=null;}
         internal static void Register(string sid,string folder){using(var k=Registry.LocalMachine.CreateSubKey(RegistryPath(sid)))k.SetValue("Folder",folder,RegistryValueKind.String);}
         internal static string UserFolder(){string docs=Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);if(string.IsNullOrWhiteSpace(docs))throw new IOException("Documents folder unavailable.");return Path.Combine(docs,FolderName);}
         internal static void CheckLocal(string path){if(string.IsNullOrWhiteSpace(path)||path.Length<3||path[1]!=':'||path[2]!='\\'||!string.Equals(Path.GetFullPath(path),path,StringComparison.OrdinalIgnoreCase)||path.Substring(2).Contains(":"))throw new IOException("Use a local absolute Documents folder.");for(string q=path;!string.IsNullOrEmpty(q);q=Path.GetDirectoryName(q))if((File.GetAttributes(q)&FileAttributes.ReparsePoint)!=0)throw new IOException("Redirected/reparse folders require manual canary enrollment.");}
         internal static void Verify(string folder){CheckLocal(folder);if(!string.Equals(Path.GetFileName(folder),FolderName,StringComparison.Ordinal))throw new IOException("Invalid canary folder.");foreach(var name in Names){string path=Path.Combine(folder,name);CheckLocal(path);if(new FileInfo(path).Length!=Bytes(name).Length||HashFile(path)!=ExpectedHash(name))throw new IOException("Existing canary does not match the embedded original: "+name+". No file will be replaced.");}}
         // Run in the wizard's original user context. Never write using alternate UAC credentials.
-        static void AllowParentMetadata(string folder){
-            string profile=Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            if(string.IsNullOrWhiteSpace(profile))throw new IOException("User profile folder unavailable.");
-            profile=Path.GetFullPath(profile).TrimEnd('\\');
-            for(string q=Path.GetDirectoryName(folder);q!=null&&(string.Equals(q,profile,StringComparison.OrdinalIgnoreCase)||q.StartsWith(profile+"\\",StringComparison.OrdinalIgnoreCase));q=Path.GetDirectoryName(q)){
-                CheckLocal(q);var dir=new DirectoryInfo(q);var acl=dir.GetAccessControl();
-                // This object only: no inheritance, no ReadData/ListDirectory, no write rights.
-                acl.AddAccessRule(new FileSystemAccessRule(ServiceSid(),FileSystemRights.Traverse|FileSystemRights.ReadAttributes,InheritanceFlags.None,PropagationFlags.None,AccessControlType.Allow));dir.SetAccessControl(acl);
-            }
+        internal static void Trace(string message){
+            foreach(string name in new[]{"LinkScope-Canary-errors.log","LinkScope-Setup-debug.log"})try{File.AppendAllText(Path.Combine(Path.GetTempPath(),name),DateTime.UtcNow.ToString("o")+" [canary "+System.Diagnostics.Process.GetCurrentProcess().Id+"] "+message+Environment.NewLine,new UTF8Encoding(false));}catch{}
         }
-        internal static int Prepare(){using(var user=WindowsIdentity.GetCurrent()){
-            if(Registered(user.User.Value))return 12;
+        internal static int Prepare(bool repair=false){using(var user=WindowsIdentity.GetCurrent()){
+            Trace("Checking enrollment registry");string registered=RegisteredFolder(user.User.Value);if(registered!=null&&!repair)return 12;
             if(new WindowsPrincipal(user).IsInRole(WindowsBuiltInRole.Administrator))throw new IOException("Open LinkScope Setup normally (not Run as administrator) to create canaries in your own Documents. Setup will request elevation only for service installation and enrollment."); // Never recreate a deleted enrolled decoy on upgrade.
-            string folder=UserFolder();CheckLocal(Path.GetDirectoryName(folder));
-            if(Directory.Exists(folder)){Verify(folder);AllowParentMetadata(folder);return 0;} // retry intact, unregistered files only
+            Trace("Resolving Documents folder");string folder=UserFolder();Trace("Checking local path: "+folder);CheckLocal(Path.GetDirectoryName(folder));
+            if(registered!=null&&!string.Equals(registered,folder,StringComparison.OrdinalIgnoreCase))throw new IOException("Registered canary folder differs from current Documents; manual recovery required.");
+            // Validate every surviving file before creating any missing originals.
+            if(Directory.Exists(folder)){CheckLocal(folder);foreach(var name in Names){string path=Path.Combine(folder,name);if(File.Exists(path)){CheckLocal(path);if(HashFile(path)!=ExpectedHash(name))throw new IOException("Modified canary preserved: "+name); }else if(Directory.Exists(path))throw new IOException("Unexpected directory at canary path: "+name);}}
+            else if(File.Exists(folder))throw new IOException("Unexpected file at canary folder.");
             var sec=new DirectorySecurity();sec.SetAccessRuleProtection(true,false);
             var inherit=InheritanceFlags.ContainerInherit|InheritanceFlags.ObjectInherit;
             foreach(var sid in new[]{user.User,new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid,null),new SecurityIdentifier(WellKnownSidType.LocalSystemSid,null)})sec.AddAccessRule(new FileSystemAccessRule(sid,FileSystemRights.FullControl,inherit,PropagationFlags.None,AccessControlType.Allow));
             sec.AddAccessRule(new FileSystemAccessRule(ServiceSid(),FileSystemRights.ReadAndExecute,inherit,PropagationFlags.None,AccessControlType.Allow));
             // Directory.CreateDirectory may return an existing directory in a race. Never change its ACL or overwrite files.
-            Directory.CreateDirectory(folder,sec);CheckLocal(folder);
-            foreach(var name in Names){using(var f=new FileStream(Path.Combine(folder,name),FileMode.CreateNew,FileAccess.Write,FileShare.None)){var b=Bytes(name);f.Write(b,0,b.Length);f.Flush(true);}}
-            Verify(folder);AllowParentMetadata(folder);return 0;
+            Trace("Creating protected directory");if(!Directory.Exists(folder))Directory.CreateDirectory(folder,sec);CheckLocal(folder);
+            foreach(var name in Names){string path=Path.Combine(folder,name);if(File.Exists(path)){Trace("Preserving original "+name);continue;}Trace("Restoring missing original "+name);using(var f=new FileStream(Path.Combine(folder,name),FileMode.CreateNew,FileAccess.Write,FileShare.None)){var b=Bytes(name);f.Write(b,0,b.Length);f.Flush(true);}}
+            Trace("Verifying originals");Verify(folder);Trace("Originals verified; parent ACLs unchanged");return 0;
         }}
     }
 }
