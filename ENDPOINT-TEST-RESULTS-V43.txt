@@ -1,6 +1,0 @@
-PASS: all 127 settings fields have unique associated help; four dynamic groups have descriptions
-PASS: V42 archive metadata, explicit override priority, build-resource wiring and all 12 version placeholders (static)
-PASS: JavaScript syntax
-PASS: shipped entropy defaults match V41
-PASS: 16 named shortcuts, all categories closed initially, empty default brand, help dialog, focus restoration, matched input heights and shortcut containment across five widths and two themes.
-PASS: 16 categories, expand/collapse, retained edits, native invalid-field reveal, deep links, and 36 field/button layouts across six viewport widths and two themes.

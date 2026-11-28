@@ -617,6 +617,7 @@ function setupEndpointWorkspace(){
     const nav=byId('endpoint-views');if(!nav)return;setupContainmentTests();
     nav.addEventListener('click',e=>{const b=e.target.closest('[data-ep-tab]');if(b)selectEndpointView(b.dataset.epTab);});
     byId('ep-overview').addEventListener('click',e=>{const b=e.target.closest('[data-ep-go]');if(b)selectEndpointView(b.dataset.epGo);});
+    byId('ep-status-reasons').addEventListener('click',()=>{const panel=byId('ep-attention');panel.focus();panel.scrollIntoView({block:'nearest'});});
     if(location.hash.startsWith('#view-'))selectEndpointView(location.hash.slice(6),false);else applyEndpointView();
 }
 function epTestCards(target,rows){
@@ -863,16 +864,49 @@ function endpointOverview(v,activeAlerts){
     const r=v?.result||{},fresh=!v?.stale&&Number(v?.ageSeconds??Infinity)<=20&&!(r.status==='unavailable'&&r.engineOnline==null),disabled=r.status==='disabled'||v?.status==='disabled';
     const findings=(r.items||[]),behavior= row=>String(row.change||'').startsWith('Possible ransomware activity'),critical=findings.some(x=>x.severity==='critical')||activeAlerts.some(x=>!x.resolved&&['critical','error'].includes(String(x.severity).toLowerCase())),warning=findings.some(x=>x.severity==='warning')||activeAlerts.some(x=>!x.resolved&&String(x.severity).toLowerCase()==='warning');
     const rootIssues=(r.rootCoverage||[]).some(x=>['Uncovered','Initializing','Excluded','Journal only'].includes(x.state));
-    const uncertain=(!fresh||disabled),needsReview=r.engineOnline!==true||r.signatureFreshness!=='Current'||rootIssues||Number(r.activeScanIssues||0)>0||Number(r.coverageIssueCount||0)>0||r.status==='partial'||warning||r.truncated||Number(r.violations||0)>0;
+    const uncertain=(!fresh||disabled),needsReview=r.engineOnline!==true||r.signatureFreshness!=='Current'||rootIssues||Number(r.activeScanIssues||0)>0||Number(r.coverageIssueCount||0)>0||r.status==='partial'||(r.scanRunning&&!!r.baselineThrottleReason)||warning||r.truncated||Number(r.violations||0)>0;
     let title=disabled?'Protection disabled':!fresh?'Status awaiting fresh data':critical?'Critical finding — investigate':needsReview?'Protection needs attention':r.scanRunning?'Protection monitoring · baseline active':'No active security warnings reported';
     let kind=uncertain?'unknown':critical?'fail':needsReview?'review':'ok';const hero=byId('ep-overview');hero.dataset.state=kind;byId('ep-overview-title').textContent=title;
     byId('ep-overview-message').textContent=disabled?'Choose protected application directories in Settings, then enable Endpoint Protection.':!fresh?'Displayed counters may be old; no current protection verdict is implied.':critical?'Review current detections and response evidence.':needsReview?'Review the findings and operational coverage below.':'Current telemetry has no reported warnings. This is not a guarantee of complete protection.';
     byId('ep-mode').textContent='Mode · '+(fresh&&!disabled&&r.mode?r.mode:'—');
     const safe=n=>uncertain||n==null?'—':String(n),rapid=findings.filter(behavior),canaries=r.canaries||[];
-    const stats=[['Confirmed malware',safe(r.activeMalware),'evidence',Number(r.activeMalware)>0?'fail':'ok','Active signature findings'],['Ransomware signals',uncertain?'—':rapid.length? 'Detected': 'None active','behavior',rapid.some(x=>x.severity==='critical')?'fail':rapid.length?'review':'ok','Behavioral findings'],['Scan coverage issues',safe(r.coverageIssueCount),'scan',Number(r.coverageIssueCount)>0||Number(r.activeScanIssues)>0?'review':'ok','Outstanding file / path gaps'],['Canary files',safe(r.canaryCount),'behavior',canaries.some(x=>x.status==='critical')?'fail':!canaries.length||canaries.some(x=>x.status!=='Enrolled')?'review':'ok','Integrity decoys']];
+    const stats=[['Confirmed malware',safe(r.activeMalware),'evidence',Number(r.activeMalware)>0?'fail':'ok','Active signature findings'],['Ransomware signals',uncertain?'—':rapid.length? 'Detected': 'None active','behavior',rapid.some(x=>x.severity==='critical')?'fail':rapid.length?'review':'ok','Behavioral findings'],['Scan coverage',uncertain?'—':safe(r.coverageIssueCount)+' / '+safe(r.activeScanIssues),'scan',Number(r.coverageIssueCount)>0||Number(r.activeScanIssues)>0?'review':'ok','Outstanding paths / active scanner findings'],['Canary files',safe(r.canaryCount),'behavior',canaries.some(x=>x.status==='critical')?'fail':!canaries.length||canaries.some(x=>x.status!=='Enrolled')?'review':'ok','Integrity decoys']];
     const key=JSON.stringify([stats,uncertain]);const cards=byId('ep-kpis');if(cards.dataset.key!==key){cards.dataset.key=key;cards.replaceChildren(...stats.map(([name,value,view,state,caption])=>{const b=element('button');b.type='button';b.className='ep-kpi';b.dataset.epGo=view;b.dataset.state=uncertain?'unknown':state;b.append(element('span',name),element('strong',value),element('small',caption+' ›'));return b;}));}
-    const a=byId('ep-attention'),messages=[];if(fresh&&!disabled){if(r.engineOnline!==true)messages.push('Antivirus engine unavailable or unverified');if(r.signatureFreshness!=='Current')messages.push('Signature freshness: '+(r.signatureFreshness||'Unknown'));if(rootIssues)messages.push('Protected folder monitoring requires review');if(Number(r.activeScanIssues||0)>0||Number(r.coverageIssueCount||0)>0)messages.push('Scan coverage gaps remain');if(Number(r.violations||0)>0)messages.push(r.violations+' active findings (security and operational)');if(r.truncated)messages.push('Finding list is capped; additional evidence exists');}
-    const messageKey=JSON.stringify([messages,kind]);if(a.dataset.key!==messageKey){a.dataset.key=messageKey;a.replaceChildren(...(messages.length?messages.slice(0,5).map(x=>element('p',x)):[element('p',uncertain?'Current status unavailable.':critical||warning?'Review active security findings.':'No current items requiring attention.')]));}
+    const a=byId('ep-attention'),messages=[];
+    if(fresh&&!disabled){
+        if(r.engineOnline!==true)messages.push('Antivirus engine unavailable or unverified. Check the ClamD service and Maintenance readiness.');
+        if(r.signatureFreshness!=='Current')messages.push('Signature freshness: '+(r.signatureFreshness||'Unknown')+' · '+(r.signatureComparison||'Check Maintenance.'));
+        for(const root of (r.rootCoverage||[]).filter(x=>['Uncovered','Initializing','Excluded','Journal only'].includes(x.state)))messages.push('Monitoring: '+root.path+' · '+root.state+(root.detail?' · '+root.detail:'')+' · Review protected folder coverage.');
+        if(Number(r.coverageIssueCount||0)>0)messages.push(r.coverageIssueCount+' outstanding file/path checks. See Evidence → Scan coverage details; inspect access, locks, exclusions and scan limits.');
+        if(Number(r.activeScanIssues||0)>0)messages.push(r.activeScanIssues+' active scanner findings (separate from outstanding paths). See Evidence and Scanning.');
+        if(r.scanRunning&&r.baselineThrottleReason){
+            messages.push('Baseline reconciliation paused · '+r.baselineThrottleReason+' · '+(r.scannedFiles??'—')+' files checked; '+(r.baselineDiscoveredPending??'—')+' discovered entries pending. Existing scan/journal warnings remain until successful reconciliation.');
+            const ram=r.resources,age=Date.parse(v.collectedUtc)-Date.parse(ram?.sampleUtc);
+            if(r.baselineThrottleReason==='Low available physical memory'){
+                if(Number.isFinite(age)&&age>=-1000&&age<=30000&&ram?.availableMiB!=null&&ram?.effectiveFloorMiB!=null&&ram?.recoveryFloorMiB!=null)messages.push('Available physical RAM: '+ram.availableMiB+' MiB · pause threshold: '+ram.effectiveFloorMiB+' MiB · automatic resume threshold: '+ram.recoveryFloorMiB+' MiB (two consecutive healthy samples). Free memory or review the host capacity in Resources.');
+                else messages.push('See Resources for fresh available-memory readings and configured pause/resume thresholds.');
+            }
+        }
+        if(r.scanRunning&&r.baselineFollowupRequired)messages.push('Another complete baseline is required because coverage changed during this scan or it resumed after interruption. Recovery is not yet verified.');
+        if(!r.scanRunning&&r.fullScanComplete===false&&r.nextScanUtc&&Number.isFinite(Date.parse(r.nextScanUtc)))messages.push('Next reconciliation: '+new Date(r.nextScanUtc).toLocaleString()+'. A new successful baseline is required; zero outstanding paths alone is not proof of recovery.');
+        for(const issue of (r.coverageDetails||[]))messages.push((issue.issue||'Coverage check')+' · '+issue.path+' · '+(issue.detail||'Review scan coverage details.'));
+        const liveFindings=findings.filter(x=>['critical','warning','error'].includes(String(x.severity||'').toLowerCase()));
+        for(const item of liveFindings)messages.push((item.change||'Active finding')+' · '+(item.path||'Unknown path')+' · '+(item.detail||'No detail reported.'));
+        for(const alert of activeAlerts.filter(x=>!x.resolved&&['critical','warning','error'].includes(String(x.severity||'').toLowerCase()))){
+            // Avoid hiding a distinct alert just because another finding has the same title.
+            if(!liveFindings.some(x=>x.change===alert.title&&(alert.message===x.detail||alert.message===x.path+' · '+x.detail)))messages.push('Active alert: '+(alert.title||'Untitled')+' · '+(alert.message||'No detail reported.'));
+        }
+        if(r.status==='partial'){
+            if(!r.scanRunning&&r.fullScanComplete===false)messages.push('Baseline reconciliation is incomplete. See Scanning; resolve errors and allow a fresh baseline to finish.');
+            if(Number(r.queueDepth||0)>0)messages.push(r.queueDepth+' queued file events remain to be processed.');
+            if(!messages.length)messages.push('Scanner reports partial coverage. Review Scanning and Evidence; exact reason was not supplied by the service.');
+        }
+        if(r.truncated)messages.push('Active findings are capped by the service; additional evidence exists.');
+        if(Number(r.violations||0)>liveFindings.length)messages.push(r.violations+' total active warning/critical findings; not all are present in this snapshot.');
+    }
+    const reasons=[...new Set(messages)];byId('ep-status-reasons').hidden=uncertain||!(critical||needsReview);
+    const messageKey=JSON.stringify([reasons,kind]);if(a.dataset.key!==messageKey){a.dataset.key=messageKey;a.replaceChildren(...(reasons.length?reasons.map(x=>element('p',x)):[element('p',uncertain?'Current status unavailable.':critical||warning?'Review active security findings.':'No current items requiring attention.')]));}
+
 }
 
 let endpointAck=null,endpointAckEpoch=0,endpointAckBusy=false,endpointScanBusy=false,endpointScanRequested=null,endpointLastSample=null;
@@ -934,7 +968,7 @@ function renderEndpointResources(r,fresh){
     text('endpoint-resource-memory',fmt(r.availableMiB)+' / '+fmt(r.totalMiB));
     text('endpoint-resource-clam-memory',fmt(r.clamWorkingMiB)+' / '+fmt(r.clamPrivateMiB));
     text('endpoint-resource-cpu',r.clamCpu==null?(r.clamPid?'Awaiting sample':'—'):r.clamCpu+'%');
-    text('endpoint-resource-detail','Effective RAM floor: '+fmt(r.effectiveFloorMiB)+' · '+r.clamStatus+(r.clamPid?' · PID '+r.clamPid:''));
+    text('endpoint-resource-detail','Effective RAM floor: '+fmt(r.effectiveFloorMiB)+' · Resume at: '+fmt(r.recoveryFloorMiB)+' · '+r.clamStatus+(r.clamPid?' · PID '+r.clamPid:''));
     if(charts.dataset.sample===r.sampleUtc)return;charts.dataset.sample=r.sampleUtc;
     const points=Array.isArray(r.history)?r.history.slice(-120):[];
     const ns='http://www.w3.org/2000/svg';const make=(tag,attrs)=>{const e=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))e.setAttribute(k,String(v));return e;};
@@ -1003,7 +1037,8 @@ async function refreshEndpointMaintenance(){
         }
         const elapsed=Date.now()-Date.parse(signatureState.attemptUtc||''),cooldown=Number.isFinite(elapsed)&&elapsed<3600000;
         const button=byId('endpoint-signatures');button.disabled=!csrf||!m.supported||signatureBusy||!!signatureRequested||signatureState.status==='Running'||signatureState.status==='Unavailable'||cooldown;button.textContent=signatureState.status==='Running'?'Updating signatures…':signatureRequested?'Update queued…':'Update signatures now';
-        const state=byId('endpoint-signature-state');state.replaceChildren(healthBadge(signatureRequested?'Queued':signatureState.status||'Not recorded',({Running:'info',Updated:'ok',Checked:'ok',Failed:'fail',Warning:'review',Interrupted:'review',Unavailable:'unknown'})[signatureState.status]||'unknown'),document.createTextNode(' '+(startupError||signatureState.detail||'')+(cooldown&&signatureState.status!=='Running'?' · Next request after '+localEndpointDate(new Date(Date.parse(signatureState.attemptUtc)+3600000).toISOString()):'')+(!m.supported?' · Standard local service/port required.':'')));
+        const sample=endpointLastSample,reported=sample?.result?.signatureMaintenance,recovered=sample?.stale!==true&&Number(sample?.ageSeconds??Infinity)<=20&&sample?.result?.signatureMaintenanceDefinitionRecovered===true&&reported?.attemptUtc===signatureState.attemptUtc&&reported?.checkedUtc===signatureState.checkedUtc&&reported?.detail===signatureState.detail&&reported?.status===signatureState.status;
+        const state=byId('endpoint-signature-state');state.replaceChildren(healthBadge(signatureRequested?'Queued':signatureState.status||'Not recorded',({Running:'info',Updated:'ok',Checked:'ok',Failed:'fail',Warning:'review',Interrupted:'review',Unavailable:'unknown'})[signatureState.status]||'unknown'),document.createTextNode(' '+(startupError||signatureState.detail||'')+(recovered?' · Historical warning reconciled by subsequent live signature verification; see current signature status.':'')+(cooldown&&signatureState.status!=='Running'?' · Next request after '+localEndpointDate(new Date(Date.parse(signatureState.attemptUtc)+3600000).toISOString()):'')+(!m.supported?' · Standard local service/port required.':'')));
         const providerPanel=byId('endpoint-provider-schedules');
         if(providerPanel){
             if(!Array.isArray(m.providers))providerPanel.textContent='Provider separation not yet verified. Run Setup → Third-party signature sources to migrate existing URLs.';
@@ -1238,18 +1273,18 @@ async function renderHealth(){
                 const canaryState=(result.canaries||[]).some(c=>c.status==='critical')?'fail':(result.canaries||[]).some(c=>c.status!=='Enrolled')?'review':independent;
                 const cards=[
                     {name:'ClamAV engine',value:result.engineOnline===true?'Online':result.engineOnline===false?'Unavailable':'—',kind:v.stale?'review':result.engineOnline===true?(rows.some(r=>r.path==='ClamAV'&&r.severity==='warning')?'review':'ok'):result.engineOnline===false?'review':'unknown',foot:(result.engineVersion||'Waiting for scan')+' · DB '+(result.signatureDatabaseVersion||'Unknown')+(result.engineRecoveryPending?' · Awaiting successful readiness scan':''),target:'endpoint-signature-state',explanation:'Open signature and engine status'},
-                    {name:'Files scanned',value:result.scannedFiles,kind:result.scanRunning?'ok':(coverage?'review':'ok'),foot:result.scanRunning?'Baseline running · cached: '+(result.baselineCached??0):'Last baseline · cached: '+(result.baselineCached??0),target:'ep-scan-evidence',explanation:'Open scan activity and evidence'},
+                    {name:'Files scanned',value:result.scannedFiles,kind:result.scanRunning&&result.baselineThrottleReason?'review':result.scanRunning?'ok':(coverage?'review':'ok'),foot:(result.scanRunning?(result.baselineThrottleReason?'Baseline paused · '+result.baselineThrottleReason:'Baseline running'):'Last baseline')+' · cached: '+(result.baselineCached??0)+' · baseline totals can include restored progress',target:'ep-scan-evidence',explanation:'Open scan activity and evidence'},
                     {name:'Real-time queue',value:result.queueDepth,kind:rows.some(r=>r.change==='Real-time queue overflow')||(result.usnVolumes||[]).some(v=>v.status==='Backpressure')?'review':'ok',foot:'USN pending: '+(result.usnQueueDepth??'—')+' · Watcher pending: '+(result.watcherQueueDepth??'—')+' · Overflows: '+(result.overflowCount??0)+' · Journal-backed roots: '+(result.watcherRootsCoveredByJournal??0)+' · Privileged watcher roots: '+(result.watcherRootsCoveredByPrivileged??0),target:'endpoint-usn-state',explanation:'Open queue and journal explanation'},
                     {name:'File changes',value:result.changedFiles,kind:rows.some(r=>r.change==='Possible ransomware activity'||r.change==='Possible ransomware activity (extended observation)')?'review':'ok',foot:'Rapid window: '+(result.behaviorWindowSeconds??'—')+' s · change threshold: '+(result.behaviorChangeThreshold??'—'),target:'ep-behavior-evidence',explanation:'Open file activity evidence'},
                     {name:'Entropy changes',value:result.entropyChanges,kind:rows.some(r=>r.change==='Possible ransomware activity')?'review':'ok',foot:'Minimum sample: '+(result.entropyMinimumSampleBytes??'—')+' bytes · current ≥ '+(result.entropyMinimumCurrent??'—')+' · increase ≥ '+(result.entropyMinimumIncrease??'—'),target:'ep-behavior-evidence',explanation:'Open entropy-based evidence'},
                     {name:'Extended entropy changes',value:result.extendedEntropyPeak,kind:rows.some(r=>r.change==='Possible ransomware activity (extended observation)')?'review':'ok',foot:'Peak in one folder · '+(result.extendedEntropyWindowSeconds??'—')+' s · warning threshold: '+(result.extendedEntropyThreshold??'—'),target:'ep-behavior-evidence',explanation:'Open extended entropy evidence'},
                     {name:'Canary files',value:result.canaryCount,kind:rows.some(r=>r.change==='Canary integrity violation')?'fail':result.canaryCount===0?'unknown':((result.canaries||[]).some(c=>c.status==='critical')?'fail':(result.canaries||[]).some(c=>c.status!=='Enrolled')?'review':'ok'),foot:result.canaryCount===0?'Not configured':'Configured canaries',target:'ep-canary-evidence',explanation:'Open canary evidence'},
-                    {name:'Active findings',value:result.violations,kind:danger?'fail':warnings||coverage?'review':'ok',foot:'Persistent threat records',target:'endpoint-alert-diagnostics',openId:'endpoint-alert-diagnostics',explanation:'Open findings and diagnostics'},
+                    {name:'Active findings',value:result.violations,kind:danger?'fail':warnings||coverage?'review':'ok',foot:'Active security and operational alert records',target:'endpoint-alert-diagnostics',openId:'endpoint-alert-diagnostics',explanation:'Open findings and diagnostics'},
                     {name:'Mode',value:result.mode,kind:result.mode==='monitor'?'ok':result.responseEngineStatus==='Ready'&&(result.responsePathsReadiness||[]).length&&(result.responsePathsReadiness||[]).every(x=>x.status==='ok')?'ok':'review',foot:(result.mode==='monitor'?'Detection only':'Engine: '+(result.responseEngineStatus||'Not checked')+' · Response paths: '+((result.responsePathsReadiness||[]).length&&(result.responsePathsReadiness||[]).every(x=>x.status==='ok')?'Advisory clear':'Review access'))+' · Process correlation: '+(result.processCorrelation||'Unavailable'),target:'endpoint-evidence',explanation:'Open response and evidence details'}
                 ];
                 for(const cardInfo of cards){
                     const val=cardInfo.value==null?'—':String(cardInfo.value),state=cardInfo.value==null?'unknown':cardInfo.kind;
-                    const status=cardInfo.name==='Files scanned'&&state==='ok'&&result.scanRunning?'Scanning':cardInfo.name==='Real-time queue'&&state==='ok'&&Number(cardInfo.value)>0?'Queued':alertStateLabel(state);
+                    const status=cardInfo.name==='Files scanned'&&result.scanRunning&&result.baselineThrottleReason?'Paused':cardInfo.name==='Files scanned'&&state==='ok'&&result.scanRunning?'Scanning':cardInfo.name==='Real-time queue'&&state==='ok'&&Number(cardInfo.value)>0?'Queued':alertStateLabel(state);
                     const card=metric(cardInfo.name,val,cardInfo.foot,state,{kind:state,status,messages:[]});
                     const group=['File changes','Entropy changes','Extended entropy changes','Canary files'].includes(cardInfo.name)?behaviorStats:['ClamAV engine','Mode'].includes(cardInfo.name)?engineStats:stats;
                     if(Number(v.ageSeconds??Infinity)>20||v.stale){card.classList.remove('ok','fail','review');card.classList.add('unknown');card.querySelector('.health-metric-heading .health-badge').replaceWith(healthBadge('Stale sample','unknown'));}
@@ -1262,12 +1297,13 @@ async function renderHealth(){
                 const currentCount=(name)=>result[name]==null?null:Number(result[name]);
                 const malware=currentCount('activeMalware'),heuristic=currentCount('activeHeuristic'),scanIssues=currentCount('activeScanIssues'),vault=currentCount('quarantineCount');
                 const counterCards=[
-                    ['Clean signature checks',result.cleanChecks,currentKind,'Fresh antivirus verdicts since reset / policy start'],
+                    ['Clean signature checks',result.cleanChecks,currentKind,'Strict file verdicts since reset / policy start (not baseline totals)'],
+                    ['Shared log snapshot checks',result.snapshotCleanChecks,currentKind,'Whole-file clean snapshots verified by byte recheck; no clean-cache reuse or automatic response'],
                     ['Cached clean verifications',result.cachedChecks,currentKind,'Verified NTFS change stamp or content hash and engine generation match; no new antivirus verdict'],
                     ['Active confirmed malware',malware,malware>0?'fail':currentKind,'Historical infected checks: '+(result.infectedChecks??'—')],
                     ['Active heuristic findings',heuristic,heuristic>0?'review':currentKind,'Historical heuristic checks: '+(result.heuristicChecks??'—')],
                     ['Excluded checks',result.excludedChecks,'unknown','Excluded by policy'],
-                    ['Active scan issues',scanIssues,scanIssues>0||coverage?'review':currentKind,'Historical failed / missing / limited / boundary: '+(result.failedChecks??'—')+' · Deferred (file in use): '+(result.deferredChecks??'—')],
+                    ['Active scan issues',scanIssues,scanIssues>0||coverage?'review':currentKind,'Outstanding file/path checks: '+(result.coverageIssueCount??'—')+' · Historical failed: '+(result.failedChecks??'—')+' · Deferred since reset: '+(result.deferredChecks??'—')],
                     ['Quarantine vault',vault,vault==null?'unknown':vault>0?'review':currentKind,'Historical quarantined checks: '+(result.quarantinedChecks??'—')+' · Deleted payloads: '+(result.quarantineDeletedCount??'—')]
                 ];
                 for(const [name,val,k,foot] of counterCards){const state=val==null?'unknown':k;const card=metric(name,val==null?'—':String(val),foot,state,{kind:state,status:val==null?'Not available':name==='Excluded checks'?'Excluded by policy':name==='Quarantine vault'&&val>0?'Isolated evidence':alertStateLabel(state),messages:[]});const target=name==='Quarantine vault'?'endpoint-quarantine-manager':'endpoint-evidence';const openId=name==='Active scan issues'||name==='Active confirmed malware'||name==='Active heuristic findings'?'endpoint-alert-diagnostics':null;counts.append(makeMetricJump(card,target,'Open supporting evidence',openId));}section.append(counts);

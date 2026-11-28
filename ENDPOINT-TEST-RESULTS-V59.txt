@@ -1,9 +1,0 @@
-V59 targeted validation (Linux, Chromium mocked API; native Windows not tested)
-PASS node --check src/app.js
-PASS validate_automated_suite_v59.py
-PASS validate_guided_test_center_v58.py
-PASS validate_live_audit_v56.py
-PASS validate_containment_test_center_v48.py
-PASS validate_setup_build.py
-PASS validate_setup_permissions_v54.py
-PASS validate_signature_versions_v57.py

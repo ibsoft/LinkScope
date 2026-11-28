@@ -28,6 +28,15 @@ namespace LinkScope {
         public string checkedUtc {get;set;}
         public string updatedUtc {get;set;}
         public string detail {get;set;}
+        internal const string DefinitionReview="FreshClam completed; loaded official definitions are stale, unknown, or awaiting reload. Review official download and reload logs.";
+        internal const string ReloadReview="A newer daily archive may be on disk, but ClamD has not confirmed the expected loaded version. Review reload status.";
+        internal bool DefinitionOnlyWarning {get{return status=="Warning"&&detail==DefinitionReview;}}
+        internal bool CanReconcileDefinitionWarning(bool online,string freshness,long checkedEpoch,long now){
+            DateTime attempt,download;
+            if(!DefinitionOnlyWarning||!online||freshness!="Current"||checkedEpoch<=0||checkedEpoch>now||now-checkedEpoch>90)return false;
+            if(!DateTime.TryParseExact(attemptUtc,"o",CultureInfo.InvariantCulture,DateTimeStyles.RoundtripKind,out attempt)||!DateTime.TryParseExact(checkedUtc,"o",CultureInfo.InvariantCulture,DateTimeStyles.RoundtripKind,out download)||attempt.Kind!=DateTimeKind.Utc||download.Kind!=DateTimeKind.Utc||download<attempt)return false;
+            return checkedEpoch>new DateTimeOffset(download).ToUnixTimeSeconds();
+        }
         const string Key=@"SOFTWARE\IBSoft\LinkScope\SignatureMaintenance";
         static string Now(){return DateTime.UtcNow.ToString("o",CultureInfo.InvariantCulture);}
         static bool Trusted(SecurityIdentifier sid){return sid!=null&&(sid.IsWellKnown(WellKnownSidType.LocalSystemSid)||sid.IsWellKnown(WellKnownSidType.BuiltinAdministratorsSid)||sid.Value=="S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464");}
@@ -726,8 +735,8 @@ namespace LinkScope {
                         Thread.Sleep(2000);
                     }while(verification.Elapsed<TimeSpan.FromSeconds(120));
                     if(officialFailed){state.Finish("Warning","Official FreshClam update failed; third-party status is reported separately.");return 1;}
-                    if(!loadedExpected&&(result==0||result==ClamStale)){state.Finish("Warning","A newer daily archive may be on disk, but ClamD has not confirmed the expected loaded version. Review reload status.");return ClamStale;}
-                    if(result!=0){state.Finish("Warning",result==ClamStale?"FreshClam completed; loaded official definitions are stale, unknown, or awaiting reload. Review official download and reload logs.":"FreshClam completed, but engine or updater readiness still needs review.");return result;}
+                    if(!loadedExpected&&(result==0||result==ClamStale)){state.Finish("Warning",ClamUpdateState.ReloadReview);return ClamStale;}
+                    if(result!=0){state.Finish("Warning",result==ClamStale?ClamUpdateState.DefinitionReview:"FreshClam completed, but engine or updater readiness still needs review.");return result;}
                     state.Finish(changed?"Updated":"Checked",changed?"Signature database contents changed; ClamD reload requested and engine responding.":"FreshClam completed; database contents unchanged; engine responding.");return 0;
                 }catch(Exception ex){log.WriteLine("Signature maintenance failure: "+stage+" ("+ex.GetType().Name+").");if(started)try{state.Finish("Failed","Signature maintenance failed while "+stage+" ("+ex.GetType().Name+"). Review FreshClam logs and Windows service status.");}catch(Exception e){log.WriteLine(e);}return 1;}
                 finally{if(locked)mutex.ReleaseMutex();}

@@ -10,7 +10,7 @@ assert 'GetProperties()' in migration and '(object)a.Clone()' in migration and '
 assert 'property.Name=="ProfileDefaultsApplied"' in migration and 'Check(existing.ProfileDefaultsApplied' in migration and 'pass<2' in migration
 assert 'Config.Json().Serialize(existing)' not in migration
 assert 'ep.ProfileDefaultsApplied=true;' in p and p.index('SelfCheck.Run();')<p.index('InitConfig();',p.index('static void Install('))
-assert 'Update-State ($script:lastCheckWasElevated -or $script:clamCheck -eq 13) \'install\'' in w
+assert "Update-State $true 'install'" in w
 assert 'Update-State ($script:lastCheckWasElevated -or (Is-ClamOperation $op)) \'operation\'' in w
 assert '$checkButton.Add_Click({if(-not $script:job){Update-State $true \'manual\'}})' in w
 assert 'return 13;' in s and 'ClamAV configuration could not be read even by the elevated check' in w

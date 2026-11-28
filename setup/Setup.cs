@@ -119,15 +119,21 @@ internal static partial class Setup {
             return name.ToString();
         }finally{if(record!=0)MsiCloseHandle(record);if(view!=0)MsiCloseHandle(view);if(db!=0)MsiCloseHandle(db);}
     }
-    static int InstallClamAv(string stage,TextWriter log,string logPath,bool repair=false) {
+    static int InstallClamAv(string stage,TextWriter log,string logPath,bool repair=false,bool online=false) {
         if(!repair && File.Exists(ClamdExe) && File.Exists(FreshExe)){log.WriteLine("ClamAV binaries already detected; skipped.");return 0;}
-        if(!File.Exists(MsiPath))throw new FileNotFoundException("Place clamav-latest.msi in the deploy folder beside setup.",MsiPath);
         string package=Path.Combine(stage,"clamav-latest.msi");
-        // Stage the exact bytes in an administrator-only directory before inspection/installation.
-        using(var input=new FileStream(MsiPath,FileMode.Open,FileAccess.Read,FileShare.Read))
-        using(var output=new FileStream(package,FileMode.CreateNew,FileAccess.Write,FileShare.None))input.CopyTo(output);
+        // Never mix a local package with a downloaded signature. Both are authenticated in private staging.
+        if(online && !File.Exists(MsiPath) && !File.Exists(MsiSignaturePath)) {
+            FindTrustedGpg(); // Fail before downloading if the independently managed verifier is unavailable.
+            DownloadOfficialClamPair(stage,log);
+        } else {
+            if(!File.Exists(MsiPath)||!File.Exists(MsiSignaturePath))throw new FileNotFoundException("Provide both matching local MSI and detached signature, or remove both to use official online acquisition.");
+            // Stage the exact bytes in an administrator-only directory before inspection/installation.
+            using(var input=new FileStream(MsiPath,FileMode.Open,FileAccess.Read,FileShare.Read))
+            using(var output=new FileStream(package,FileMode.CreateNew,FileAccess.Write,FileShare.None))input.CopyTo(output);
+        }
         string hash;using(var sha=SHA256.Create())using(var input=File.OpenRead(package))hash=BitConverter.ToString(sha.ComputeHash(input)).Replace("-","");
-        log.WriteLine("Local package: "+MsiPath+"\r\nSHA-256: "+hash);log.Flush();
+        log.WriteLine("Staged package: "+package+"\r\nSHA-256: "+hash);log.Flush();
         // Authenticate the exact staged bytes before parsing MSI metadata or calling Windows Installer.
         try{VerifyClamPackage(stage,package,log);}
         catch(Exception ex){log.WriteLine("BLOCKED: ClamAV package signature verification failed. "+ex);log.Flush();
@@ -154,13 +160,13 @@ internal static partial class Setup {
                 log.WriteLine("Preparing secure staging directory: "+stage);log.Flush();
                 SecureDirectory(stage);
                 log.WriteLine(DateTime.UtcNow.ToString("o")+" "+verb);log.Flush();
-                if(verb=="--install-clamav") {
+                if(verb=="--install-clamav"||verb=="--install-clamav-online") {
                     int before=CheckClamAv(log);
                     if(before!=ClamMissing && before!=ClamPartial)return ConfigureClamAv(log);
                     bool repair=before==ClamPartial;
                     if(repair && (!StandardRegistryPaths(log)||!NativeService("clamd",ClamdExe)||!NativeService("freshclam",FreshExe)))throw new IOException("Custom installation detected. Automatic MSI repair is unsafe; inspect the installation first.");
                     if(repair && ClamMsiProducts().Count==0 && ClamAvInstalled())throw new IOException("Unmanaged ClamAV installation detected; automatic MSI repair is unsafe.");
-                    int installed=InstallClamAv(stage,log,logPath,repair && ClamMsiProducts().Count!=0);
+                    int installed=InstallClamAv(stage,log,logPath,repair && ClamMsiProducts().Count!=0,verb=="--install-clamav-online");
                     if(installed!=0)return installed; // Includes reboot-required; configure after restart.
                     return ConfigureClamAv(log);
                 }
@@ -191,7 +197,7 @@ internal static partial class Setup {
                 string verb=args[0].ToLowerInvariant();
                 if(verb=="--check-clamav")return CheckClamAvForWizard();
                 if(verb=="-install")verb="--install";
-                if(verb=="--install"||verb=="--upgrade"||verb=="--upgrade-pwa"||verb=="--desktop-app"||verb=="--register-pwa"||verb=="--uninstall"||verb=="--uninstall-clamav"||verb=="--install-clamav"||verb=="--configure-clamav"||verb=="--update-clamav"||verb=="--clamav-providers"||verb=="--endpoint-permissions")return Execute(verb);
+                if(verb=="--install"||verb=="--upgrade"||verb=="--upgrade-pwa"||verb=="--desktop-app"||verb=="--register-pwa"||verb=="--uninstall"||verb=="--uninstall-clamav"||verb=="--install-clamav"||verb=="--install-clamav-online"||verb=="--configure-clamav"||verb=="--update-clamav"||verb=="--clamav-providers"||verb=="--endpoint-permissions")return Execute(verb);
             }
             return 2;
         }catch(Exception ex){

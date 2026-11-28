@@ -1,7 +1,0 @@
-PASS validate_automatic_permissions_v53.py — independent preflight/apply, consent, error reporting, static C# checks
-PASS validate_endpoint_permissions_v49.py — guard/backup/rollback/build wiring (static)
-PASS validate_setup_build.py — project wiring (static)
-PASS validate_setup_readiness_v51.py — migration and ClamAV readiness wiring (static)
-PASS validate_visualstudio_config.py — project configuration (static)
-PASS validate_containment_test_center_v48.py — static isolation and Chromium mock API browser tests
-Native Windows compilation and ACL application not executed. Full historical suite not rerun.

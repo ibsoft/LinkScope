@@ -152,6 +152,14 @@ namespace LinkScope {
    id=BitConverter.ToInt64(data,0);first=Math.Max(BitConverter.ToInt64(data,8),BitConverter.ToInt64(data,24));tail=BitConverter.ToInt64(data,16);
    return id!=0&&first>=0&&tail>=first;
   }
+  // A transient comparison token for shared-read snapshots, never a cache key.
+  // Access time is deliberately omitted because inspection can change it.
+  internal static string SharedReadStamp(SafeFileHandle h,string path){
+   EndpointResponse.VerifyHandle(h,path);StampFileInfo info;StampBasicInfo basic;
+   if(!GetFileInformationByHandle(h,out info)||info.Links!=1||(info.Attributes&0x00441410)!=0||!GetFileInformationByHandleEx(h,0,out basic,(uint)Marshal.SizeOf(typeof(StampBasicInfo))))throw new IOException("Shared-read identity or change metadata unavailable.");
+   if(info.IndexHigh==0&&info.IndexLow==0)throw new IOException("Shared-read file identity unavailable.");
+   return string.Join("|",new[]{info.Volume.ToString(),info.IndexHigh.ToString(),info.IndexLow.ToString(),info.SizeHigh.ToString(),info.SizeLow.ToString(),basic.Creation.ToString(),basic.Write.ToString(),basic.Change.ToString(),basic.Attributes.ToString()});
+  }
   // Never use timestamps alone. Bind the same verified read handle to a local
   // NTFS volume GUID, file reference, current journal ID and per-file USN.
   // A journal reset, inaccessible metadata, unsupported version, aged-out

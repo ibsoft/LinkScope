@@ -124,13 +124,82 @@ internal static partial class Setup {
         }
     }
 
-    static void VerifyClamPackage(string stage,string package,TextWriter log) {
-        if(!File.Exists(MsiSignaturePath))throw new FileNotFoundException("Missing deploy\\clamav-latest.msi.sig. Download the matching official release signature and place it beside the MSI.");
-        string signature=Path.Combine(stage,"clamav-latest.msi.sig");
-        using(var input=new FileStream(MsiSignaturePath,FileMode.Open,FileAccess.Read,FileShare.Read)) {
-            if(input.Length<1||input.Length>65536)throw new InvalidDataException("Invalid detached signature file size.");
-            using(var dest=new FileStream(signature,FileMode.CreateNew,FileAccess.Write,FileShare.None))input.CopyTo(dest);
+    // Online acquisition is only available to the explicitly selected automatic workflow.
+    // Metadata and asset locations are fixed to Cisco-Talos' official repository; TLS defaults remain intact.
+    static HttpWebRequest ClamDownloadRequest(Uri uri) {
+        var request=(HttpWebRequest)WebRequest.Create(uri);
+        request.UserAgent="LinkScope-Setup/69";request.AllowAutoRedirect=false;
+        request.Timeout=30000;request.ReadWriteTimeout=30000;return request;
+    }
+    static bool AllowedClamAssetUri(Uri uri) {
+        if(uri==null||!uri.IsAbsoluteUri||uri.Scheme!="https"||!uri.IsDefaultPort||uri.UserInfo.Length!=0||uri.Fragment.Length!=0)return false;
+        if(uri.Host.Equals("github.com",StringComparison.OrdinalIgnoreCase))return uri.AbsolutePath.StartsWith("/Cisco-Talos/clamav/releases/download/",StringComparison.Ordinal);
+        return uri.Host.Equals("release-assets.githubusercontent.com",StringComparison.OrdinalIgnoreCase)||uri.Host.Equals("objects.githubusercontent.com",StringComparison.OrdinalIgnoreCase);
+    }
+    static Dictionary<string,object> ClamReleaseAsset(object[] assets,string name) {
+        var matches=assets.OfType<Dictionary<string,object>>().Where(x=>x.ContainsKey("name")&&String.Equals(x["name"] as string,name,StringComparison.Ordinal)).ToArray();
+        if(matches.Length!=1)throw new InvalidDataException("Missing or ambiguous official release asset: "+name);
+        return matches[0];
+    }
+    static void DownloadClamAsset(Dictionary<string,object> asset,string dest,long limit,bool requireDigest,TextWriter log) {
+        object u,n,d;Uri uri;
+        if(!asset.TryGetValue("browser_download_url",out u)||!Uri.TryCreate(u as string,UriKind.Absolute,out uri)||!AllowedClamAssetUri(uri)||!uri.Host.Equals("github.com",StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Untrusted official asset URL.");
+        long expected;if(!asset.TryGetValue("size",out n)||!Int64.TryParse(Convert.ToString(n,System.Globalization.CultureInfo.InvariantCulture),out expected)||expected<1||expected>limit)throw new InvalidDataException("Invalid official asset size.");
+        string digest=asset.TryGetValue("digest",out d)?d as string:null;
+        if(requireDigest&&!Regex.IsMatch(digest??"",@"\Asha256:[0-9a-fA-F]{64}\z"))throw new InvalidDataException("Official MSI SHA-256 metadata unavailable. Use a verified offline package instead.");
+        var clock=Stopwatch.StartNew();
+        for(int hop=0;hop<5;hop++) {
+            if(!AllowedClamAssetUri(uri))throw new InvalidDataException("Blocked release download redirect.");
+            using(var response=(HttpWebResponse)ClamDownloadRequest(uri).GetResponse()) {
+                int status=(int)response.StatusCode;
+                if(status==301||status==302||status==303||status==307||status==308) {
+                    Uri next;if(!Uri.TryCreate(uri,response.Headers["Location"],out next))throw new IOException("Invalid download redirect.");uri=next;continue;
+                }
+                if(status!=200||(response.ContentLength>=0&&response.ContentLength!=expected))throw new IOException("Unexpected asset response length or status.");
+                using(var input=response.GetResponseStream())using(var output=new FileStream(dest,FileMode.CreateNew,FileAccess.Write,FileShare.None)) {
+                    long total=0;byte[] buffer=new byte[65536];int read;
+                    while((read=input.Read(buffer,0,buffer.Length))>0){total+=read;if(total>expected||clock.Elapsed>TimeSpan.FromMinutes(15))throw new IOException("Asset download exceeded its bound.");output.Write(buffer,0,read);}
+                    if(total!=expected)throw new IOException("Incomplete official asset download.");output.Flush(true);
+                }
+                if(!String.IsNullOrEmpty(digest)) {
+                    string actual;using(var sha=SHA256.Create())using(var stream=File.OpenRead(dest))actual="sha256:"+BitConverter.ToString(sha.ComputeHash(stream)).Replace("-","");
+                    if(!String.Equals(actual,digest,StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Official release asset digest mismatch.");
+                }
+                log.WriteLine("Official release asset staged: "+Path.GetFileName(dest)+" ("+expected+" bytes)");log.Flush();return;
+            }
         }
+        throw new IOException("Too many official release redirects.");
+    }
+    static void DownloadOfficialClamPair(string stage,TextWriter log) {
+        var request=ClamDownloadRequest(new Uri("https://api.github.com/repos/Cisco-Talos/clamav/releases/latest"));request.Accept="application/vnd.github+json";
+        Dictionary<string,object> release;
+        using(var response=(HttpWebResponse)request.GetResponse())using(var reader=new StreamReader(response.GetResponseStream())) {
+            if(response.StatusCode!=HttpStatusCode.OK)throw new IOException("Official release metadata unavailable.");
+            var text=new System.Text.StringBuilder();char[] buffer=new char[4096];int read;var clock=Stopwatch.StartNew();
+            while((read=reader.Read(buffer,0,buffer.Length))>0){text.Append(buffer,0,read);if(text.Length>2000000||clock.Elapsed>TimeSpan.FromSeconds(60))throw new IOException("Release metadata exceeded its bound.");}
+            release=new JavaScriptSerializer{MaxJsonLength=2000000,RecursionLimit=32}.DeserializeObject(text.ToString()) as Dictionary<string,object>;
+        }
+        object draft,pre,raw;
+        if(release==null||!release.TryGetValue("draft",out draft)||!Object.Equals(draft,false)||!release.TryGetValue("prerelease",out pre)||!Object.Equals(pre,false)||!release.TryGetValue("assets",out raw))throw new InvalidDataException("Expected a published stable ClamAV release.");
+        var assets=raw as object[];if(assets==null)throw new InvalidDataException("Missing official release assets.");
+        var names=assets.OfType<Dictionary<string,object>>().Where(x=>x.ContainsKey("name")).Select(x=>x["name"] as string).Where(x=>x!=null&&Regex.IsMatch(x,@"\Aclamav-[0-9]+\.[0-9]+\.[0-9]+\.win\.x64\.msi\z")).ToArray();
+        if(names.Length!=1)throw new InvalidDataException("Expected exactly one stable x64 MSI in the official release.");
+        log.WriteLine("Selected official stable release asset: "+names[0]);log.Flush();
+        var msi=ClamReleaseAsset(assets,names[0]);var signature=ClamReleaseAsset(assets,names[0]+".sig");
+        DownloadClamAsset(signature,Path.Combine(stage,"clamav-latest.msi.sig"),65536,false,log);
+        DownloadClamAsset(msi,Path.Combine(stage,"clamav-latest.msi"),512L*1024*1024,true,log);
+    }
+
+    static void VerifyClamPackage(string stage,string package,TextWriter log) {
+        string signature=Path.Combine(stage,"clamav-latest.msi.sig");
+        if(!File.Exists(signature)) {
+            if(!File.Exists(MsiSignaturePath))throw new FileNotFoundException("Missing matching detached signature.");
+            using(var input=new FileStream(MsiSignaturePath,FileMode.Open,FileAccess.Read,FileShare.Read)) {
+                if(input.Length<1||input.Length>65536)throw new InvalidDataException("Invalid detached signature file size.");
+                using(var dest=new FileStream(signature,FileMode.CreateNew,FileAccess.Write,FileShare.None))input.CopyTo(dest);
+            }
+        }
+        if(new FileInfo(signature).Length<1||new FileInfo(signature).Length>65536)throw new InvalidDataException("Invalid staged signature size.");
         string gpg=FindTrustedGpg();
         string home=Path.Combine(stage,"gnupg");SecureDirectory(home);
         string key=Path.Combine(stage,"cisco-talos.gpg");
