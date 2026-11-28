@@ -153,6 +153,11 @@
     "SignatureScheduleFrequency": "daily",
     "SignatureScheduleTime": "03:00",
     "SignatureScheduleWeekday": 1,
-    "SignatureScheduleMonthDay": 1
+    "SignatureScheduleMonthDay": 1,
+    "ExtendedEntropyWindowSeconds": 300,
+    "ExtendedEntropyThreshold": 5,
+    "EntropyMinimumSampleBytes": 4096,
+    "EntropyMinimumCurrent": 7.5,
+    "EntropyMinimumIncrease": 1.0
   }
 }

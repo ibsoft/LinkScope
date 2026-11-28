@@ -155,6 +155,7 @@
        Do not add the nested setup project as an independent solution build: it consumes this payload. -->
   <ItemGroup>
     <None Include="tools\Write-BuildVersion.ps1" />
+    <None Include="source-build-version.txt" />
     <None Include="tools\Assert-EndpointSources.ps1" />
     <None Include="tools\RequiredSources.txt" />
     <None Include="tools\Invoke-ProjectBuild.ps1" />

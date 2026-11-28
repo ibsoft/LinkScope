@@ -190,3 +190,53 @@ body[data-page=integrity] #category-data_integrity.health-category-card>small,bo
 #EndpointHistoryReset:not(:disabled){background:#b42318;color:#fff;border-color:#b42318;}
 #EndpointHistoryReset:not(:disabled):hover{background:#912018;border-color:#912018;}
 #endpoint-history-reset{scroll-margin-top:80px;}
+
+
+/* Settings quick category shortcuts */
+body[data-page=settings] .settings-quick-links{display:flex;flex-wrap:wrap;gap:8px;margin:-2px 0 14px}
+body[data-page=settings] .settings-quick-link{display:grid;place-items:center;width:44px;height:44px;padding:0;border-radius:10px}
+body[data-page=settings] .settings-quick-link .settings-category-icon{width:20px;height:20px;background:none;border-radius:0;box-shadow:none}
+body[data-page=settings] .settings-quick-link .settings-category-icon svg{width:18px;height:18px}
+
+/* Clickable dashboard cards */
+.health-metric-card-action{cursor:pointer;transition:transform .12s ease,box-shadow .12s ease}
+.health-metric-card-action:hover{transform:translateY(-1px);box-shadow:0 6px 18px #15354012}
+.health-metric-card-action:focus-visible{outline:3px solid #379c90;outline-offset:2px}
+.metric-jump-highlight{animation:metricJumpHighlight 1.6s ease-out 1}
+@keyframes metricJumpHighlight{0%{box-shadow:0 0 0 0 #3db59e55}40%{box-shadow:0 0 0 10px #3db59e22}100%{box-shadow:0 0 0 0 #3db59e00}}
+
+/* Login responsiveness on laptop, tablet, mobile */
+@media(max-width:1080px){body[data-page=login] .login-shell{padding:28px 18px}.login-layout{max-width:860px;grid-template-columns:.96fr 1fr;border-radius:20px}.login-intro{padding:34px}.login-intro h2{font-size:clamp(30px,4vw,50px)}body[data-page=login] .login{padding:34px 30px}.login h1{font-size:32px}}
+@media(max-width:900px){.login-layout{max-width:720px;grid-template-columns:.88fr 1fr}.login-intro{padding:28px}.login-features{gap:10px;font-size:12px}body[data-page=login] .login{padding:28px 24px}.login h1{font-size:29px}}
+@media(max-width:760px){body[data-page=login] .login-shell{padding:20px 14px}.login-layout{max-width:500px}.login-intro{padding:20px}body[data-page=login] .login{padding:24px 20px}.login h1{font-size:28px}}
+@media(max-width:420px){body[data-page=login] .login-shell{padding:14px 10px}.login-layout{border-radius:16px}body[data-page=login] .login{padding:20px 16px}.login .field input{padding:12px}.login #signInButton{padding:13px}.login h1{font-size:26px}}
+
+/* V43: compact, accessible settings help without changing input dimensions. */
+body[data-page=settings] .setting-help{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip-path:inset(50%);white-space:nowrap!important;border:0!important}
+body[data-page=settings] .setting-label-row{display:flex;align-items:center;gap:6px;min-width:0;min-height:28px;justify-content:space-between}
+body[data-page=settings] .setting-label-row>label{min-width:0;overflow-wrap:anywhere;line-height:1.35;font-weight:600}
+body[data-page=settings] .setting-label-row>h3{margin:8px 0}
+body[data-page=settings] .setting-label-row>.field{margin:8px 0}
+body[data-page=settings] .setting-field{min-width:0}
+body[data-page=settings] .setting-check-row{display:flex;align-items:flex-start;justify-content:space-between;gap:6px;min-width:0;align-self:start;margin:0}
+body[data-page=settings] .setting-check-label{display:flex;align-items:flex-start;gap:6px;min-width:0;line-height:1.5;padding:3px 0;overflow-wrap:anywhere}
+body[data-page=settings] .setting-check-label>input{flex:none;margin:5px 0 0 0}
+body[data-page=settings] .setting-check-label>span{min-width:0}
+body[data-page=settings] button.setting-help-button{flex:0 0 28px;width:28px;height:28px;min-height:28px;max-width:28px;margin:0;padding:0;display:inline-grid;place-items:center;line-height:1;color:var(--muted);background:transparent;border:0;border-radius:6px;box-shadow:none;white-space:nowrap}
+body[data-page=settings] button.setting-help-button>span{display:grid;place-items:center;width:17px;height:17px;border-radius:50%;border:1px solid currentColor;font:700 12px/1 "Segoe UI",sans-serif}
+body[data-page=settings] button.setting-help-button:hover{background:#19857820;color:var(--ink)}
+body[data-page=settings] #probe-rules th .setting-label-row{white-space:normal;min-width:90px}
+body[data-page=settings] .setting-help-dialog{width:min(440px,calc(100% - 28px));max-height:85vh;padding:22px;overflow:auto}
+body[data-page=settings] .setting-help-dialog h2{font-size:19px;overflow-wrap:anywhere}
+body[data-page=settings] .setting-help-dialog p{font-size:14px;line-height:1.6;color:var(--ink);white-space:pre-wrap}
+:root[data-theme=dark] body[data-page=settings] .setting-help-dialog{background:#203541;color:var(--ink);border-color:var(--line)}
+@media(pointer:coarse){body[data-page=settings] button.setting-help-button{flex-basis:36px;width:36px;height:36px;max-width:36px;min-height:36px}body[data-page=settings] .setting-check-label{padding-top:7px}}
+
+/* V43: responsive named category shortcuts. */
+body[data-page=settings] .settings-quick-links{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:8px}
+body[data-page=settings] button.settings-quick-link{display:flex;align-items:center;justify-content:flex-start;gap:9px;width:100%;height:auto;min-height:46px;padding:9px 12px;border:1px solid var(--line);text-align:left;white-space:normal}
+body[data-page=settings] .settings-quick-link .settings-category-icon{flex:none;color:inherit}
+body[data-page=settings] .settings-quick-name{min-width:0;overflow-wrap:anywhere;font-size:13px;line-height:1.35}
+body[data-page=settings] .settings-quick-link[aria-expanded=true]{border-color:var(--sea)}
+@media(max-width:600px){body[data-page=settings] .settings-quick-links{grid-template-columns:repeat(2,minmax(0,1fr))}body[data-page=settings] button.settings-quick-link{padding:9px 8px;gap:6px}}
+@media(max-width:340px){body[data-page=settings] .settings-quick-links{grid-template-columns:1fr}}
