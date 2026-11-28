@@ -17,7 +17,7 @@ read=response.split('internal static EndpointWriter FindIncidentWriter(',1)[1].s
 for key in ('PathType.LogName,"*"','ev.Id!=4663','(mask&0x6)==0','found.Pid!=(int)pid','boundary?found:null'): assert key in read,key
 assert 'TerminateProcess' not in read
 contain=response.split('internal static string Contain(',1)[1].split('public static class LabProbeWriter',1)[0]
-for key in ('!EligibleContainmentTarget(c,a)','DateTime.FromFileTimeUtc(created)>a.Utc','IsProcessCritical','SessionId==0','Confirmed(EndpointProtection.Command','VerifyEngine(c,tcp)','if(!authorized()||stop.WaitOne(0))','TerminateProcess(process,1)'): assert key in contain,key
+for key in ('!EligibleContainmentTarget(c,a)','DateTime.FromFileTimeUtc(created)>a.Utc','IsProcessCritical','SessionId==0','Confirmed(EndpointProtection.Command','VerifyEngine(c,tcp)','if(!authorized()||stop.WaitOne(0))','TerminateAndObserve(process,1,out observedExitCode)'): assert key in contain,key
 assert 'a.Pid!=Process.GetCurrentProcess().Id' in response
 assert 'ep-suite-full' in html and 'ep-suite-production' in html and 'epEnrolledProof' in js
 assert 'Production process containment' in js and 'No production termination verdict.' in js

@@ -185,3 +185,7 @@ See [ENDPOINT-PROTECTION-V65.md](ENDPOINT-PROTECTION-V65.md) for the opt-in disp
 V66 requires explicitly saved disposable Test Center directories for live exercises. See [settings-driven test directory configuration](ENDPOINT-PROTECTION-V66.md).
 
 V67 extends the full validation suite with temporary enrolled-canary watcher and normal-detector incident attribution evidence. See [production-path validation and limitations](ENDPOINT-PROTECTION-V67.md).
+
+### V68 controlled termination validation
+
+Full security validation includes a fixed owned-child process exit test and separately reports actual malicious-process containment as unverified. The production response now verifies exit on the retained process handle. See [V68 production acceptance record](ENDPOINT-PROTECTION-V68.md) for safeguards, regression results and Windows acceptance requirements.

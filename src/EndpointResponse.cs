@@ -143,6 +143,56 @@ namespace LinkScope {
   }
 
   [DllImport("kernel32.dll",SetLastError=true)] static extern bool TerminateProcess(SafeFileHandle process,uint exitCode);
+  [DllImport("kernel32.dll",SetLastError=true)] static extern uint WaitForSingleObject(SafeFileHandle process,uint milliseconds);
+  [DllImport("kernel32.dll",SetLastError=true)] static extern uint GetProcessId(SafeFileHandle process);
+  // The caller must authorize the target and hold the original process object. The lab
+  // never opens a PID supplied by a caller; production retains all its independent gates.
+  static bool TerminateAndObserve(SafeFileHandle process,uint expectedExitCode,out uint? observedExitCode){
+   observedExitCode=null;
+   if(WaitForSingleObject(process,0)!=258U)throw new IOException("Target process is not verified running on the retained handle.");
+   if(!TerminateProcess(process,expectedExitCode))throw NativeFailure("Windows refused process termination");
+   uint code;if(WaitForSingleObject(process,2000U)!=0U||!GetExitCodeProcess(process,out code))return false;
+   observedExitCode=code;return code==expectedExitCode;
+  }
+  // Explicit lab-only mechanics check: fixed finite-lived child, original creation handle,
+  // no process selection, no allowlist edits, no injected scanner verdict, no elevation.
+  internal static object OwnedChildTerminationProbe(WaitHandle stop,Func<bool> authorized,Action<string,string,string> add){
+   const uint labExitCode=0x4C530068U;
+   int pid=0,servicePid;using(var self=Process.GetCurrentProcess()){servicePid=self.Id;}uint handlePid=0;uint? observedExitCode=null;
+   string image=null,expectedImage=null,createdUtc=null,requestedUtc=null,observedUtc=null;bool identityVerified=false,ready=false,requested=false,exitVerified=false,childExited=false;
+   Process child=null;var started=DateTime.UtcNow;
+   try{
+    if(stop.WaitOne(0)||!authorized())throw new OperationCanceledException("Lab authorization ended before child launch.");
+    expectedImage=Path.Combine(Environment.SystemDirectory,"WindowsPowerShell","v1.0","powershell.exe");EndpointProtection.SafePath(expectedImage);
+    using(var executable=new FileStream(expectedImage,FileMode.Open,FileAccess.Read,FileShare.Read)){
+     // Windows-serviced system binaries can be hard-linked to WinSxS. This read-only
+     // check requires the canonical OS path and regular non-reparse file, not link count.
+     var final=new StringBuilder(4096);uint len=GetFinalPathNameByHandle(executable.SafeFileHandle,final,(uint)final.Capacity,0);FileInfoNative info;
+     if(len==0||len>=final.Capacity||!string.Equals(final.ToString(),@"\\?\"+Path.GetFullPath(expectedImage),StringComparison.OrdinalIgnoreCase)||!GetFileInformationByHandle(executable.SafeFileHandle,out info)||(info.Attributes&0x410)!=0)throw new IOException("Fixed system executable path could not be verified.");
+     var psi=new ProcessStartInfo(expectedImage,"-NoLogo -NoProfile -NonInteractive -Command \"Write-Output 'LINKSCOPE_TERMINATION_READY'; Start-Sleep -Seconds 10\""){UseShellExecute=false,CreateNoWindow=true,WorkingDirectory=Environment.SystemDirectory,RedirectStandardOutput=true};
+     started=DateTime.UtcNow;child=Process.Start(psi);if(child==null)throw new IOException("Fixed lab child failed to start.");pid=child.Id;
+     // Process.Start retains the CreateProcess handle. Borrow it; do not reopen by PID.
+     using(var owned=new SafeFileHandle(child.Handle,false)){
+      handlePid=GetProcessId(owned);long created,exit,kernel,user;bool critical;var name=new StringBuilder(4096);int size=name.Capacity;uint code;
+      if(pid<=4||pid==servicePid||handlePid!=(uint)pid||!QueryFullProcessImageName(owned,0,name,ref size)||!string.Equals(name.ToString(),expectedImage,StringComparison.OrdinalIgnoreCase)||!GetProcessTimes(owned,out created,out exit,out kernel,out user)||!IsProcessCritical(owned,out critical)||critical||!GetExitCodeProcess(owned,out code)||code!=259U||WaitForSingleObject(owned,0)!=258U)throw new IOException("Owned child identity, noncriticality or live state could not be established.");
+      var born=DateTime.FromFileTimeUtc(created);if(born<started.AddSeconds(-1)||born>DateTime.UtcNow.AddSeconds(2))throw new IOException("Child creation time is outside the launch interval.");
+      image=name.ToString();createdUtc=born.ToString("o");identityVerified=true;
+      var line=child.StandardOutput.ReadLineAsync();if(!line.Wait(4000)||line.Result!="LINKSCOPE_TERMINATION_READY")throw new IOException("Fixed child did not reach its ready state.");ready=true;
+      if(stop.WaitOne(0)||!authorized())throw new OperationCanceledException("Lab authorization ended before termination.");
+      requestedUtc=DateTime.UtcNow.ToString("o");exitVerified=TerminateAndObserve(owned,labExitCode,out observedExitCode);requested=true;observedUtc=DateTime.UtcNow.ToString("o");
+     }
+    }
+   }catch(Exception ex){add("Owned child termination detail","Review",ex.GetType().Name+": "+ex.Message);}
+   finally{
+    // On cancellation/failure do not kill another process or reopen a PID. The fixed
+    // sleep command expires naturally. Observe the same Process object, or report Review.
+    if(child!=null){try{childExited=child.WaitForExit(15000);}catch(Exception ex){add("Owned child exit observation detail","Review",ex.GetType().Name+": "+ex.Message);}finally{child.Dispose();}}
+   }
+   bool passed=identityVerified&&ready&&requested&&exitVerified&&childExited&&observedExitCode.HasValue&&observedExitCode.Value==labExitCode;
+   add("Owned child termination mechanics",passed?"Pass":"Review",passed?"Fixed harmless child PID "+pid+"; image "+image+"; original launch handle; created UTC "+createdUtc+"; termination UTC "+requestedUtc+"; observed exit UTC "+observedUtc+"; exit code 0x"+observedExitCode.Value.ToString("X8")+" verified. No production authorization or malware-verdict gate bypass; not malicious-process containment.":"No verified termination result for the fixed owned child. PID "+pid+"; exit observed="+childExited+". No production termination verdict.");
+   return new {pid,servicePid,handlePid,image,expectedImage,createdUtc,requestedUtc,observedUtc,identityVerified,ready,requested,exitVerified,childExited,expectedExitCode=labExitCode,observedExitCode};
+  }
+
   [DllImport("kernel32.dll",SetLastError=true)] static extern bool IsProcessCritical(SafeFileHandle process,out bool critical);
   internal static void VerifyHandle(SafeFileHandle handle,string path){var final=new StringBuilder(4096);uint len=GetFinalPathNameByHandle(handle,final,(uint)final.Capacity,0);if(len==0||len>=final.Capacity||!string.Equals(final.ToString(),@"\\?\"+Path.GetFullPath(path),StringComparison.OrdinalIgnoreCase))throw new IOException("File identity or final path mismatch.");FileInfoNative info;if(!GetFileInformationByHandle(handle,out info)||info.Links!=1||(info.Attributes&0x410)!=0)throw new IOException("Hard-linked, directory or reparse file refused.");}
   internal static bool TrustedEngineLocation(string path){if(string.IsNullOrWhiteSpace(path)||!Path.IsPathRooted(path)||!string.Equals(Path.GetFileName(path),"clamd.exe",StringComparison.OrdinalIgnoreCase))return false;string full;try{full=Path.GetFullPath(path);}catch(Exception){return false;}return new[]{Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86)}.Any(root=>!string.IsNullOrEmpty(root)&&EndpointProtection.Under(full,root));}
@@ -426,7 +476,7 @@ namespace LinkScope {
   }
   // The actual production precondition, also used by a read-only live refusal check.
   internal static bool EligibleContainmentTarget(EndpointSettings c,EndpointWriter a){return a!=null&&c.Mode=="contain"&&a.Pid>4&&a.Pid!=Process.GetCurrentProcess().Id&&c.ContainmentExecutables.Contains(a.Image,StringComparer.OrdinalIgnoreCase)&&SafeScope(a.Image)&&!EndpointProtection.Excluded(c,a.Image)&&c.ResponsePaths.Any(x=>EndpointProtection.Under(a.Image,x));}
-  internal static string Contain(EndpointSettings c,EndpointWriter a,WaitHandle stop,Func<bool> authorized){if(!authorized()||!EligibleContainmentTarget(c,a))throw new IOException("Writer is not explicitly eligible for containment.");if((DateTime.UtcNow-a.Utc).TotalSeconds>30||a.Utc>DateTime.UtcNow.AddSeconds(2))throw new IOException("Audit evidence is stale.");EndpointProtection.SafePath(a.Image);using(var process=OpenProcess(0x1001,false,a.Pid)){if(process.IsInvalid)throw new IOException("Cannot open verified process handle.");long created,exit,kernel,user;uint exitCode;bool critical;var name=new StringBuilder(4096);int size=name.Capacity;if(!QueryFullProcessImageName(process,0,name,ref size)||!string.Equals(name.ToString(),a.Image,StringComparison.OrdinalIgnoreCase)||!GetProcessTimes(process,out created,out exit,out kernel,out user)||!GetExitCodeProcess(process,out exitCode)||exitCode!=259||DateTime.FromFileTimeUtc(created)>a.Utc||!IsProcessCritical(process,out critical)||critical)throw new IOException("Process identity, lifetime or criticality could not be verified.");using(var p=Process.GetProcessById(a.Pid)){if(p.SessionId==0)throw new IOException("Session-zero services are excluded from automatic termination.");}using(var file=new FileStream(a.Image,FileMode.Open,FileAccess.Read,FileShare.Read)){VerifyHandle(file.SafeFileHandle,a.Image);if(file.Length>c.MaxFileMiB*1048576L)throw new IOException("Executable exceeds scan size cap.");Confirmed(EndpointProtection.Command(c.Port,"INSTREAM",file,stop,tcp=>VerifyEngine(c,tcp)));if(!authorized()||stop.WaitOne(0))throw new IOException("Containment cancelled.");if(!TerminateProcess(process,1))throw new IOException("Windows refused process termination.");}try{UserAudit.Write("endpoint-service","local","Terminated confirmed malicious writer: "+a.Image+" PID "+a.Pid+" audit record "+a.Record,200,"Success");}catch(Exception ex){AppJournal.Fault("Endpoint","audit",ex);}return "Termination requested for verified explicitly eligible writer PID "+a.Pid+"; Windows audit record "+a.Record+". Verify process exit and recovery.";}}
+  internal static string Contain(EndpointSettings c,EndpointWriter a,WaitHandle stop,Func<bool> authorized,out bool exitVerified){exitVerified=false;if(!authorized()||!EligibleContainmentTarget(c,a))throw new IOException("Writer is not explicitly eligible for containment.");if((DateTime.UtcNow-a.Utc).TotalSeconds>30||a.Utc>DateTime.UtcNow.AddSeconds(2))throw new IOException("Audit evidence is stale.");EndpointProtection.SafePath(a.Image);using(var process=OpenProcess(0x101001,false,a.Pid)){if(process.IsInvalid)throw new IOException("Cannot open verified process handle.");long created,exit,kernel,user;uint exitCode;bool critical;var name=new StringBuilder(4096);int size=name.Capacity;if(!QueryFullProcessImageName(process,0,name,ref size)||!string.Equals(name.ToString(),a.Image,StringComparison.OrdinalIgnoreCase)||!GetProcessTimes(process,out created,out exit,out kernel,out user)||!GetExitCodeProcess(process,out exitCode)||exitCode!=259||DateTime.FromFileTimeUtc(created)>a.Utc||!IsProcessCritical(process,out critical)||critical)throw new IOException("Process identity, lifetime or criticality could not be verified.");using(var p=Process.GetProcessById(a.Pid)){if(p.SessionId==0)throw new IOException("Session-zero services are excluded from automatic termination.");}uint? observedExitCode=null;using(var file=new FileStream(a.Image,FileMode.Open,FileAccess.Read,FileShare.Read)){VerifyHandle(file.SafeFileHandle,a.Image);if(file.Length>c.MaxFileMiB*1048576L)throw new IOException("Executable exceeds scan size cap.");Confirmed(EndpointProtection.Command(c.Port,"INSTREAM",file,stop,tcp=>VerifyEngine(c,tcp)));if(!authorized()||stop.WaitOne(0))throw new IOException("Containment cancelled.");exitVerified=TerminateAndObserve(process,1,out observedExitCode);}try{UserAudit.Write("endpoint-service","local",(exitVerified?"Verified exit of confirmed malicious writer: ":"Termination requested; exit unverified for confirmed malicious writer: ")+a.Image+" PID "+a.Pid+" audit record "+a.Record,exitVerified?200:409,exitVerified?"Success":"Error");}catch(Exception ex){AppJournal.Fault("Endpoint","audit",ex);}return (exitVerified?"Verified process exit (exit code 1) for explicitly eligible writer PID ":"Termination requested; exit unverified for explicitly eligible writer PID ")+a.Pid+"; Windows audit record "+a.Record+". Verify application recovery.";}}
  } // Fixed, non-privileged writer entry point for the installed PowerShell lab script.
  public static class LabProbeWriter {
   public static void WriteMarker(string path,string expectedIdentity){EndpointResponse.WriteExternalMarker(path,expectedIdentity);}
