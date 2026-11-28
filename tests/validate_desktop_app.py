@@ -40,7 +40,7 @@ for verb in ['--upgrade-pwa','--desktop-app','--register-pwa']:assert 'verb=="'+
 for term in ['CommonDesktopDirectory','CommonPrograms','Program.Resource("linkscope.ico")','Config.Load().Origin()','uri.IsLoopback','BuiltinUsersSid','--app=','msedge.exe','chrome.exe','LinkScope.url','OwnedShortcut(shell,dest)','File.Replace(tmp,dest,null)','WebAppInstallForceList','RegistryView.Registry32','RegistryView.Registry64','current user has an existing Edge web-app policy','existing organization or third-party Edge policy preserved','create_desktop_shortcut=false','default_launch_container="window"','Config.Json().Deserialize<string>','Config.Save(PolicyRecord,value)','String.Equals(key.GetValue(PolicyValue) as string,owned,StringComparison.Ordinal)']:
     assert term in app,term
 assert '--ignore-certificate-errors' not in app
-assert '$pwa.Checked=$true' in wizard and "$verb -eq '--upgrade' -and $pwa.Checked" in wizard
+assert '$pwa.Checked=$false' in wizard and "$verb -eq '--upgrade' -and $pwa.Checked" in wizard
 assert "--upgrade-pwa" in wizard
 assert 'local policy; optional' in wizard
 assert 'window.isSecureContext' in (root/'src/pwa.js').read_text()

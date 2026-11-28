@@ -163,6 +163,45 @@ internal static partial class Setup {
     }
     // Exit code for a successful install with permission provisioning still requiring review.
     const int EndpointPermissionReview=21;
+    // Setup provisions the machine-wide 4688 prerequisite independently of saved
+    // containment rules. No command-line auditing or service elevation is enabled.
+    static readonly Guid ProcessCreationAuditId=new Guid("0cce922b-69ae-11d9-bed3-505054503030");
+    [StructLayout(LayoutKind.Sequential)] struct SetupAuditPolicy {public Guid Subcategory;public uint Flags;public Guid Category;}
+    [DllImport("advapi32.dll",SetLastError=true)] [return:MarshalAs(UnmanagedType.U1)] static extern bool AuditQuerySystemPolicy([In] Guid[] ids,uint count,out IntPtr policy);
+    [DllImport("advapi32.dll")] static extern void AuditFree(IntPtr buffer);
+    static uint ReadProcessCreationAuditFlags() {
+        IntPtr ptr;
+        if(!AuditQuerySystemPolicy(new[]{ProcessCreationAuditId},1,out ptr)||ptr==IntPtr.Zero)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(),"Cannot verify Process Creation audit policy");
+        try{return ((SetupAuditPolicy)Marshal.PtrToStructure(ptr,typeof(SetupAuditPolicy))).Flags;}finally{AuditFree(ptr);}
+    }
+    static int ProvisionWebAuditAfterInstall(TextWriter log) {
+        RequireAdmin();
+        Action<string> write=x=>{log.WriteLine("Web audit prerequisites: "+x);log.Flush();};
+        int failures=0;
+        try {
+            uint before=ReadProcessCreationAuditFlags();write("Process Creation audit flags before: "+before);
+            if((before&1)==0){
+                // auditpol leaves the unspecified failure setting unchanged.
+                int rc=RunHidden(Path.Combine(Environment.SystemDirectory,"auditpol.exe"),"/set /subcategory:"+ProcessCreationAuditId.ToString("B")+" /success:enable",LogDirectory,log);
+                if(rc!=0)throw new IOException("auditpol returned "+rc);
+            }
+            uint after=ReadProcessCreationAuditFlags();write("Process Creation audit flags after: "+after);
+            if((after&1)==0||(before&2)!=(after&2))throw new IOException("Process Creation success auditing or existing failure auditing did not verify; check domain policy.");
+            write("Process Creation success audit policy verified; existing failure setting preserved.");
+        }catch(Exception ex){failures++;write("Policy requires review: "+ex);}
+        try {
+            var sid=EndpointServiceSid();
+            if(Directory.Exists(PermissionStore))LocalDirectory(PermissionStore);SecureDirectory(PermissionStore);LocalDirectory(PermissionStore);
+            using(var storePin=new DirectoryPin(PermissionStore))
+            using(var gate=new FileStream(Path.Combine(PermissionStore,"repair.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None)) {
+                // Existing backed-up, readback-verified descriptor merge; no folder rights.
+                write(ApplyPermission("channel","",sid));
+            }
+            write("Security log read ACE provisioned for LinkScope service SID. Effective service read and audit continuity require live verification.");
+        }catch(Exception ex){failures++;write("Security channel requires review: "+ex);}
+        write(failures==0?"Configuration checks completed. Historical evidence and live service monitoring are separate.":"One or more prerequisites require administrator review.");
+        return failures==0?0:EndpointPermissionReview;
+    }
     static Dictionary<string,object> ReadInstallEndpointPolicy() {
         string cfg=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),@"LinkScope\settings\config.json");
         LocalDirectory(Path.GetDirectoryName(cfg));

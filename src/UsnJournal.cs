@@ -61,7 +61,14 @@ namespace LinkScope {
     acl.AddAccessRule(new PipeAccessRule(Program.ServiceSid(),PipeAccessRights.ReadWrite|PipeAccessRights.Synchronize,AccessControlType.Allow));
     using(var pipe=new NamedPipeServerStream(PipeName,PipeDirection.InOut,1,PipeTransmissionMode.Byte,PipeOptions.Asynchronous,4096,65536,acl)){
      lock(gate){if(stopping.WaitOne(0))return;active=pipe;}
-     try{pipe.WaitForConnection();var request=ReadExact(pipe,17,3000);char drive=(char)request[0];long journal=BitConverter.ToInt64(request,1),cursor=BitConverter.ToInt64(request,9);
+     try{pipe.WaitForConnection();var request=ReadExact(pipe,17,3000);
+      // Fixed read-only query on the existing local service-SID restricted pipe.
+      // No arbitrary policy ID, path, command or privileged token is accepted.
+      if(request[0]==(byte)'!'&&request.Skip(1).All(x=>x==0)){
+       byte state=2;try{state=(byte)(WebServerProtection.QueryProcessAuditPolicy()?1:0);}catch(Exception){}
+       WriteBounded(pipe,new byte[]{76,83,80,65,state},5000);continue;
+      }
+      char drive=(char)request[0];long journal=BitConverter.ToInt64(request,1),cursor=BitConverter.ToInt64(request,9);
       Batch batch;try{batch=Read(drive,journal,cursor);}catch(Exception ex){batch=new Batch{Error="native journal read: "+ex.GetType().Name+": "+ex.Message};}
       var response=Encode(batch);WriteBounded(pipe,response,5000);
      }finally{lock(gate){active=null;}}
@@ -72,6 +79,7 @@ namespace LinkScope {
    public string Kind {get;set;} public string Detail {get;set;} public string Hash {get;set;}
    public double Entropy {get;set;} public long Size {get;set;} public int Sample {get;set;} public string Verdict {get;set;}
    public bool Cached {get;set;} public string Generation {get;set;} public bool MetadataCached {get;set;} public string Stamp {get;set;}
+   public string WebInspection {get;set;}
    public string[] Children {get;set;}
    public DownloadEntry[] Downloads {get;set;}
    public bool WatchStarted {get;set;} public bool WatchGap {get;set;} public string[] WatchArrivals {get;set;}
@@ -152,6 +160,14 @@ namespace LinkScope {
    id=BitConverter.ToInt64(data,0);first=Math.Max(BitConverter.ToInt64(data,8),BitConverter.ToInt64(data,24));tail=BitConverter.ToInt64(data,16);
    return id!=0&&first>=0&&tail>=first;
   }
+  // A transient comparison token for shared-read snapshots, never a cache key.
+  // Access time is deliberately omitted because inspection can change it.
+  internal static string SharedReadStamp(SafeFileHandle h,string path){
+   EndpointResponse.VerifyHandle(h,path);StampFileInfo info;StampBasicInfo basic;
+   if(!GetFileInformationByHandle(h,out info)||info.Links!=1||(info.Attributes&0x00441410)!=0||!GetFileInformationByHandleEx(h,0,out basic,(uint)Marshal.SizeOf(typeof(StampBasicInfo))))throw new IOException("Shared-read identity or change metadata unavailable.");
+   if(info.IndexHigh==0&&info.IndexLow==0)throw new IOException("Shared-read file identity unavailable.");
+   return string.Join("|",new[]{info.Volume.ToString(),info.IndexHigh.ToString(),info.IndexLow.ToString(),info.SizeHigh.ToString(),info.SizeLow.ToString(),basic.Creation.ToString(),basic.Write.ToString(),basic.Change.ToString(),basic.Attributes.ToString()});
+  }
   // Never use timestamps alone. Bind the same verified read handle to a local
   // NTFS volume GUID, file reference, current journal ID and per-file USN.
   // A journal reset, inaccessible metadata, unsupported version, aged-out
@@ -203,15 +219,16 @@ namespace LinkScope {
      bool cacheAllowed=cacheBaseline&&!c.CanaryPaths.Contains(path,StringComparer.OrdinalIgnoreCase)&&!EndpointProtection.BackgroundExcluded(c,path);
      string stamp=cacheAllowed&&c.MetadataFastCache?FileChangeStamp(handle,path):null;
      string generation=cacheAllowed?ClamUpdateWorker.CacheGeneration(stopping,true):null;
-     if(cacheAllowed&&c.MetadataFastCache&&stamp!=null&&stamp==expectedStamp&&generation!=null&&generation==expectedGeneration&&!string.IsNullOrEmpty(expectedHash)&&stamp==FileChangeStamp(handle,path))return new ScanBatch{Kind="File",Hash=expectedHash,Verdict="Cached clean",Cached=true,Generation=generation,MetadataCached=true,Stamp=stamp};
+     if(cacheAllowed&&!WebServerProtection.Selected(c,path)&&c.MetadataFastCache&&stamp!=null&&stamp==expectedStamp&&generation!=null&&generation==expectedGeneration&&!string.IsNullOrEmpty(expectedHash)&&stamp==FileChangeStamp(handle,path))return new ScanBatch{Kind="File",Hash=expectedHash,Verdict="Cached clean",Cached=true,Generation=generation,MetadataCached=true,Stamp=stamp};
      var budget=enumerate&&!c.CanaryPaths.Contains(path,StringComparer.OrdinalIgnoreCase)?new EndpointReadBudget(c.BackgroundReadMiB,stopping):null;
      byte[] b=new byte[65536];int n=0,read;while(n<b.Length&&(read=budget==null?file.Read(b,n,b.Length-n):budget.Read(file,b,n,b.Length-n))>0)n+=read;
      double entropy=EndpointProtection.Entropy(b,n);file.Position=0;string hash=EndpointProtection.FileHash(file,budget);file.Position=0;
+     string webInspection=WebServerProtection.Selected(c,path)?WebServerProtection.Inspect(file,budget,stopping):null;
      if(cacheAllowed)generation=ClamUpdateWorker.CacheGeneration(stopping,true);
-     if(generation!=null&&generation==expectedGeneration&&hash==expectedHash)return new ScanBatch{Kind="File",Hash=hash,Entropy=entropy,Sample=n,Verdict="Cached clean",Cached=true,Generation=generation};
+     if(generation!=null&&generation==expectedGeneration&&hash==expectedHash)return new ScanBatch{Kind="File",Hash=hash,Entropy=entropy,Sample=n,Verdict="Cached clean",Cached=true,Generation=generation,WebInspection=webInspection};
      string reply;try{reply=EndpointProtection.Command(3310,"INSTREAM",file,stopping,tcp=>ClamUpdateWorker.VerifyPrivilegedScanPeer(tcp),budget);}catch(OperationCanceledException){throw;}catch(Exception ex){reply="Privileged ClamAV scan error: "+ex.GetType().Name+": "+ex.Message+" [ERROR]";}
      if(generation!=null&&(!EndpointProtection.CleanVerdict(reply)||generation!=ClamUpdateWorker.CacheGeneration(stopping,true)))generation=null;
-     return new ScanBatch{Kind="File",Hash=hash,Entropy=entropy,Sample=n,Verdict=reply,Generation=generation,Stamp=generation!=null&&stamp!=null&&stamp==FileChangeStamp(handle,path)?stamp:null};
+     return new ScanBatch{Kind="File",Hash=hash,Entropy=entropy,Sample=n,Verdict=reply,WebInspection=webInspection,Generation=generation,Stamp=generation!=null&&stamp!=null&&stamp==FileChangeStamp(handle,path)?stamp:null};
     }
    }
   }
@@ -284,6 +301,15 @@ namespace LinkScope {
   }
   static void WriteBounded(Stream stream,byte[] b,int timeout){AwaitPipe(stream,stream.WriteAsync(b,0,b.Length),timeout,"write");}
   static byte[] Encode(Batch b){using(var m=new MemoryStream())using(var w=new BinaryWriter(m,Encoding.UTF8)){w.Write(b.Error??"");w.Write(b.Journal);w.Write(b.Next);w.Write(b.Tail);w.Write(b.Gap);w.Write(b.Unresolved);w.Write(b.Paths.Count);foreach(var p in b.Paths){w.Write(p);w.Write(b.Arrivals.Contains(p));}w.Flush();var payload=m.ToArray();if(payload.Length>MaxReply)throw new IOException("Journal reply too large");return BitConverter.GetBytes(payload.Length).Concat(payload).ToArray();}}
+  internal static bool FetchProcessAuditPolicy(){
+   using(var pipe=new NamedPipeClientStream(".",PipeName,PipeAccessRights.ReadWrite|PipeAccessRights.Synchronize,PipeOptions.Asynchronous,TokenImpersonationLevel.Identification,HandleInheritability.None)){
+    pipe.Connect(1500);if(!IsReader(pipe.SafePipeHandle))throw new IOException("Audit policy reader service identity could not be verified");
+    var request=new byte[17];request[0]=(byte)'!';WriteBounded(pipe,request,3000);
+    var reply=ReadExact(pipe,5,5000);
+    if(reply[0]!=76||reply[1]!=83||reply[2]!=80||reply[3]!=65||reply[4]>1)throw new IOException("Privileged Process Creation audit policy could not be verified");
+    return reply[4]==1;
+   }
+  }
   internal static Batch Fetch(string root,long journal,long cursor){
    string stage="connect";try{using(var pipe=new NamedPipeClientStream(".",PipeName,PipeAccessRights.ReadWrite|PipeAccessRights.Synchronize,PipeOptions.Asynchronous,TokenImpersonationLevel.Identification,HandleInheritability.None)){
     pipe.Connect(1500);stage="verify reader identity";if(!IsReader(pipe.SafePipeHandle))throw new IOException("Journal reader service identity could not be verified");
@@ -331,7 +357,10 @@ namespace LinkScope {
    var last=new byte[80];Buffer.BlockCopy(data,0,last,0,8);Buffer.BlockCopy(data,8+128*72,last,8,72);batch=new Batch{Tail=200};Parse(last,last.Length,129,batch,(id,name)=>null);
    if(batch.Next!=200||batch.Unresolved!=1)throw new IOException("USN unresolved fixture failed");
    last[12]=3;bool rejected=false;try{Parse(last,last.Length,129,new Batch(),(id,name)=>null);}catch(IOException){rejected=true;}if(!rejected)throw new IOException("USN unsupported record accepted");
-   Console.WriteLine("USN synthetic parser tests passed.");
+   if(!UsnJournalMonitor.RequiresReconciliation(true,0,true,true)||!UsnJournalMonitor.RequiresReconciliation(false,2,false,true)||!UsnJournalMonitor.RequiresReconciliation(false,2,true,false)||UsnJournalMonitor.RequiresReconciliation(false,2,true,true)||UsnJournalMonitor.RequiresReconciliation(false,0,false,false))throw new IOException("USN independent watcher coverage fixture failed");
+   long boundary=UsnJournalMonitor.CoverageBoundary(-1,true,false,1000);
+   if(UsnJournalMonitor.CoverageAnchored(boundary,900,true)||UsnJournalMonitor.CoverageBoundary(boundary,true,false,1400)!=1000||!UsnJournalMonitor.CoverageAnchored(boundary,1100,true)||UsnJournalMonitor.CoverageBoundary(boundary,false,false,1500)!=-1||UsnJournalMonitor.CoverageBoundary(boundary,true,true,1500)!=1500||UsnJournalMonitor.CoverageAnchored(boundary,1100,false))throw new IOException("USN fixed coverage boundary fixture failed");
+   Console.WriteLine("USN synthetic parser and independent coverage tests passed.");
    PipeSelfTest();
    Console.WriteLine("USN asynchronous named pipe tests passed.");
    EndpointProtection.PrioritySelfTest();
@@ -363,35 +392,58 @@ namespace LinkScope {
  // SQLite transaction; interrupted scan work is retried and queue pressure pauses replay.
  internal sealed class UsnJournalMonitor {
   const int Capacity=8192;
-  sealed class Volume {internal string Root,Status="Waiting",Detail="";internal long Journal,Next,Tail;internal long Retry;internal bool Loaded;internal Task<UsnJournalService.Batch> Work;}
+  sealed class Volume {internal string Root,Status="Waiting",Detail="";internal long Journal,Next,Tail;internal long Retry;internal bool Loaded,IndependentAnchor,WorkIndependent;internal long IndependentlyCoveredRecords;internal long IndependentBoundary=-1;internal Task<UsnJournalService.Batch> Work;}
   readonly List<Volume> volumes=new List<Volume>(); string scope; bool preferRecent=true;
   internal void Configure(EndpointSettings c,string key){volumes.Clear();scope=key;if(!c.Enabled||!c.RealTime)return;foreach(string root in c.Paths.Select(Path.GetPathRoot).Distinct(StringComparer.OrdinalIgnoreCase)){if(root!=null&&root.Length==3&&root[1]==':')volumes.Add(new Volume{Root=root.ToUpperInvariant()});}}
   internal static void Schema(Sqlite db){db.Exec("CREATE TABLE IF NOT EXISTS usn_checkpoint(scope TEXT NOT NULL,volume TEXT NOT NULL,journal INTEGER NOT NULL,cursor INTEGER NOT NULL,PRIMARY KEY(scope,volume))");db.Exec("CREATE TABLE IF NOT EXISTS usn_pending(scope TEXT NOT NULL,path TEXT COLLATE NOCASE NOT NULL,PRIMARY KEY(scope,path))");db.Exec("CREATE TABLE IF NOT EXISTS usn_arrivals(scope TEXT NOT NULL,path TEXT COLLATE NOCASE NOT NULL,PRIMARY KEY(scope,path))");db.Exec("CREATE TABLE IF NOT EXISTS usn_retry(scope TEXT NOT NULL,path TEXT COLLATE NOCASE NOT NULL,ready INTEGER NOT NULL,PRIMARY KEY(scope,path))");db.Exec("CREATE TABLE IF NOT EXISTS usn_retry_attempts(scope TEXT NOT NULL,path TEXT COLLATE NOCASE NOT NULL,attempts INTEGER NOT NULL,PRIMARY KEY(scope,path))");}
-  internal void Poll(Sqlite db,EndpointSettings c,Action<string,string> warning,Action<string> clear,Action<string,string> gap,Action reconcile){
+  // A local watcher is redundant evidence only for records after a fixed journal
+  // boundary sampled while every root on the volume was independently watched.
+  // Neither a restored checkpoint nor a helper heartbeat proves continuous coverage.
+  internal void InvalidateIndependentCoverage(){foreach(var v in volumes){v.IndependentAnchor=false;v.WorkIndependent=false;v.IndependentBoundary=-1;}}
+  // Capture the first tail observed under continuous local coverage. Do not chase
+  // a moving tail. The page crossing the boundary still uses the OLD anchor.
+  internal static long CoverageBoundary(long previous,bool continuous,bool gap,long tail){return !continuous?-1:gap||previous<0?tail:previous;}
+  internal static bool CoverageAnchored(long boundary,long committedCursor,bool continuous){return continuous&&boundary>=0&&committedCursor>=boundary;}
+  internal static bool RequiresReconciliation(bool journalGap,int unresolved,bool anchored,bool continuous){return journalGap||(unresolved>0&&!(anchored&&continuous));}
+  internal void Poll(Sqlite db,EndpointSettings c,Action<string,string> warning,Action<string> clear,Action<string,string> gap,Action reconcile,Func<string,bool> independentlyCovered){
    if(!c.RealTime||volumes.Count==0)return;
    long now=History.Now();if(!volumes.Any(v=>v.Loaded)){db.Exec("DELETE FROM usn_pending WHERE scope<>?",scope);db.Exec("DELETE FROM usn_checkpoint WHERE scope<>?",scope);db.Exec("DELETE FROM usn_arrivals WHERE scope<>?",scope);db.Exec("DELETE FROM usn_retry WHERE scope<>?",scope);db.Exec("DELETE FROM usn_retry_attempts WHERE scope<>?",scope);}int queued=Convert.ToInt32(db.Rows("SELECT COUNT(*) FROM usn_pending WHERE scope=?",scope)[0][0]);
    foreach(var v in volumes){
+    if(!independentlyCovered(v.Root)){v.IndependentAnchor=false;v.WorkIndependent=false;v.IndependentBoundary=-1;}
     if(!v.Loaded){var row=db.Rows("SELECT journal,cursor FROM usn_checkpoint WHERE scope=? AND volume=?",scope,v.Root).FirstOrDefault();if(row!=null){v.Journal=Convert.ToInt64(row[0]);v.Next=Convert.ToInt64(row[1]);}v.Loaded=true;}
     if(v.Work!=null&&v.Work.IsCompleted){var b=v.Work.Result;v.Work=null;
-     if(!string.IsNullOrEmpty(b.Error)){v.Status="Fallback";v.Detail=b.Error;v.Retry=now+60;warning(v.Root,"USN unavailable: "+b.Error+". FileSystemWatcher and periodic scans remain active.");continue;}
-     if(queued+ b.Paths.Count>Capacity){v.Status="Backpressure";v.Detail="Durable scan queue full; checkpoint retained";continue;}
-     if(!b.Gap&&v.Journal!=0&&(v.Journal!=b.Journal||b.Next<v.Next)){v.Status="Fallback";v.Detail="Unexpected checkpoint response";v.Retry=now+60;warning(v.Root,v.Detail);continue;}
+     if(!string.IsNullOrEmpty(b.Error)){v.IndependentAnchor=false;v.WorkIndependent=false;v.IndependentBoundary=-1;v.Status="Fallback";v.Detail=b.Error;v.Retry=now+60;warning(v.Root,"USN unavailable: "+b.Error+". FileSystemWatcher and periodic scans remain active.");continue;}
+     if(queued+ b.Paths.Count>Capacity){v.IndependentAnchor=false;v.WorkIndependent=false;v.IndependentBoundary=-1;v.Status="Backpressure";v.Detail="Durable scan queue full; checkpoint retained";continue;}
+     if(!b.Gap&&v.Journal!=0&&(v.Journal!=b.Journal||b.Next<v.Next)){v.IndependentAnchor=false;v.WorkIndependent=false;v.IndependentBoundary=-1;v.Status="Fallback";v.Detail="Unexpected checkpoint response";v.Retry=now+60;warning(v.Root,v.Detail);continue;}
      var paths=b.Paths.Where(p=>c.Paths.Any(x=>EndpointProtection.Under(p,x))&&!EndpointProtection.Excluded(c,p)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-     // Persist the coverage warning before advancing beyond unavailable historical records.
-     if(b.Gap||b.Unresolved>0){string detail=b.Gap?"Journal reset or records aged out; scheduled reconciliation required":b.Unresolved+" journal records have unresolved historical parent paths; protected-scope membership unknown; scheduled reconciliation required";
+     bool continuous=v.WorkIndependent&&independentlyCovered(v.Root);
+     bool requiresReconciliation=RequiresReconciliation(b.Gap,b.Unresolved,v.IndependentAnchor,continuous);
+     // Persist genuine coverage gaps before advancing the checkpoint. A redundant
+     // local watcher can cover ambiguous records, but never a journal reset/aged-out range.
+     if(requiresReconciliation){string detail=b.Gap?"Journal reset or records aged out; scheduled reconciliation required":b.Unresolved+" journal records have unresolved historical parent paths; protected-scope membership unknown; scheduled reconciliation required";
       // Record the gap before checkpoint advancement. Reconciliation is coalesced by the scanner.
       gap(v.Root,detail);reconcile();
      }
      db.Exec("BEGIN IMMEDIATE");try{foreach(var p in paths){db.Exec("INSERT OR IGNORE INTO usn_pending(scope,path) VALUES(?,?)",scope,p);if(b.Arrivals.Contains(p))db.Exec("INSERT OR IGNORE INTO usn_arrivals(scope,path) VALUES(?,?)",scope,p);}db.Exec("INSERT OR REPLACE INTO usn_checkpoint(scope,volume,journal,cursor) VALUES(?,?,?,?)",scope,v.Root,b.Journal,b.Next);db.Exec("COMMIT");}catch{db.Exec("ROLLBACK");throw;}
      queued+=paths.Length;v.Journal=b.Journal;v.Next=b.Next;v.Tail=b.Tail;v.Status=b.Next<b.Tail?"Replaying":"Live";v.Detail="Journal checkpoint committed";clear(v.Root);
-     if(b.Gap||b.Unresolved>0)v.Detail=b.Gap?"Journal reset or records aged out; scheduled reconciliation required":b.Unresolved+" journal records have unresolved historical parent paths; protected-scope membership unknown; scheduled reconciliation required";
+     if(requiresReconciliation)v.Detail=b.Gap?"Journal reset or records aged out; scheduled reconciliation required":b.Unresolved+" journal records have unresolved historical parent paths; protected-scope membership unknown; scheduled reconciliation required";
+     else if(b.Unresolved>0){
+      if(v.IndependentlyCoveredRecords==0)AppJournal.Event(LogLevel.Info,"Endpoint","usn-redundant-coverage",v.Root+" Historical parent paths unresolved after a verified fixed checkpoint boundary; independent local watchers cover the configured roots. Journal path membership remains unknown.");
+      v.IndependentlyCoveredRecords+=b.Unresolved;v.Detail="Historical paths unresolved; independent local watchers cover configured roots";
+     }
+     // The new anchor is valid only after the durable queue/checkpoint transaction.
+     // A gap can establish a new anchor at the tail, but its warning remains active
+     // until a separate complete reconciliation succeeds.
+     bool stillContinuous=continuous&&independentlyCovered(v.Root);
+     v.IndependentBoundary=CoverageBoundary(v.IndependentBoundary,stillContinuous,b.Gap,b.Tail);
+     v.IndependentAnchor=CoverageAnchored(v.IndependentBoundary,b.Next,stillContinuous);
     }
    }
    // One outstanding request across all volumes per monitor; round-robin to prevent starvation.
    if(volumes.Any(v=>v.Work!=null))return;
    if(queued>Capacity-128){foreach(var v in volumes.Where(v=>v.Status!="Fallback")){v.Status="Backpressure";v.Detail="Durable scan queue full; checkpoint retained";}return;}
    var next=volumes.FirstOrDefault(v=>v.Retry<=now);if(next==null)return;volumes.Remove(next);volumes.Add(next);
-   string root=next.Root;long journal=next.Journal,cursor=next.Next;next.Work=Task.Factory.StartNew(()=>UsnJournalService.Fetch(root,journal,cursor),CancellationToken.None,TaskCreationOptions.None,TaskScheduler.Default);
+   string root=next.Root;long journal=next.Journal,cursor=next.Next;next.WorkIndependent=independentlyCovered(root);if(!next.WorkIndependent){next.IndependentAnchor=false;next.IndependentBoundary=-1;}next.Work=Task.Factory.StartNew(()=>UsnJournalService.Fetch(root,journal,cursor),CancellationToken.None,TaskCreationOptions.None,TaskScheduler.Default);
   }
   internal string[] Pending(Sqlite db,int limit){
    if(limit<=0)return new string[0];long now=History.Now();
@@ -428,6 +480,6 @@ namespace LinkScope {
   internal int PriorityDepth(Sqlite db){if(volumes.Count==0)return 0;return Convert.ToInt32(db.Rows("SELECT COUNT(*) FROM usn_arrivals WHERE scope=?",scope)[0][0]);}
   internal int Depth(Sqlite db){if(volumes.Count==0)return 0;return Convert.ToInt32(db.Rows("SELECT COUNT(*) FROM usn_pending WHERE scope=?",scope)[0][0]);}
   internal bool Covers(string path){string root=Path.GetPathRoot(path);return volumes.Any(v=>string.Equals(v.Root,root,StringComparison.OrdinalIgnoreCase)&&(v.Status=="Live"||v.Status=="Replaying"));}
-  internal object[] Status(){return volumes.Select(v=>(object)new {volume=v.Root,status=v.Status,detail=v.Detail,checkpoint=v.Next.ToString(),tail=v.Tail.ToString()}).ToArray();}
+  internal object[] Status(){return volumes.Select(v=>(object)new {volume=v.Root,status=v.Status,detail=v.Detail+(!v.IndependentAnchor?(v.IndependentBoundary>=0?" · Independent watcher boundary pending: "+v.IndependentBoundary+" (cursor "+v.Next+")":" · Independent local watcher continuity not established"):" · Independent local watcher boundary verified")+(v.IndependentlyCoveredRecords>0?" · Ambiguous records with independent watcher coverage this session: "+v.IndependentlyCoveredRecords:""),independentWatcherAnchor=v.IndependentAnchor,independentWatcherBoundary=v.IndependentBoundary<0?null:v.IndependentBoundary.ToString(),independentlyCoveredRecords=v.IndependentlyCoveredRecords,checkpoint=v.Next.ToString(),tail=v.Tail.ToString()}).ToArray();}
  }
 }

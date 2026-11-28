@@ -95,8 +95,9 @@ namespace LinkScope {
   internal sealed class ResourcePoint {public string utc {get;set;} public long? availableMiB {get;set;} public long? clamWorkingMiB {get;set;} public long? clamPrivateMiB {get;set;} public double? clamCpu {get;set;}}
   internal bool LowMemory {get{return lowMemory&&availableMiB.HasValue;}}
   internal static int Floor(long total,int mib,int percent){return (int)Math.Min(total/2,Math.Max(mib,Math.Ceiling(total*percent/100.0)));}
+  internal static long RecoveryFloor(long total,int floor){return Math.Min(total, floor+Math.Max(128L,(long)Math.Ceiling(total*.03)));}
   internal static bool Pressure(bool previous,long available,long total,int floor,ref int low,ref int high){
-   long recovery=Math.Min(total, floor+Math.Max(128L,(long)Math.Ceiling(total*.03)));
+   long recovery=RecoveryFloor(total,floor);
    if(available<floor){low=Math.Min(2,low+1);high=0;if(low>=2)return true;}
    else if(available>=recovery){high=Math.Min(2,high+1);low=0;if(high>=2)return false;}
    else{low=high=0;}return previous;
@@ -132,6 +133,6 @@ namespace LinkScope {
    }catch(IOException ex){previousPid=0;clamStatus=ex.Message;}catch(Exception ex){previousPid=0;clamStatus="ClamD resource counters unavailable ("+ex.GetType().Name+")";}
    history.Enqueue(new ResourcePoint{utc=sampleUtc,availableMiB=availableMiB,clamWorkingMiB=clamWorkingMiB,clamPrivateMiB=clamPrivateMiB,clamCpu=clamCpu});while(history.Count>120)history.Dequeue();
   }
-  internal object Snapshot(EndpointSettings policy){return new {sampleUtc=sampleUtc,memoryStatus=memoryStatus,availableMiB=availableMiB,totalMiB=totalMiB,effectiveFloorMiB=availableMiB.HasValue?(int?)effectiveFloor:null,lowMemory=LowMemory,backgroundPauseEnabled=policy.BackgroundPauseOnLowMemory,clamStatus=clamStatus,clamPid=clamPid>0?(uint?)clamPid:null,clamWorkingMiB=clamWorkingMiB,clamPrivateMiB=clamPrivateMiB,clamCpu=clamCpu,history=history.ToArray()};}
+  internal object Snapshot(EndpointSettings policy){return new {sampleUtc=sampleUtc,memoryStatus=memoryStatus,availableMiB=availableMiB,totalMiB=totalMiB,effectiveFloorMiB=availableMiB.HasValue?(int?)effectiveFloor:null,recoveryFloorMiB=totalMiB.HasValue?(long?)RecoveryFloor(totalMiB.Value,effectiveFloor):null,lowMemory=LowMemory,backgroundPauseEnabled=policy.BackgroundPauseOnLowMemory,clamStatus=clamStatus,clamPid=clamPid>0?(uint?)clamPid:null,clamWorkingMiB=clamWorkingMiB,clamPrivateMiB=clamPrivateMiB,clamCpu=clamCpu,history=history.ToArray()};}
  }
 }

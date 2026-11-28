@@ -125,6 +125,10 @@
     "ExcludedPatterns": []
   },
   "Endpoint": {
+    "WebProtectionEnabled": false,
+    "WebManualQuarantineEnabled": false,
+    "WebProcessAuditEnabled": false,
+    "WebPaths": [],
     "Enabled": false,
     "ProfileDefaultsApplied": true,
     "BackgroundExcludedPaths": [],

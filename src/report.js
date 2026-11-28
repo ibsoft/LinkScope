@@ -46,6 +46,7 @@ const LinkScopeReport = (() => {
             targets.length+' configured network target'+(targets.length===1?'':'s')+'  /  Day, Week, Month and Year',
             'CPU, RAM and volume usage history',
             'Windows health, SMART, security posture, events, firewall and antivirus',
+            'Endpoint, Web Server Protection, Data Integrity and delivery status',
             history.length+' monitoring alert records',
             'The raw report data is attached as LinkScope-report.json.'
         ];
@@ -221,7 +222,14 @@ const LinkScopeReport = (() => {
         await write('Report generated: '+utc(reportNow,true)+' UTC',9,regular,muted);
         await write('Evidence snapshot: '+verdict.evidenceUtc+' | Completed: '+verdict.completedUtc,9,regular,muted);
         await write('Provider: '+verdict.provider+' | Model: '+verdict.model,9,regular,muted);
-        await write('Historical AI interpretation; may differ from current readings. Verify recommendations against the report data below.',9,bold,orange);
+        const evidenceTime=Date.parse(verdict.evidenceUtc),completedTime=Date.parse(verdict.completedUtc);
+        const age=reportNow-Math.floor(evidenceTime/1000);
+        const valid=Number.isFinite(age)&&age>=0&&Number.isFinite(completedTime)&&completedTime>=evidenceTime;
+        await write('Historical AI interpretation - not a live verdict. Evidence age: '+(valid?Math.floor(age/60)+' min '+age%60+' sec':'unverified')+'.',9,bold,orange);
+        if(!valid||age>300||verdict.evidenceSchema!==2)await write('STALE OR LEGACY VERDICT: generate a new system verdict before relying on its conclusions. A five-minute report advisory is not a guarantee of freshness.',9,bold,orange);
+        else await write('Recent saved verdict; compare with the current report because findings can change at any time.',9,regular,muted);
+        if(verdict.coverage){await write('AI evidence sources: '+(verdict.coverage.sources||[]).join(', '),9,regular,muted);await write('AI unavailable/incomplete: '+((verdict.coverage.unavailable||[]).join(', ')||'None recorded by collector'),9,regular,muted);}
+        else await write('AI coverage metadata unavailable (legacy verdict).',9,regular,muted);
         y+=8;
         for(const raw of verdict.answer.split(/\r?\n/)){
             const heading=/^\s*#{1,6}\s+/.test(raw);
@@ -345,6 +353,42 @@ const LinkScopeReport = (() => {
             if(er.truncated)await line('Active detail snapshot capped; see full Alert History and endpoint database.',{fill:orange});
             await line('Detection and restricted response only; no kernel interception. Missing or incomplete coverage does not imply a clean endpoint.',{fill:muted});
         }
+        await heading('Web Server Protection - supplemental detection and coverage');
+        const assessment=manifest.webAssessment, ep=health.categories.endpoint_protection, er=ep?.result||{};
+        if(!assessment)await line('Assessment unavailable. No clean or healthy verdict can be established.',{fill:orange});
+        else {
+            await line('Assessment: '+scalar(assessment.assessment),{font:bold,fill:assessment.assessment==='Requires attention'?orange:muted});
+            await line('Endpoint enabled: '+scalar(assessment.endpointEnabled)+' / Web script inspection enabled: '+scalar(assessment.enabled)+' / Process audit enabled: '+scalar(assessment.processAuditEnabled));
+            await line('Administrator-approved suspicious script quarantine: '+scalar(assessment.manualQuarantineEnabled));
+            await line('Telemetry: '+scalar(assessment.collectedUtc)+' / Fresh: '+scalar(assessment.fresh)+' / Matches current policy: '+scalar(assessment.telemetryPolicyMatches));
+            await line('Shared scanner: '+scalar(assessment.sharedScannerStatus)+' / Baseline verified: '+scalar(assessment.sharedBaselineVerified)+' / Configured paths covered: '+scalar(assessment.configuredPathsCovered));
+            await line('Last script inspection: '+scalar(assessment.lastScriptCheckUtc)+' / Process audit: '+scalar(assessment.processAuditState));
+            if(assessment.historicalAuditLimitation)await line('Historical audit limitation (current monitoring recovered): '+scalar(assessment.historicalAuditLimitation),{fill:orange});
+            const counts=assessment.reportedCounts||{};
+            await line('Last reported active counters (not lifetime totals):',{font:bold});
+            for(const [key,label] of [['suspiciousScripts','Suspicious scripts'],['inspectionIssues','Inspection issues'],['processFindings','Suspicious process findings'],['auditIssues','Audit issues']])await line(label+': '+scalar(counts[key]),{fill:counts[key]>0?orange:muted});
+            await line('Configured web paths:',{font:bold});
+            if(!assessment.configuredPaths?.length)await line('None configured.',{fill:muted});
+            for(const path of assessment.configuredPaths||[])await line(path,{indent:8});
+            await line('Coverage and limitations: '+scalar(assessment.limitations),{fill:muted});
+            await line('Supplemental script limit: '+scalar(assessment.scriptInspectionLimitBytes)+' bytes. A heuristic finding does not confirm malware. Acknowledgement does not resolve a finding.',{fill:muted});
+            const webChanges=new Set(['Suspicious web script quarantined','Suspicious web script','Web script inspection incomplete','Suspicious web server child process','Web process audit unavailable','Web process audit history gap']);
+            const active=(er.items||[]).filter(x=>webChanges.has(x.change));const recent=(er.recentIncidents||[]).filter(x=>webChanges.has(x.change));
+            await line('Active finding details (returned '+active.length+'; global snapshot truncated: '+scalar(assessment.activeSnapshotTruncated)+')',{font:bold});
+            if(!active.length)await line('No matching detail rows returned. Refer to reported counts and coverage; empty rows are not proof of absence.',{fill:muted});
+            for(const f of active)await line([f.lastUtc,f.change,f.severity,f.path,f.detail].map(scalar).join(' / '),{fill:orange});
+            await line('Recent historical incidents (returned '+recent.length+' from bounded endpoint history; not current findings)',{font:bold});
+            for(const f of recent)await line([f.utc,f.change,f.severity,f.path,f.detail].map(scalar).join(' / '));
+            await line('Investigation: verify suspicious scripts against trusted deployments, review associated process events, check audit and file-access coverage, then verify recovery. Do not equate heuristic warnings with confirmed malware.',{fill:muted});
+        }
+        await heading('Collection scope and optional inventory');
+        await line('Disabled optional categories: '+(manifest.disabledInventory?.join(', ')|| (Array.isArray(manifest.disabledInventory)?'None':'Unknown')));
+        await heading('Native active connections');
+        if(!manifest.connections||!Array.isArray(manifest.connections.rows))await line('Connection snapshot unavailable.',{fill:orange});
+        else {const c=manifest.connections;await line('Sample UTC: '+(typeof c.now==='number'?utc(c.now,true):'Unknown')+' / Returned '+c.rows.length+' of '+scalar(c.total)+' entries. No process attribution.',{fill:c.total>c.rows.length?orange:muted});await fields(c.rows);}
+        await heading('Alert delivery, logging and SIEM');
+        if(manifest.delivery)await fields(manifest.delivery);else await line('Delivery status unavailable or restricted to administrators.',{fill:orange});
+        if(manifest.logging)await fields(manifest.logging);else await line('Logging and SIEM status unavailable or restricted to administrators.',{fill:orange});
         await heading('Network probe alert rules');
         for(const t of manifest.targets){
             const failures=t.FailureCount??manifest.probeAlertCount;
@@ -404,7 +448,7 @@ const LinkScopeReport = (() => {
                 for(const e of d.events.slice(3))await line(utc(e[0],true)+' UTC  /  '+e[1]);
             }
         }
-        const snapshot=new TextEncoder().encode(JSON.stringify({aiVerdict:manifest.aiVerdict||undefined,windows:health,network:sections,resourceHistory:trends,alertHistory:history,applicationLogSummary:manifest.logSummary,probeAlertRules:{defaultFailures:manifest.probeAlertCount,targets:manifest.targets}}));
+        const snapshot=new TextEncoder().encode(JSON.stringify({aiVerdict:manifest.aiVerdict||undefined,webAssessment:manifest.webAssessment,disabledInventory:manifest.disabledInventory,connections:manifest.connections,delivery:manifest.delivery,logging:manifest.logging,windows:health,network:sections,resourceHistory:trends,alertHistory:history,applicationLogSummary:manifest.logSummary,probeAlertRules:{defaultFailures:manifest.probeAlertCount,targets:manifest.targets}}));
         await doc.attach(snapshot,'LinkScope-report.json',{mimeType:'application/json',description:'Complete network, resource, Windows health and alert history report data.'});
         const pages=doc.getPages();
         pages.forEach((p,i)=>p.drawText((i+1)+' / '+pages.length,{x:pageWidth-margin-32,y:25,size:9,font:bold,color:color(teal)}));

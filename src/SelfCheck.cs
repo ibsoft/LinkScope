@@ -200,6 +200,19 @@ namespace LinkScope {
             Check(ClamUpdateWorker.CompareDefinition("Current",28194,0,out comparison)=="Unknown","young publication alone is not verified current");
             Check(ClamUpdateWorker.CompareDefinition("Unknown",28194,28194,out comparison)=="Unknown","invalid engine date remains unknown");
             Check(ClamUpdateWorker.CompareDefinition("Current",28195,28194,out comparison)=="Unknown","advertised version behind engine is inconclusive");
+            // The updater history remains unchanged; only the narrow, recovered live-definition warning can close.
+            var recoveredAt=new DateTime(2026,11,28,10,0,0,DateTimeKind.Utc);
+            long recoveredEpoch=new DateTimeOffset(recoveredAt).ToUnixTimeSeconds();
+            var priorUpdate=new ClamUpdateState{status="Warning",detail=ClamUpdateState.DefinitionReview,attemptUtc=recoveredAt.AddMinutes(-3).ToString("o"),checkedUtc=recoveredAt.AddMinutes(-2).ToString("o")};
+            Check(priorUpdate.CanReconcileDefinitionWarning(true,"Current",recoveredEpoch,recoveredEpoch+1),"fresh current engine resolves historical definition warning");
+            Check(!priorUpdate.CanReconcileDefinitionWarning(true,"Unknown",recoveredEpoch,recoveredEpoch+1)&&!priorUpdate.CanReconcileDefinitionWarning(true,"Stale",recoveredEpoch,recoveredEpoch+1),"unknown and stale definitions never resolve warning");
+            Check(!priorUpdate.CanReconcileDefinitionWarning(false,"Current",recoveredEpoch,recoveredEpoch+1)&&!priorUpdate.CanReconcileDefinitionWarning(true,"Current",recoveredEpoch,recoveredEpoch+91)&&!priorUpdate.CanReconcileDefinitionWarning(true,"Current",recoveredEpoch,recoveredEpoch-1),"unavailable stale or future engine observation rejected");
+            Check(!priorUpdate.CanReconcileDefinitionWarning(true,"Current",recoveredEpoch-120,recoveredEpoch-119),"engine observation must postdate completed download");
+            priorUpdate.detail=ClamUpdateState.ReloadReview;Check(!priorUpdate.CanReconcileDefinitionWarning(true,"Current",recoveredEpoch,recoveredEpoch+1),"explicit expected-version reload failure not reconciled by generic comparison");
+            priorUpdate.detail="Official FreshClam update failed; third-party status is reported separately.";Check(!priorUpdate.CanReconcileDefinitionWarning(true,"Current",recoveredEpoch,recoveredEpoch+1),"official download failure retained");
+            priorUpdate.detail="FreshClam completed, but engine or updater readiness still needs review.";Check(!priorUpdate.CanReconcileDefinitionWarning(true,"Current",recoveredEpoch,recoveredEpoch+1),"updater readiness warning retained");
+            priorUpdate.detail=ClamUpdateState.DefinitionReview;priorUpdate.status="Failed";Check(!priorUpdate.CanReconcileDefinitionWarning(true,"Current",recoveredEpoch,recoveredEpoch+1),"failed attempt never auto-reconciled");
+            priorUpdate.status="Warning";priorUpdate.checkedUtc="invalid";Check(!priorUpdate.CanReconcileDefinitionWarning(true,"Current",recoveredEpoch,recoveredEpoch+1),"malformed maintenance timestamp rejected");
             var dnsTime=new DateTime(2026,11,28,8,29,0,DateTimeKind.Utc);
             string dnsFixture="1.4.7:63:28194:1795854540:1:90:49192:339";
             Check(ClamUpdateWorker.ParseAdvertisedDaily(dnsFixture,dnsTime.AddHours(1))==28194,"official DNS daily field");
@@ -217,6 +230,33 @@ namespace LinkScope {
             Check(!EndpointProtection.RansomwareCorroborated(54,0,50)&&!EndpointProtection.RansomwareCorroborated(50,2,50)&&EndpointProtection.RansomwareCorroborated(50,3,50),"file activity alone is not ransomware evidence");
             Check(EndpointResourceMonitor.NativeCounterSelfCheck(),"native query-only process memory/time counters");
             Check(EndpointResourceMonitor.CpuDelta(100,300,1000,2000,4)==5.0&&EndpointResourceMonitor.CpuDelta(300,100,1000,2000,4)==null&&EndpointResourceMonitor.CpuDelta(100,100,1000,2000,4)==0.0,"resource CPU delta and counter reset");
+            // Run on the installer self-check host; no ClamD or production data needed.
+            string sharedLog=Path.Combine(dir,"shared-read-check.log");
+            byte[] sharedBytes=new byte[]{1,2,3,4,5};File.WriteAllBytes(sharedLog,sharedBytes);
+            using(var sharedStop=new System.Threading.ManualResetEvent(false)){
+                using(var writer=new FileStream(sharedLog,FileMode.Open,FileAccess.Write,FileShare.ReadWrite)){
+                    bool strictLocked=false;try{using(var strict=new FileStream(sharedLog,FileMode.Open,FileAccess.Read,FileShare.Read)){}}catch(IOException ex){strictLocked=EndpointProtection.LockedFile(ex);}
+                    Check(strictLocked,"strict scanner rejects concurrent writer");
+                    using(var shared=new FileStream(sharedLog,FileMode.Open,FileAccess.Read,FileShare.ReadWrite,1)){
+                        string stamp=UsnJournalService.SharedReadStamp(shared.SafeFileHandle,sharedLog);
+                        Check(EndpointProtection.SharedSnapshotMatches(shared,sharedBytes,null,sharedStop)&&stamp==UsnJournalService.SharedReadStamp(shared.SafeFileHandle,sharedLog),"shared-read snapshot matches stable bytes and identity");
+                        writer.Position=0;writer.WriteByte(9);writer.Flush(true);
+                        Check(!EndpointProtection.SharedSnapshotMatches(shared,sharedBytes,null,sharedStop),"shared-read same-length mutation rejected");
+                        writer.Position=writer.Length;writer.WriteByte(6);writer.Flush(true);
+                        Check(!EndpointProtection.SharedSnapshotMatches(shared,sharedBytes,null,sharedStop),"shared-read append rejected");
+                    }
+                }
+                using(var empty=new MemoryStream(new byte[0]))Check(EndpointProtection.SharedSnapshotMatches(empty,new byte[0],null,sharedStop),"shared-read empty snapshot verified");
+            }
+            File.Delete(sharedLog);
+            Check(EndpointProtection.CoverageRecoveryDue(86500,100,false,false,true,false,false,86400)==400,"recovered path errors advance next reconciliation");
+            Check(EndpointProtection.CoverageRecoveryDue(86500,100,false,false,true,false,true,86400)==1000,"outstanding transient path failures receive bounded reconciliation");
+            Check(EndpointProtection.CoverageRecoveryDue(86500,100,false,false,true,true,false,86400)==86500,"memory pressure does not advance reconciliation");
+            Check(EndpointProtection.CoverageRecoveryDue(86500,100,true,false,true,false,false,86400)==86500,"running baseline not interrupted");
+            Check(EndpointProtection.CoverageRecoveryDue(86500,100,false,true,true,false,false,86400)==86500,"complete baseline not rescheduled");
+            Check(EndpointProtection.CoverageRecoveryDue(86500,100,false,false,false,false,false,86400)==86500,"offline scanner not advanced");
+            Check(EndpointProtection.CoverageRecoveryDue(120,100,false,false,true,false,false,86400)==120,"earlier reconciliation preserved");
+            Check(EndpointResourceMonitor.RecoveryFloor(8192,820)==1066,"resource recovery threshold agrees with hysteresis");
             Check(EndpointResourceMonitor.Floor(8192,512,10)==820&&EndpointResourceMonitor.Floor(1024,8192,10)==512,"resource RAM floor and small-host cap");
             int lowRamSamples=0,highRamSamples=0;bool ramPressure=false;
             ramPressure=EndpointResourceMonitor.Pressure(ramPressure,400,8192,820,ref lowRamSamples,ref highRamSamples);Check(!ramPressure,"single low-memory sample does not pause");
@@ -251,6 +291,12 @@ namespace LinkScope {
             alerts.Sample("ram",new {status="ok",usedPercent=100.0},cfg);
             long cutoff=Convert.ToInt64(AsMap(alerts.EndpointAcknowledgement())["through"]);
             alerts.EndpointTransitions("test-stream",new List<object[]>{new object[]{5L,now,"new-alert","new.txt","New detection","critical","Test only","hash",1L}},cfg);
+            var single=alerts.List(new[]{"endpoint_protection"},true).Select(AsMap).Single(a=>Equals(a["title"],"Malware detected"));
+            alerts.ReadEndpointAlert((string)single["id"]);
+            alerts.ReadEndpointAlert((string)single["id"]); // idempotent
+            var individuallyReviewed=alerts.List(new[]{"endpoint_protection"},true).Select(AsMap).ToArray();
+            Check(individuallyReviewed.Any(a=>Equals(a["id"],single["id"])&&Equals(a["read"],true)&&Equals(a["resolved"],false))&&individuallyReviewed.Any(a=>Equals(a["title"],"New detection")&&Equals(a["read"],false)),"individual endpoint acknowledgement retains active finding and newer unread alert");
+            Check(Alerts.EndpointVerificationAllowed(new HealthAlert{Category="endpoint_protection",Severity="warning",Title="USN journal coverage gap"})&&!Alerts.EndpointVerificationAllowed(new HealthAlert{Category="endpoint_protection",Severity="critical",Title="Malware signature detected"})&&!Alerts.EndpointVerificationAllowed(new HealthAlert{Category="endpoint_protection",Severity="warning",Title="USN journal coverage gap",Resolved=true}),"verification only for active operational warnings");
             var ack=AsMap(alerts.ReadEndpointThrough(cutoff));
             Check(Convert.ToInt64(ack["unread"])==1&&Convert.ToInt64(ack["activeUnread"])==1,"endpoint acknowledgement retains later unread incident");
             remaining=alerts.List(new[]{"endpoint_protection"},true).Select(AsMap).ToArray();

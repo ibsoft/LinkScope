@@ -12,7 +12,7 @@ namespace LinkScope {
         internal string SecurityFacts(){return string.Join("\n",securityFacts);}
         internal string SystemFacts(){return string.Join("\n",facts)+"\nUnavailable or incomplete: "+(Missing.Count==0?"none reported":string.Join(", ",Missing));}
         void Exact(string section,object value){facts.Add("- "+section+": "+Config.Json().Serialize(value));}
-        static object Decode(object value){var j=Config.Json();return j.DeserializeObject(j.Serialize(value));}
+        internal static object Decode(object value){var j=Config.Json();return j.DeserializeObject(j.Serialize(value));}
         internal readonly List<string> Sources=new List<string>();
         internal string NetworkVerdict="Network evidence unavailable; packet loss and timeouts cannot be assessed.";
         internal int Categories,Targets;internal string Utc;internal readonly List<string> Missing=new List<string>();
@@ -74,7 +74,7 @@ namespace LinkScope {
         // Security readings are kept out of the general (potentially very large) inventory payload.
         // The final model receives these facts even after evidence-group summarization.
         static readonly string[] IntegrityFields={"chainValid","sequence","chainHead","monitoredFiles","excludedEntries","violations"};
-        static readonly string[] EndpointFields={"engineOnline","engineVersion","signatureDatabaseVersion","signatureDatabaseTimestamp","signatureFreshness","lastSuccessfulSignatureUpdateUtc","lastSuccessfulSignatureRefreshUtc","lastReportedSignatureUpdateUtc","signatureUpdateLogRecognized","lastSignatureCheckUtc","mode","responseEngineStatus","responseEngineDetail","responseCheckedUtc","realTime","watcherCount","queueDepth","overflowCount","scanRunning","scanStartedUtc","lastScanUtc","nextScanUtc","lastRealTimeScanUtc","lastFileScanUtc","scannedFiles","sizeLimitedFiles","excludedEntries","cleanChecks","infectedChecks","heuristicChecks","excludedChecks","failedChecks","quarantinedChecks","activeMalware","activeHeuristic","activeScanIssues","quarantineCount","quarantineDeletedCount","changedFiles","entropyChanges","canaryCount","processCorrelation","violations","pendingAlertDelivery","realTimeChecked"};
+        static readonly string[] EndpointFields={"engineOnline","engineVersion","signatureDatabaseVersion","signatureDatabaseTimestamp","signatureFreshness","lastSuccessfulSignatureUpdateUtc","lastSuccessfulSignatureRefreshUtc","lastReportedSignatureUpdateUtc","signatureUpdateLogRecognized","lastSignatureCheckUtc","mode","responseEngineStatus","responseEngineDetail","responseCheckedUtc","realTime","watcherCount","queueDepth","overflowCount","scanRunning","scanStartedUtc","lastScanUtc","nextScanUtc","lastRealTimeScanUtc","lastFileScanUtc","scannedFiles","sizeLimitedFiles","excludedEntries","cleanChecks","infectedChecks","heuristicChecks","excludedChecks","failedChecks","quarantinedChecks","activeMalware","activeHeuristic","activeScanIssues","quarantineCount","quarantineDeletedCount","changedFiles","entropyChanges","canaryCount","processCorrelation","violations","pendingAlertDelivery","realTimeChecked","fullScanComplete","baselineFollowupRequired","baselineResumed","baselineDiscoveredPending","baselineErrors","coverageIssueCount","watcherFailures","watcherRootsCoveredByJournal","watcherRootsCoveredByPrivileged","watcherCoverageInitializing","usnQueueDepth","deferredQueueDepth","durableReadyDepth","watcherQueueDepth","priorityQueueDepth","engineRecoveryPending","baselineThrottleReason","diskPressureStatus","downloadStatus","downloadChecks","downloadPending","downloadLastResult","privilegedFileChecks","behaviorWindowSeconds","behaviorChangeThreshold","extendedEntropyPeak","extendedEntropyThreshold","metadataCachedChecks","cachedChecks","snapshotCleanChecks","deferredChecks"};
         static Dictionary<string,object> Pick(object value,IEnumerable<string> fields){
             var map=AiProvider.Map(value);return fields.Where(map.ContainsKey).ToDictionary(k=>k,k=>Safe(map[k],0));
         }
@@ -89,6 +89,48 @@ namespace LinkScope {
             var sample=field=="items"||field=="canaries"?PriorityRows(rows,sampleLimit):rows.Take(sampleLimit).ToArray();
             Fact(category+"-"+field+"-coverage",new {returned=rows.Length,sent=sample.Length,omitted=rows.Length-sample.Length,scope="returned snapshot rows only"});
             foreach(var row in sample)Fact(category+"-"+field,Pick(row,fields));
+        }
+        static readonly string[] WebCounters={"suspiciousScripts","inspectionIssues","processFindings","auditIssues"};
+        internal static bool IsWebFinding(object row){
+            string change=AiProvider.Text(row,"change");
+            return change=="Suspicious web script quarantined"||change==WebServerProtection.Finding||change==WebServerProtection.Coverage||change==WebServerProtection.ProcessFinding||change==WebServerProtection.AuditCoverage||change==WebServerProtection.AuditGap;
+        }
+        static long? Count(object value){if(!(value is int)&&!(value is long))return null;long n=Convert.ToInt64(value);return n<0?(long?)null:n;}
+        // One deterministic assessment for the PDF and exact AI evidence. No model or acknowledgement can set this status.
+        internal static Dictionary<string,object> WebAssessment(object wrapper,EndpointSettings policy){
+            var r=AiProvider.Get(wrapper,"result");var w=AiProvider.Get(r,"webProtection");
+            var age=Count(AiProvider.Get(wrapper,"ageSeconds"));
+            bool fresh=age.HasValue&&age.Value<=20&&!Equals(AiProvider.Get(wrapper,"stale"),true);
+            var counts=WebCounters.ToDictionary(k=>k,k=>Count(AiProvider.Get(w,k)));
+            bool pending=counts.Values.Any(x=>x.HasValue&&x.Value>0),known=counts.Values.All(x=>x.HasValue);
+            var paths=policy.WebPaths??new string[0];var observedPaths=AiProvider.List(AiProvider.Get(w,"paths")).OfType<string>().ToArray();
+            bool policyMatches=Equals(AiProvider.Get(w,"enabled"),policy.WebProtectionEnabled)&&Equals(AiProvider.Get(w,"processAuditEnabled"),policy.WebProcessAuditEnabled)&&new HashSet<string>(paths,StringComparer.OrdinalIgnoreCase).SetEquals(observedPaths);
+            var roots=AiProvider.List(AiProvider.Get(r,"rootCoverage"));
+            bool covered=paths.Length>0&&paths.All(path=>roots.Any(root=>{string b=AiProvider.Text(root,"path");return b.Length>0&&EndpointProtection.Under(path,b)&&new[]{"Watching","Scheduled only"}.Contains(AiProvider.Text(root,"state"));}));
+            string audit=AiProvider.Text(w,"processAuditState");bool auditAvailable=policy.WebProcessAuditEnabled&&audit.StartsWith("Available —",StringComparison.Ordinal);
+            bool auditFailed=policy.WebProcessAuditEnabled&&new[]{"unavailable","disabled","gap","error"}.Any(x=>audit.IndexOf(x,StringComparison.OrdinalIgnoreCase)>=0);
+            string status=AiProvider.Text(r,"status");
+            bool sharedIssues=Equals(AiProvider.Get(r,"engineOnline"),false)||status=="partial"||status=="unavailable"||Count(AiProvider.Get(r,"coverageIssueCount")).GetValueOrDefault()>0||Count(AiProvider.Get(r,"activeScanIssues")).GetValueOrDefault()>0||!string.IsNullOrEmpty(AiProvider.Text(r,"baselineThrottleReason"));
+            bool sharedVerified=status=="ok"&&Equals(AiProvider.Get(r,"engineOnline"),true)&&Equals(AiProvider.Get(r,"fullScanComplete"),true)&&Equals(AiProvider.Get(r,"scanRunning"),false)&&Equals(AiProvider.Get(r,"baselineFollowupRequired"),false)&&Equals(AiProvider.Get(r,"engineRecoveryPending"),false)&&Count(AiProvider.Get(r,"coverageIssueCount"))==0&&Count(AiProvider.Get(r,"activeScanIssues"))==0&&!Equals(AiProvider.Get(r,"truncated"),true);
+            DateTimeOffset check, collected;bool scriptChecked=DateTimeOffset.TryParse(AiProvider.Text(w,"lastScriptCheckUtc"),out check)&&DateTimeOffset.TryParse(AiProvider.Text(wrapper,"collectedUtc"),out collected)&&check<=collected;
+            string assessment=!fresh||!policyMatches?"Unverified":pending?"Requires attention":!policy.Enabled||!policy.WebProtectionEnabled?"Disabled":sharedIssues||auditFailed?"Requires attention":!known?"Unverified":sharedVerified&&covered&&scriptChecked&&(!policy.WebProcessAuditEnabled||auditAvailable)?"No active supplemental findings":"Verifying";
+            if(!policy.Enabled||(!policy.WebProtectionEnabled&&!pending))assessment="Disabled";
+            var active=AiProvider.List(AiProvider.Get(r,"items")).Where(IsWebFinding).ToArray();var history=AiProvider.List(AiProvider.Get(r,"recentIncidents")).Where(IsWebFinding).ToArray();
+            return new Dictionary<string,object>{{"assessment",assessment},{"endpointEnabled",policy.Enabled},{"enabled",policy.WebProtectionEnabled},{"processAuditEnabled",policy.WebProcessAuditEnabled},{"manualQuarantineEnabled",policy.WebManualQuarantineEnabled},{"configuredPaths",paths},{"telemetryPolicyMatches",policyMatches},{"fresh",fresh},{"collectedUtc",AiProvider.Get(wrapper,"collectedUtc")},{"ageSeconds",age},{"reportedCounts",counts.ToDictionary(k=>k.Key,k=>(object)k.Value)},{"lastScriptCheckUtc",AiProvider.Get(w,"lastScriptCheckUtc")},{"processAuditState",AiProvider.Get(w,"processAuditState")},{"historicalAuditLimitation",AiProvider.Get(w,"historicalAuditLimitation")},{"sharedScannerStatus",status},{"sharedBaselineVerified",sharedVerified},{"configuredPathsCovered",covered},{"activeRowsReturned",active.Length},{"historicalRowsReturned",history.Length},{"activeSnapshotTruncated",AiProvider.Get(r,"truncated")},{"historySnapshotLimit",AiProvider.Get(r,"historyLimit")},{"lastKnownFindingsPresent",pending},{"scriptInspectionLimitBytes",WebServerProtection.MaxScriptBytes},{"limitations","Supplemental script heuristics and optional direct child-process auditing only. Administrator-approved quarantine is a response to a suspicious finding, not a confirmed malware verdict. No HTTP, outbound process-network correlation or comprehensive web-shell verdict. Counts are last reported; stale or disabled data is not a clean verdict. Historical rows are a bounded endpoint incident sample, not all web history. A recovered audit-policy outage restores current monitoring only; missing historical events cannot be reconstructed. Preserve that limitation in the assessment."}};
+        }
+        void WebSecurity(object wrapper,EndpointSettings policy){
+            var summary=WebAssessment(wrapper,policy);var r=AiProvider.Get(wrapper,"result");
+            var active=AiProvider.List(AiProvider.Get(r,"items")).Where(IsWebFinding).ToArray();var history=AiProvider.List(AiProvider.Get(r,"recentIncidents")).Where(IsWebFinding).ToArray();
+            var paths=AiProvider.List(summary["configuredPaths"]);summary["configuredPathCount"]=paths.Length;summary["configuredPaths"]=paths.Take(20).ToArray();summary["configuredPathsOmitted"]=Math.Max(0,paths.Length-20);
+            summary["priorityActiveSample"]=PriorityRows(active,8).Select(x=>Pick(x,FindingFields)).ToArray();
+            summary["activeSampleOmitted"]=Math.Max(0,active.Length-8);
+            securityFacts.Add("- web_server_protection: "+Config.Json().Serialize(Safe(summary,0)));
+            Fact("web-server-protection",Safe(summary,0));
+            SecurityRows("web-server-protection","items",active,30,FindingFields);
+            SecurityRows("web-server-protection","recentIncidents",history,20,FindingFields);
+            string state=Convert.ToString(summary["assessment"]);
+            if(state=="Disabled"||state=="Unverified"||state=="Verifying")Missing.Add("Web Server Protection ("+state+")");
+            if(!policy.WebProcessAuditEnabled)Missing.Add("Web Server process audit (disabled)");
         }
         internal void SecuritySnapshot(string category,object wrapper,bool enabled){
             Categories++;
@@ -117,6 +159,11 @@ namespace LinkScope {
                 var scans=AiProvider.List(AiProvider.Get(result,"scanActivity"));
                 var history=AiProvider.List(AiProvider.Get(result,"recentIncidents"));
                 var quarantine=AiProvider.List(AiProvider.Get(result,"quarantineItems"));
+                foreach(string field in new[]{"rootCoverage","usnVolumes","coverageDetails","coverageBreakdown","privilegedWatcherDetails","responsePathsReadiness","downloadRoots","quarantineDeletions"}){
+                    var rows=AiProvider.List(AiProvider.Get(result,field));summary[field+"Returned"]=rows.Length;summary[field+"Sample"]=Safe(rows.Take(8).ToArray(),0);
+                    Fact(category+"-"+field,new {returned=rows.Length,sent=Math.Min(rows.Length,30),rows=Safe(rows.Take(30).ToArray(),0)});
+                }
+                summary["resources"]=Safe(AiProvider.Get(result,"resources"),0);
                 summary["signatureMaintenance"]=Pick(AiProvider.Get(result,"signatureMaintenance"),new[]{"status","attemptUtc","checkedUtc","updatedUtc","detail"});
                 summary["signatureSchedule"]=Pick(AiProvider.Get(result,"signatureSchedule"),new[]{"enabled","frequency","localTime","weekday","monthDay","timeZone","status","nextRunUtc","lastScheduledRequestUtc"});
                 summary["canaryStatusCounts"]=RowCounts(canaries,"status");
@@ -215,12 +262,15 @@ namespace LinkScope {
             e.Fact("monitor",new {host=Environment.MachineName,utc=e.Utc,cpuAlertPercent=rules.CpuAlertPercent,ramAlertPercent=rules.RamAlertPercent,diskAlertPercent=rules.DiskAlertPercent,lowLifePercent=rules.LowLifePercent});
             e.Read("Recent network probes",()=>e.RecentNetwork(running,now));
             e.Read("Data Integrity",()=>e.SecurityHealth(monitor,"data_integrity",rules.Integrity.Enabled));
-            e.Read("ClamAV Endpoint Protection",()=>e.SecurityHealth(monitor,"endpoint_protection",rules.Endpoint.Enabled));
+            object endpointWrapper=null;
+            e.Read("ClamAV Endpoint Protection",()=>{var snapshot=Decode(monitor.Snapshot(new[]{"endpoint_protection"}));endpointWrapper=AiProvider.Get(AiProvider.Get(snapshot,"categories"),"endpoint_protection");e.SecuritySnapshot("endpoint_protection",endpointWrapper,rules.Endpoint.Enabled);});
+            e.Read("Web Server Protection",()=>e.WebSecurity(endpointWrapper,rules.Endpoint));
             e.Read("Windows health",()=>e.Health(monitor,rules));
             var disabled=Config.Extras.Except(rules.ExtraCategories).ToArray();e.Exact("Optional inventory not enabled",disabled);e.Fact("disabled-inventory",disabled);
             e.Read("Active connections",()=>{var snapshot=Decode(NativeConnections.Snapshot());var rows=AiProvider.List(AiProvider.Get(snapshot,"rows"));
                 var counts=rows.GroupBy(r=>AiProvider.Text(r,"protocol")+"/"+AiProvider.Text(r,"state")).Select(g=>new {type=g.Key,count=g.Count()}).ToArray();
-                var summary=new {total=AiProvider.Get(snapshot,"total"),sampleCount=rows.Length,byState=counts};
+                var summary=new {total=AiProvider.Get(snapshot,"total"),sampleCount=rows.Length,byState=counts,now=AiProvider.Get(snapshot,"now"),scope="Native TCP/UDP snapshot, no web process attribution"};
+                if(Convert.ToInt64(AiProvider.Get(snapshot,"total"))>rows.Length)e.Missing.Add("Active connections (returned rows capped)");
                 e.Exact("Native connection snapshot (counts based on returned rows)",summary);e.Fact("connections-summary",summary);
                 for(int i=0;i<rows.Length;i+=100)e.Fact("connections",new {columns="protocol,local,remote,state",rows=rows.Skip(i).Take(100).Select(r=>new[]{AiProvider.Text(r,"protocol"),AiProvider.Text(r,"local"),AiProvider.Text(r,"remote"),AiProvider.Text(r,"state")}).ToArray()});
             });

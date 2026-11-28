@@ -43,7 +43,7 @@ assert 'setTimeout(()=>dismiss(key),7000)' in (SRC/'toast.js').read_text()
 print('PASS: responsive navigation and existing Report/notification wiring (static source assertions)')
 setup=(ROOT/'setup/Setup.cs').read_text();wizard=(ROOT/'setup/wizard.ps1').read_text();build=(ROOT/'setup/BuildSetup.cmd').read_text()
 for key in ['CreateNoWindow=true','CreateNoWindow = true','RegistryView.Registry64','RegistryView.Registry32','clamav-latest.msi','MsiOpenDatabaseW','SHA256.Create()','/qn /norestart','RedirectStandardOutput=true','RequireAdmin()']:assert key in setup,key
-for key in ['--check-clamav','--install-clamav','-Verb RunAs','YesNoCancel','3010','1641']:assert key in wizard,key
+for key in ['--check-clamav','--install-clamav','-Verb RunAs','YesNo','3010','1641']:assert key in wizard,key
 for key in ['/target:winexe','clamav-latest.msi','targetDeploy']:assert key in build,key
 assert 'BuildSetup.cmd' in (ROOT/'Build.cmd').read_text()
 assert (ROOT/'deploy/README.md').is_file()

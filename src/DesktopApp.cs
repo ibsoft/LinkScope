@@ -107,12 +107,43 @@ namespace LinkScope {
                 Console.WriteLine("Desktop web app shortcut: "+dest);
             }finally{if(File.Exists(tmp))File.Delete(tmp);}
         }
+        // Migrate only known legacy product shortcut names in shared shell folders, and only
+        // when their resolved target is exactly the installed service binary. Never delete an EXE.
+        static void RemoveLegacyServiceLinks(object shell,string folder) {
+            if(String.IsNullOrEmpty(folder)||!Directory.Exists(folder)||IsLink(folder))return;
+            string expected=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"LinkScope","LinkScope.exe");
+            foreach(string name in new[]{"LinkScope.lnk","LinkScope.exe.lnk","LinkScope Service.lnk","LinkScope.exe - Shortcut.lnk","LinkScope - Shortcut.lnk"}) {
+                string path=Path.Combine(folder,name);if(!File.Exists(path)||IsLink(path))continue;
+                object link=null;bool legacy=false;
+                try {
+                    link=Invoke(shell,"CreateShortcut",BindingFlags.InvokeMethod,path);
+                    string target=Convert.ToString(Invoke(link,"TargetPath",BindingFlags.GetProperty));
+                    if(!String.IsNullOrWhiteSpace(target)&&Path.IsPathRooted(target))legacy=Same(Path.GetFullPath(target),expected);
+                } finally {Release(link);}
+                if(legacy){File.Delete(path);Console.WriteLine("Removed legacy service shortcut: "+path);}
+            }
+        }
         static string[] ShortcutFolders() {return new[]{Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory),Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms)}.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();}
         static object Shell() {return Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid("72C24DD5-D70A-438B-8A42-98424B88AFB8")));}
         internal static void Provision(bool managedPwa) {
             string origin;try{origin=Origin();}catch(Exception ex){Console.Error.WriteLine("Desktop integration warning: "+ex.Message);return;}
             object shell=null;
-            try{string browser=Browser(false);PrepareIcon();shell=Shell();foreach(string folder in ShortcutFolders())try{Publish(shell,folder,browser,origin);}catch(Exception ex){Console.Error.WriteLine("Desktop shortcut warning: "+ex.Message);}}
+            try {
+                string browser=Browser(false);PrepareIcon();shell=Shell();
+                string desktop=Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
+                foreach(string folder in ShortcutFolders())try {
+                    RemoveLegacyServiceLinks(shell,folder);
+                    if(Same(folder,desktop)&&browser==null) {
+                        // A normal URL is not an app window; keep fallback in Start only.
+                        if(!String.IsNullOrEmpty(folder)&&Directory.Exists(folder)&&!IsLink(folder))foreach(string name in new[]{"LinkScope.url","LinkScope.lnk"}) {
+                            string path=Path.Combine(folder,name);if(OwnedShortcut(shell,path))File.Delete(path);
+                        }
+                        Console.WriteLine("Desktop app shortcut skipped: supported browser unavailable. Start menu URL fallback only.");
+                        continue;
+                    }
+                    Publish(shell,folder,browser,origin);
+                } catch(Exception ex){Console.Error.WriteLine("Desktop shortcut warning: "+ex.Message);}
+            }
             catch(Exception ex){Console.Error.WriteLine("Desktop integration warning: "+ex.Message);}
             finally{Release(shell);}
             if(managedPwa)try{RegisterEdge(origin);}catch(Exception ex){Console.Error.WriteLine("Managed PWA not registered: "+ex.Message);}

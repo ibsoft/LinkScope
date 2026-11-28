@@ -1,3 +1,9 @@
+# V69 — Guided deployment center
+
+For normal installation, run **LinkScopeSetup.exe** without arguments from a normal Windows desktop. Choose **Install automatically** (or **Upgrade automatically**). Setup discovers the service and antivirus state, authenticates the local or official online ClamAV package if necessary, configures the engine, deploys LinkScope and checks readiness. The complete manual operation inventory is available under **Advanced / manual**. Administrator approval and trusted GnuPG are still required where applicable. See [V69 setup release and acceptance notes](SETUP-V69.md).
+
+The shared desktop receives only the browser app-mode launcher (Edge or Chrome). Managed Edge PWA registration is optional and applied by Edge at browser launch; Setup never publishes a desktop shortcut targeting the service executable. If a supported browser is unavailable, the owned URL fallback remains in the Start menu only.
+
 # Build notice — Windows 11 installer update
 
 This source archive intentionally excludes old compiled executables. Rebuild using `Build-VisualStudio.cmd Release` (Visual Studio with .NET Framework 4.8 targeting pack) or `Build.cmd` before running setup. The legacy native bootstrap is retired. See [ClamAV removal](CLAMAV-SETUP.md).
@@ -6,7 +12,7 @@ This source archive intentionally excludes old compiled executables. Rebuild usi
 
 Read the [administrator guide](docs/README.md) for installation, uninstallation, network alert rules, searching and paging alert history, module logging, syslog and SIEM forwarding (Seq, Wazuh, Elasticsearch), dashboard service restart, AI Assist, security posture, SMTP email and test delivery, JSON file retention, System health graphs, the full PDF report, HTTPS and the API.
 
-Extract the package, open **64-bit PowerShell as Administrator**, and run:
+For the retained service-only command-line installation, open **64-bit PowerShell as Administrator** and run (this bypasses the guided antivirus workflow):
 
 ```powershell
 .\LinkScopeSetup.exe --install
@@ -189,3 +195,16 @@ V67 extends the full validation suite with temporary enrolled-canary watcher and
 ### V68 controlled termination validation
 
 Full security validation includes a fixed owned-child process exit test and separately reports actual malicious-process containment as unverified. The production response now verifies exit on the retained process handle. See [V68 production acceptance record](ENDPOINT-PROTECTION-V68.md) for safeguards, regression results and Windows acceptance requirements.
+
+
+### V70 protection status reconciliation
+See [ENDPOINT-PROTECTION-V70.md](ENDPOINT-PROTECTION-V70.md) for the narrow historical signature warning recovery, distinct scan coverage counts and current status reasons. Existing operational and security evidence is preserved.
+
+### V73 endpoint coverage recovery
+See [V73 recovery and verification notes](ENDPOINT-PROTECTION-V73.md).
+
+### V74 USN historical path recovery
+See [V74 recovery and verification notes](ENDPOINT-PROTECTION-V74.md).
+
+### V75 individual alert review and coverage verification
+See [V75 alert review and verification notes](ENDPOINT-PROTECTION-V75.md).

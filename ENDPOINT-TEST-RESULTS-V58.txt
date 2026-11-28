@@ -1,9 +1,0 @@
-V58 validation (Linux environment; Chromium mock API, source checks)
-PASS tests/validate_guided_test_center_v58.py — six-stage routing, evidence separation, session review, no manual auto-pass, viewer control visibility, all stages 320–1440 px in both themes.
-PASS tests/validate_live_audit_v56.py — static scope and privilege safeguards, real browser confirmation/cancellation, audit pass/review/error/stale UI, safe text and responsive layout.
-PASS tests/validate_containment_test_center_v48.py — static diagnostic isolation and API authorization, actual renderer with simulated API, error/stale evidence navigation.
-PASS tests/validate_endpoint_workspace_v45.py — endpoint overview, tab routing, evidence navigation, scanner state, responsiveness, source wiring.
-PASS tests/validate_signature_versions_v57.py — version-aware signature source checks and DNS ABI layout model (not native API execution).
-PASS node --check src/app.js.
-Existing browser fixtures adjusted to navigate the new steps; the V48 static extraction is limited to the diagnostic method rather than including the later live probe. V57 version check now accepts later releases.
-Native Windows compilation, installation, event generation and production containment were not performed. Full historical regression suite not rerun.

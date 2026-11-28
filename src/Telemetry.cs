@@ -21,6 +21,7 @@ namespace LinkScope {
         internal object ResetEndpointHistory(){var result=endpoint.RequestHistoryReset();endpointWake.Set();return result;}
         internal object EndpointHistoryResetStatus(){return endpoint.HistoryResetStatus();}
 
+        internal object QuarantineWebFinding(EndpointSettings policy,string findingId,string hash,string actor,string ip,Func<bool> authorized){var result=endpoint.QuarantineWebFinding(policy,findingId,hash,actor,ip,stop,authorized);endpointWake.Set();return result;}
         internal object QuarantineStatus(){return endpoint.QuarantineStatus();}
         internal object DeleteQuarantine(string[] ids,string actor,string ip){var result=endpoint.DeleteQuarantine(ids,actor,ip);endpointWake.Set();return result;}
         internal void CreateEndpointCanaries(EndpointSettings policy,string directory){endpoint.CreateManagedCanaries(policy,directory);}
@@ -50,12 +51,13 @@ namespace LinkScope {
         internal void Update(Config c){lock(gate){cfg=c; foreach(var key in values.Keys.Except(c.CollectedCategories()).Concat(new[]{"smart","events","event_details"}).Distinct().ToArray()){values.Remove(key);times.Remove(key);}}refresh.Set();refreshExtra.Set();refreshFast.Set();integrityWake.Set();endpointWake.Set();}
         internal object Snapshot(IEnumerable<string> names){return Snapshot(names,false);}
         internal object ReportSnapshot(IEnumerable<string> names){return Snapshot(names,true);}
-        object Snapshot(IEnumerable<string> names,bool includeNetwork){lock(gate){
+        internal object EndpointSnapshot(){return Snapshot(new[]{"endpoint_protection"},false,true);}
+        object Snapshot(IEnumerable<string> names,bool includeNetwork,bool showRead=false){lock(gate){
             var data=new Dictionary<string,object>();long now=History.Now();
             foreach(var n in names){if((n=="endpoint_protection"&&!cfg.Endpoint.Enabled)||(n=="data_integrity"&&!cfg.Integrity.Enabled)){data[n]=new {status="disabled",result=new {status="disabled",items=new object[0]}};continue;}object value;if(!values.TryGetValue(n,out value)){data[n]=n=="data_integrity"?(object)new {status="collecting",activity=integrity.Activity(cfg.Integrity)}:n=="endpoint_protection"?(object)new {status="collecting",activity=endpoint.WorkerActivity()}:new {status="collecting"};continue;}
                 long age=now-times[n];long expected=n=="endpoint_protection"?30:n=="data_integrity"?cfg.Integrity.IntervalSeconds:(n=="cpu"||n=="ram"||n=="disk_usage")?cfg.ResourceSeconds:cfg.InventoryMinutes*60;
                 data[n]=n=="data_integrity"?(object)new {collectedUtc=Utc(times[n]),ageSeconds=age,stale=age>expected*2+60,result=value,activity=integrity.Activity(cfg.Integrity)}:n=="endpoint_protection"?(object)new {collectedUtc=Utc(times[n]),ageSeconds=age,stale=age>expected*2+60,result=value,activity=endpoint.WorkerActivity()}:new {collectedUtc=Utc(times[n]),ageSeconds=age,stale=age>expected*2+60,result=value};}
-            return new {schemaVersion=1,monitorHost=Environment.MachineName,generatedUtc=Utc(now),categories=data,alerts=alerts.List(includeNetwork?names.Concat(new[]{"network"}):names,false)};}}
+            return new {schemaVersion=1,monitorHost=Environment.MachineName,generatedUtc=Utc(now),categories=data,alerts=alerts.List(includeNetwork?names.Concat(new[]{"network"}):names,showRead)};}}
         internal static string Utc(long seconds){return new DateTime(1970,1,1,0,0,0,DateTimeKind.Utc).AddSeconds(seconds).ToString("o");}
         static object Unavailable(){return new {status="unavailable",items=new object[0]};}
         void ReadFast(string name,Func<object> read){object result;try{result=read();}catch(Exception ex){AppJournal.Fault("Health",name,ex);result=Unavailable();}

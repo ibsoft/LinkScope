@@ -102,7 +102,7 @@
         button.addEventListener('click',e=>{e.stopPropagation();openAlert(a,button);});cell.append(button);node.classList.add('ls-alert-clickable');
         node.addEventListener('click',e=>{if(e.target.closest('button,a,input,select,textarea,label')||window.getSelection()?.toString())return;openAlert(a,button);});
     }
-    window.LinkScopeToast={openAlert,attachAlertRow,message:(level,title,text)=>show('ui:'+title,level,title,text),brand,categoryRead:(category,cutoff)=>{applyCategoryRead(category,cutoff);keep(localStorage,readSignal,{category,through:cutoff,at:Date.now()});poll();}};
+    window.LinkScopeToast={openAlert,attachAlertRow,message:(level,title,text)=>show('ui:'+title,level,title,text),brand,individualRead:(id)=>{dismiss(id);keep(localStorage,readSignal,{id,at:Date.now()});poll();},categoryRead:(category,cutoff)=>{applyCategoryRead(category,cutoff);keep(localStorage,readSignal,{category,through:cutoff,at:Date.now()});poll();}};
     if(document.body.dataset.page==='login')return;
     guestReads=stored(localStorage,'linkscope.read-alerts.v1',[]);guestSeen=stored(sessionStorage,'ls-guest-seen',[]);
     // The authenticated response already contains all controls and initial unread count.
