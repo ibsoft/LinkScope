@@ -289,7 +289,7 @@ async function refreshMaintenance(){try{showMaintenanceStatus(await request('/ui
 async function runMaintenance(){if(formDirty){notice('Save settings before running database cleanup.','error');return;}if(!(await confirmAction('Run database cleanup?', 'Records older than the saved retention period will be permanently deleted. Make sure you have a current backup.', 'Delete old records', true)))return;try{await request('/ui/database-maintenance',{});notice('Database cleanup queued.');await refreshMaintenance();}catch(ex){failure(ex);}}
 const integrityLines=id=>byId(id).value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
 function readIntegrity(){return {Enabled:byId('IntegrityEnabled').checked,IntervalSeconds:Number(byId('IntegrityInterval').value),Recursive:byId('IntegrityRecursive').checked,WriteEvents:byId('IntegrityWriteEvents').checked,Paths:integrityLines('IntegrityPaths'),ExcludedPaths:integrityLines('IntegrityExcludedPaths'),ExcludedPatterns:integrityLines('IntegrityExcludedPatterns')};}
-const endpointFlags=['WebProtectionEnabled','WebProcessAuditEnabled','Enabled','WriteEvents','RealTime','ProcessCorrelation','SignatureScheduleEnabled','MetadataFastCache','BackgroundPauseOnBusyDisk','BackgroundPauseOnBattery','BackgroundPauseOnLowMemory'];
+const endpointFlags=['WebManualQuarantineEnabled','WebProtectionEnabled','WebProcessAuditEnabled','Enabled','WriteEvents','RealTime','ProcessCorrelation','SignatureScheduleEnabled','MetadataFastCache','BackgroundPauseOnBusyDisk','BackgroundPauseOnBattery','BackgroundPauseOnLowMemory'];
 const endpointNumbers={IntervalSeconds:'EndpointInterval',ChangeThreshold:'EndpointThreshold',Port:'EndpointPort',MaxFileMiB:'EndpointMaxFileMiB',BackgroundReadMiB:'EndpointBackgroundReadMiB',BehaviorWindowSeconds:'EndpointBehaviorWindowSeconds',ExtendedEntropyWindowSeconds:'EndpointExtendedEntropyWindowSeconds',ExtendedEntropyThreshold:'EndpointExtendedEntropyThreshold',EntropyMinimumSampleBytes:'EndpointEntropyMinimumSampleBytes',EntropyMinimumCurrent:'EndpointEntropyMinimumCurrent',EntropyMinimumIncrease:'EndpointEntropyMinimumIncrease',MemoryMinimumAvailableMiB:'EndpointMemoryMinimumAvailableMiB',MemoryMinimumAvailablePercent:'EndpointMemoryMinimumAvailablePercent',BackgroundBatchSize:'EndpointBackgroundBatchSize',SignatureMemoryDeferralMinutes:'EndpointSignatureMemoryDeferralMinutes'};
 const endpointArrays=['WebPaths','Paths','ExcludedPaths','BackgroundExcludedPaths','ExcludedPatterns','CanaryPaths','ResponsePaths','TestPaths','ContainmentExecutables'];
 function fillEndpoint(c){const e=c.Endpoint;for(const k of endpointFlags)byId('Endpoint'+k).checked=!!e[k];for(const [k,id] of Object.entries(endpointNumbers))byId(id).value=e[k];for(const k of endpointArrays)byId('Endpoint'+k).value=(e[k]||[]).join('\n');byId('EndpointMode').value=e.Mode;byId('EndpointTrustedEnginePath').value=e.TrustedEnginePath||'';byId('EndpointTrustedEngineSha256').value=e.TrustedEngineSha256||'';byId('EndpointSignatureScheduleFrequency').value=e.SignatureScheduleFrequency||'daily';byId('EndpointSignatureScheduleTime').value=e.SignatureScheduleTime||'03:00';byId('EndpointSignatureScheduleWeekday').value=String(e.SignatureScheduleWeekday??1);byId('EndpointSignatureScheduleMonthDay').value=e.SignatureScheduleMonthDay??1;signatureScheduleFields();}
@@ -899,7 +899,7 @@ function renderWebProtection(v){
     replace(paths,webPaths,()=>webPaths.length?webPaths.map(p=>{const row=element('div');row.className='ep-web-path-row';row.append(element('strong',p));return row;}):[element('p','No web paths configured.')]);
     byId('ep-web-last').textContent='Last supplemental script check: '+(w.lastScriptCheckUtc?localEndpointDate(w.lastScriptCheckUtc):'Not recorded');
     const history=byId('ep-web-history');if(history)history.textContent=typeof w.historicalAuditLimitation==='string'&&w.historicalAuditLimitation?('Historical limitation (not an active coverage failure): '+w.historicalAuditLimitation):'';
-    const checks=[['Shared scanner',r.engineOnline===true?'Online':r.engineOnline===false?'Offline':'Unverified',r.engineOnline===true?'ok':r.engineOnline===false?'review':'unknown'],['Protected-scope baseline',sharedIssues?'Review coverage':sharedVerified?'Complete':'Verification pending',sharedIssues?'review':sharedVerified?'ok':'unknown'],['Process audit',w.processAuditEnabled===true?(w.processAuditState||'Unverified'):w.processAuditEnabled===false?'Disabled':'Unverified',auditUnavailable?'review':auditAvailable?'ok':'unknown']];
+    const checks=[['Shared scanner',r.engineOnline===true?'Online':r.engineOnline===false?'Offline':'Unverified',r.engineOnline===true?'ok':r.engineOnline===false?'review':'unknown'],['Protected-scope baseline',sharedIssues?'Review coverage':sharedVerified?'Complete':'Verification pending',sharedIssues?'review':sharedVerified?'ok':'unknown'],['Manual web quarantine',w.manualQuarantineEnabled===true?'Administrator approval required':w.manualQuarantineEnabled===false?'Disabled':'Unverified','unknown'],['Process audit',w.processAuditEnabled===true?(w.processAuditState||'Unverified'):w.processAuditEnabled===false?'Disabled':'Unverified',auditUnavailable?'review':auditAvailable?'ok':'unknown']];
     replace(monitor,checks,()=>checks.map(([name,value,kind])=>{const row=element('div');row.className='ep-web-monitor-row';row.append(element('strong',name),healthBadge(value,kind));return row;}));
 }
 function endpointOverview(v,activeAlerts){
@@ -990,14 +990,15 @@ function endpointAlertActions(cell,a,tr){
             e.stopPropagation();
             if(endpointAlertActionsBusy.size||endpointAckBusy)return;
             endpointAlertActionsBusy.add(a.id);endpointReviewPointer=false;
-            const reading=action==='read',original=b.textContent;
+            const reading=action==='read',quarantining=action==='quarantine',original=b.textContent;
             if(reading){endpointAckEpoch++;endpointAckBusy=true;}endpointAckControls();
             const actionButtons=[...byId('endpoint-alert-review-rows').querySelectorAll('button[data-ep-alert-action]')];actionButtons.forEach(button=>button.disabled=true);
             b.textContent=reading?'Acknowledging…':'Preparing…';
             let submitted=false,accepted=false;
             try{
-                if(!reading&&!(await confirmAction('Retry coverage verification?','Request verification of the configured protected directories. If a baseline is running, a follow-up may be scheduled. No findings, counters, policies or evidence are reset.','Retry verification')))return;
-                submitted=true;b.textContent=reading?'Acknowledging…':'Requesting…';endpointAlertFeedback(reading?'Saving acknowledgement…':'Requesting protected-directory verification…');
+                if(quarantining&&!(await confirmAction('Quarantine suspicious web script?',a.message+'\nThis removes the original file if verified and may disrupt the application. Sealed evidence is retained. This is not a confirmed malware verdict.','Quarantine',true)))return;
+                if(!reading&&!quarantining&&!(await confirmAction('Retry coverage verification?','Request verification of the configured protected directories. If a baseline is running, a follow-up may be scheduled. No findings, counters, policies or evidence are reset.','Retry verification')))return;
+                submitted=true;b.textContent=reading?'Acknowledging…':'Requesting…';endpointAlertFeedback(reading?'Saving acknowledgement…':quarantining?'Verifying and sealing the selected script…':'Requesting protected-directory verification…');
                 if(reading){
                     const ack=await request('/ui/endpoint-alert-read',{id:a.id});
                     if(!ack||typeof ack.unread!=='number'||typeof ack.activeUnread!=='number')throw new Error('Acknowledgement response was incomplete. Refresh to verify the result.');
@@ -1005,6 +1006,13 @@ function endpointAlertActions(cell,a,tr){
                     try{window.LinkScopeToast?.individualRead?.(a.id);}catch(e){console.warn('Alert notification synchronization failed',e);}
                     endpointAlertReviewNotes.set(a.id,{state:'info',text:'Acknowledged · finding remains active'});
                     endpointAlertFeedback('Alert acknowledged. Active protection findings remain unchanged.','success');
+                }else if(quarantining){
+                    const hash=(a.message||'').match(/ · SHA-256: ([a-f0-9]{64})$/)?.[1];
+                    if(!hash)throw new Error('Exact SHA-256 is unavailable. Refresh evidence.');
+                    const response=await request('/ui/endpoint-web-quarantine',{id:a.id,hash});
+                    if(response?.quarantined!==true)throw new Error('Original removal was not verified. Check evidence.');
+                    accepted=true;endpointAlertReviewNotes.set(a.id,{state:'info',text:'Quarantined · original removal verified'});
+                    endpointAlertFeedback('Suspicious script quarantined. '+response.detail,'success');
                 }else{
                     const response=await request('/ui/endpoint-alert-retry',{id:a.id});
                     if(response?.accepted!==true)throw new Error('The service did not confirm the verification request.');
@@ -1023,6 +1031,7 @@ function endpointAlertActions(cell,a,tr){
         group.append(b);
     };
     if(a.read===false)add('Acknowledge','read');
+    if(a.title==='Suspicious web script'&&a.severity==='warning'&&endpointLastSample?.result?.webProtection?.manualQuarantineEnabled===true&&/ · SHA-256: [a-f0-9]{64}$/.test(a.message||''))add('Quarantine','quarantine');
     if(a.severity==='warning'&&endpointRetryTitles.has(a.title))add('Retry verification','retry');
     if(note){const text=element('small',note.text);text.className='ep-alert-action-note';text.dataset.state=note.state;cell.append(text);}
 }
@@ -1037,7 +1046,7 @@ function renderEndpointAlertReview(records){
     }
     if(endpointReviewPointer||endpointAlertActionsBusy.size||endpointAckBusy)return;
     const items=endpointReviewRecords.map(a=>endpointConfirmedReads.has(a.id)?{...a,read:true}:a);
-    const key=JSON.stringify([!!csrf,items,Array.from(endpointAlertReviewNotes)]);if(key===endpointReviewKey)return;
+    const key=JSON.stringify([!!csrf,endpointLastSample?.result?.webProtection?.manualQuarantineEnabled,items,Array.from(endpointAlertReviewNotes)]);if(key===endpointReviewKey)return;
     const focused=document.activeElement,focusId=focused?.dataset?.epAlertId,focusAction=focused?.dataset?.epAlertAction;
     const search=focused?.dataset?.healthSearch,selection=search?[focused.selectionStart,focused.selectionEnd]:null;
     endpointReviewKey=key;byId('endpoint-alert-review-title').textContent='Active alert diagnostics ('+items.length+')';
@@ -1356,7 +1365,7 @@ async function renderHealth(){
     const localDate=(value,fallback='Not recorded')=>value&&Number.isFinite(Date.parse(value))?new Date(value).toLocaleString():fallback;
     const healthRequest=page==='endpoint'?++endpointHealthIssued:0;
     const data=await request(page==='endpoint'?'/ui/endpoint':page==='integrity'?'/ui/integrity':'/ui/system');
-    if(page==='endpoint'){if(healthRequest<endpointHealthApplied)return;endpointHealthApplied=healthRequest;const alertFreshness=byId('endpoint-alert-review-freshness');if(alertFreshness)alertFreshness.textContent='';if(Array.isArray(data.alerts))renderEndpointAlertReview(data.alerts);else if(alertFreshness)alertFreshness.textContent='Alert records missing from response. Showing last received records.';}
+    if(page==='endpoint'){if(healthRequest<endpointHealthApplied)return;endpointHealthApplied=healthRequest;endpointLastSample=data.categories?.endpoint_protection;const alertFreshness=byId('endpoint-alert-review-freshness');if(alertFreshness)alertFreshness.textContent='';if(Array.isArray(data.alerts))renderEndpointAlertReview(data.alerts);else if(alertFreshness)alertFreshness.textContent='Alert records missing from response. Showing last received records.';}
     if(page==='integrity')integrityActivity(data.categories?.data_integrity,data.generatedUtc);
     if(page==='endpoint'){
         if(!epAckPending){epAckPending=true;const epoch=endpointAckEpoch;request('/ui/endpoint-ack').then(ack=>{if(!endpointAckBusy&&epoch===endpointAckEpoch)endpointAck=ack;endpointAckControls();}).catch(()=>{}).finally(()=>{epAckPending=false;});}

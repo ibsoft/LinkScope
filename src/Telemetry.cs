@@ -21,6 +21,7 @@ namespace LinkScope {
         internal object ResetEndpointHistory(){var result=endpoint.RequestHistoryReset();endpointWake.Set();return result;}
         internal object EndpointHistoryResetStatus(){return endpoint.HistoryResetStatus();}
 
+        internal object QuarantineWebFinding(EndpointSettings policy,string findingId,string hash,string actor,string ip,Func<bool> authorized){var result=endpoint.QuarantineWebFinding(policy,findingId,hash,actor,ip,stop,authorized);endpointWake.Set();return result;}
         internal object QuarantineStatus(){return endpoint.QuarantineStatus();}
         internal object DeleteQuarantine(string[] ids,string actor,string ip){var result=endpoint.DeleteQuarantine(ids,actor,ip);endpointWake.Set();return result;}
         internal void CreateEndpointCanaries(EndpointSettings policy,string directory){endpoint.CreateManagedCanaries(policy,directory);}

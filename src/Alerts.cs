@@ -134,6 +134,14 @@ namespace LinkScope {
         internal static bool EndpointVerificationAllowed(HealthAlert a){
             return a!=null&&!a.Resolved&&a.Category=="endpoint_protection"&&a.Severity=="warning"&&new[]{"USN journal coverage gap","USN journal unavailable","Watcher coverage incomplete","Real-time queue overflow","Scan incomplete","File scan coverage incomplete","File scan error","File scan limited","Engine scan incomplete","Protected path unavailable","Scan traversal limit reached","endpoint_protection coverage is partial","endpoint_protection coverage is unavailable"}.Contains(a.Title,StringComparer.Ordinal);
         }
+        internal string WebQuarantineFinding(string id,string hash){
+            lock(this){
+                var a=current.Values.FirstOrDefault(x=>x.Category=="endpoint_protection"&&x.Id==id);
+                const string prefix="endpoint_protection/";
+                if(a==null||a.Resolved||a.Severity!="warning"||a.Title!=WebServerProtection.Finding||!a.Key.StartsWith(prefix,StringComparison.Ordinal)||!a.Message.EndsWith(" · SHA-256: "+hash,StringComparison.Ordinal))throw new HttpError(409,"The selected suspicious script alert or SHA-256 is no longer current.");
+                return a.Key.Substring(prefix.Length);
+            }
+        }
         internal void ValidateEndpointVerification(string id){
             lock(this){
                 if(string.IsNullOrEmpty(id)||id.Length>128)throw new HttpError(400,"Invalid endpoint alert ID.");

@@ -126,6 +126,7 @@
   },
   "Endpoint": {
     "WebProtectionEnabled": false,
+    "WebManualQuarantineEnabled": false,
     "WebProcessAuditEnabled": false,
     "WebPaths": [],
     "Enabled": false,

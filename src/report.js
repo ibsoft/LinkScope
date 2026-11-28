@@ -359,6 +359,7 @@ const LinkScopeReport = (() => {
         else {
             await line('Assessment: '+scalar(assessment.assessment),{font:bold,fill:assessment.assessment==='Requires attention'?orange:muted});
             await line('Endpoint enabled: '+scalar(assessment.endpointEnabled)+' / Web script inspection enabled: '+scalar(assessment.enabled)+' / Process audit enabled: '+scalar(assessment.processAuditEnabled));
+            await line('Administrator-approved suspicious script quarantine: '+scalar(assessment.manualQuarantineEnabled));
             await line('Telemetry: '+scalar(assessment.collectedUtc)+' / Fresh: '+scalar(assessment.fresh)+' / Matches current policy: '+scalar(assessment.telemetryPolicyMatches));
             await line('Shared scanner: '+scalar(assessment.sharedScannerStatus)+' / Baseline verified: '+scalar(assessment.sharedBaselineVerified)+' / Configured paths covered: '+scalar(assessment.configuredPathsCovered));
             await line('Last script inspection: '+scalar(assessment.lastScriptCheckUtc)+' / Process audit: '+scalar(assessment.processAuditState));
@@ -371,7 +372,7 @@ const LinkScopeReport = (() => {
             for(const path of assessment.configuredPaths||[])await line(path,{indent:8});
             await line('Coverage and limitations: '+scalar(assessment.limitations),{fill:muted});
             await line('Supplemental script limit: '+scalar(assessment.scriptInspectionLimitBytes)+' bytes. A heuristic finding does not confirm malware. Acknowledgement does not resolve a finding.',{fill:muted});
-            const webChanges=new Set(['Suspicious web script','Web script inspection incomplete','Suspicious web server child process','Web process audit unavailable','Web process audit history gap']);
+            const webChanges=new Set(['Suspicious web script quarantined','Suspicious web script','Web script inspection incomplete','Suspicious web server child process','Web process audit unavailable','Web process audit history gap']);
             const active=(er.items||[]).filter(x=>webChanges.has(x.change));const recent=(er.recentIncidents||[]).filter(x=>webChanges.has(x.change));
             await line('Active finding details (returned '+active.length+'; global snapshot truncated: '+scalar(assessment.activeSnapshotTruncated)+')',{font:bold});
             if(!active.length)await line('No matching detail rows returned. Refer to reported counts and coverage; empty rows are not proof of absence.',{fill:muted});
