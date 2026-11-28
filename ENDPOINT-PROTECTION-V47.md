@@ -1,0 +1,19 @@
+# LinkScope V47
+
+## Independent signature provider maintenance
+
+The standard local FreshClam automatic service is configured for official database checks (24 checks/day) and contains no DatabaseCustomURL directives after successful migration. Approved custom feeds are grouped by HTTPS hostname, with a default 24-hour interval and configurable 1–720-hour intervals. This is generic; no provider-specific rules are hardcoded. Use the elevated local LinkScope Setup > Third-party signature sources editor and its hostname=hours box. Existing sources and database files are preserved. Migration conservatively waits at least 24 hours (or the configured longer interval); existing cooldowns are never shortened. Adding/updating sources is supported; there is no provider deletion workflow in this release.
+
+The worker reserves the attempt and a conservative cooldown in protected persistent storage before launching FreshClam. A completed, failed or interrupted attempt cannot bypass the saved cooldown merely by restarting the monitoring service. One eligible hostname is processed per maintenance invocation; the existing global 60-minute request gate still applies, so simultaneous due providers may run later. The official automatic updater is briefly stopped during serialized maintenance, then restarted after verification. Custom updates use `--update-db=custom` and `MaxAttempts 1`. The official updater continues to check separately. Changed signatures trigger a reload request; per-provider successful batch checks do not prove that every feed changed or loaded. The dashboard reports provider batch status, interval, last attempt, last successful check and next eligible attempt. It never includes the provider URL or credentials. Nonstandard ClamAV configurations require administrator review rather than automatic migration. If migration fails after stopping the updater, it can remain stopped deliberately to avoid violating provider limits; review Setup and restart only after separation is verified. Native Windows and real provider integration tests are pending.
+
+## Branding
+
+New application branding, event sources, scheduled tasks and certificate friendly names use LinkScope without the retired company label. Existing brand labels containing the retired name are cleared on validation. Upgrade code recognizes and removes the old LinkScope task names only when the executable and arguments match the expected installed application. Historical records are retained verbatim; migration/recognition code retains the old identifier only as needed for compatibility. User-defined unrelated branding remains available. Do not manually delete historical security evidence to change a label.
+
+## Alert investigation
+
+Click an alert row or its View details button in Alert History or Endpoint Protection active alert diagnostics. The responsive, keyboard-accessible modal shows severity, lifecycle, recorded timestamp, alert ID, read state, a rule-based plain-language explanation, the original stored message, and suggested investigation. The evidence is displayed as literal text. Missing evidence is explicitly identified. No AI service or extra data submission is involved. Opening the modal does not acknowledge the alert. Older grouped alerts may contain only summarized evidence; the modal cannot recover information never collected. The related dashboard link is for current context, not a reconstruction of historical conditions.
+
+## Upgrade
+
+Extract the complete source ZIP and run Rebuild-VisualStudio.cmd Release, then install the generated setup. Existing protection scope, response permissions, detection policies and quarantine records are not intentionally changed. This does not resolve existing Windows ACL problems on approved response paths. Verify all services and provider schedule status after upgrading; native compilation and live migration have not been tested here.

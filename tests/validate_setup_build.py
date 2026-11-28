@@ -13,7 +13,7 @@ assert field(setup,'PlatformTarget') == 'x64'
 assert field(setup,'AssemblyName') == 'LinkScopeSetup'
 assert field(setup,'TargetFrameworkVersion') == field(main,'TargetFrameworkVersion') == 'v4.8'
 assert (ROOT/'setup'/field(setup,'ApplicationIcon').replace('\\','/')).is_file()
-assert [n.attrib['Include'] for n in setup.findall('.//m:Compile',ns)] == ['Setup.cs',r'..\src\CanaryTemplates.cs',r'..\src\ClamUpdateWorker.cs','ClamSetup.cs','ClamSignature.cs']
+assert [n.attrib['Include'] for n in setup.findall('.//m:Compile',ns)] == ['Setup.cs','EndpointPermissions.cs',r'..\src\CanaryTemplates.cs',r'..\src\ClamUpdateWorker.cs','ClamSetup.cs','ClamSignature.cs']
 resources = {n.attrib['Include']: n.find('m:LogicalName',ns).text for n in setup.findall('.//m:EmbeddedResource',ns)}
 assert resources == {'$(LinkScopePayload)':'LinkScope.exe', 'wizard.ps1':'wizard.ps1','cisco-talos.gpg':'cisco-talos.gpg'}
 assert not setup.findall('.//m:ProjectReference',ns)

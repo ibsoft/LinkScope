@@ -5,7 +5,7 @@ root=Path(__file__).resolve().parents[1]
 setup=(root/'setup/Setup.cs').read_text(); clam=(root/'setup/ClamSetup.cs').read_text(); wizard=(root/'setup/wizard.ps1').read_text()
 ns={'m':'http://schemas.microsoft.com/developer/msbuild/2003'}
 project=ET.parse(root/'setup/LinkScope.Setup.csproj')
-assert set(n.attrib['Include'] for n in project.findall('.//m:Compile',ns)) == {'Setup.cs','ClamSetup.cs','ClamSignature.cs',r'..\src\CanaryTemplates.cs',r'..\src\ClamUpdateWorker.cs'}
+assert set(n.attrib['Include'] for n in project.findall('.//m:Compile',ns)) == {'Setup.cs','EndpointPermissions.cs','ClamSetup.cs','ClamSignature.cs',r'..\src\CanaryTemplates.cs',r'..\src\ClamUpdateWorker.cs'}
 batch=(root/'setup/BuildSetup.cmd').read_text()
 for key in ['ClamSetup.cs','System.ServiceProcess.dll','/target:winexe']:assert key in batch,key
 assert project.find('.//m:Reference[@Include="System.ServiceProcess"]',ns) is not None
@@ -14,7 +14,7 @@ assert 'if(verb=="--check-clamav")return CheckClamAvForWizard();' in setup
 assert 'if(before!=ClamMissing && before!=ClamPartial)return ConfigureClamAv(log)' in setup
 assert 'if(installed!=0)return installed' in setup
 assert 'if(verb=="--configure-clamav")return ConfigureClamAv(log)' in setup
-for key in ['TCPAddr 127.0.0.1','TCPSocket 3310','StreamMaxLength 100M','MaxFileSize 100M','MaxScanSize 200M','AlertExceedsMax yes','BytecodeSecurity TrustSigned','DatabaseMirror database.clamav.net','TestDatabases yes','Checks 12','NotifyClamd','LogFileMaxSize 10M','LogRotate yes']:
+for key in ['TCPAddr 127.0.0.1','TCPSocket 3310','StreamMaxLength 100M','MaxFileSize 100M','MaxScanSize 200M','AlertExceedsMax yes','BytecodeSecurity TrustSigned','DatabaseMirror database.clamav.net','TestDatabases yes','Checks 24','NotifyClamd','LogFileMaxSize 10M','LogRotate yes']:
     assert key in clam,key
 for key in ['StandardRegistryPaths','NativeService','VerifyClamTree','ReparsePoint','FileMode.CreateNew','File.Replace(temp,path,backup)','File.Move(temp,path)','FreshClamProcessPresent','if(ServiceImage(name)==null)RunClamTool','--install-service','start= auto','GetExtendedTcpTable','QueryServiceStatusEx','LoopbackOnly','OwnsConnection','ClamCommand("PING")','ClamCommand("VERSION")','ClamCommand("INSTREAM")','CheckClamAv(log)','WaitForStatus','CreateNoWindow=true','900000','DatabaseCustomURL','ClamStale']:
     assert key in clam,key

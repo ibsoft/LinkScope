@@ -145,7 +145,7 @@ internal static partial class Setup {
         if(result==0&&(!File.Exists(ClamdExe)||!File.Exists(FreshExe))){log.WriteLine("Windows Installer returned success, but ClamAV installation was not detected. Verify the installation.");return 4;}
         return result;
     }
-    static int Execute(string verb,string canaryToken=null) {
+    static int Execute(string verb) {
         RequireAdmin();
         string logPath=NewLogPath(verb.TrimStart('-'));
         using(var log=new StreamWriter(new FileStream(logPath,FileMode.CreateNew,FileAccess.Write,FileShare.Read),Encoding.UTF8)) {
@@ -168,9 +168,14 @@ internal static partial class Setup {
                 if(verb=="--configure-clamav")return ConfigureClamAv(log);
                 if(verb=="--update-clamav")return UpdateClamSignatures(log);
                 if(verb=="--clamav-providers")return EditProviderSources(log);
+                if(verb=="--endpoint-permissions")return EndpointPermissionWizard(log);
+                bool installOperation=verb=="--install"||verb=="--upgrade"||verb=="--upgrade-pwa";
+                if(installOperation)PrepareProviderUpgrade(log);
                 string exe=Path.Combine(stage,"LinkScope.exe");
                 using(var input=Resource("LinkScope.exe"))using(var output=new FileStream(exe,FileMode.CreateNew,FileAccess.Write,FileShare.None))input.CopyTo(output);
-                return RunHidden(exe,verb+(canaryToken==null?"":" "+canaryToken),stage,log);
+                int result=RunHidden(exe,verb,stage,log);
+                if(result==0&&installOperation)return ProvisionEndpointPermissionsAfterInstall(log,logPath);
+                return result;
             }catch(Exception ex){if(verb=="--clamav-providers"){string detail=ProviderFailureDetail(ex);log.WriteLine("Provider configuration failed during: "+providerStage+Environment.NewLine+detail);log.Flush();MessageBox.Show("Could not complete provider configuration.\r\n\r\nStep: "+providerStage+"\r\n"+detail+"\r\n\r\nSetup log: "+logPath,"LinkScope | Third-party signatures",MessageBoxButtons.OK,MessageBoxIcon.Error);}else {log.WriteLine(ex);log.Flush();MessageBox.Show(ex.Message+"\r\n\r\nSetup log: "+logPath,"LinkScope Setup",MessageBoxButtons.OK,MessageBoxIcon.Error);}return 1;}
             finally {
                 try{foreach(string file in new[]{"LinkScope.exe","clamav-latest.msi","clamav-latest.msi.sig","cisco-talos.gpg"})File.Delete(Path.Combine(stage,file));string home=Path.Combine(stage,"gnupg");if(Directory.Exists(home))Directory.Delete(home,true);Directory.Delete(stage);}
@@ -182,22 +187,11 @@ internal static partial class Setup {
     static int Main(string[] args) {
         try {
             if(args.Length==0){int rc=Wizard();if(rc!=0)MessageBox.Show("Setup wizard failed (exit "+rc+"). Check Windows Application event logs and PowerShell policy.","LinkScope Setup",MessageBoxButtons.OK,MessageBoxIcon.Error);return rc;}
-            if(args.Length==2){
-                string verb=args[0].ToLowerInvariant();
-                if((verb=="--upgrade"||verb=="--upgrade-pwa"||verb=="--install")&&args[1].Length<=8192){
-                    // Permit only a base64 payload; never interpolate arbitrary command arguments.
-                    Convert.FromBase64String(args[1]);
-                    if(!System.Text.RegularExpressions.Regex.IsMatch(args[1],"^[A-Za-z0-9+/]+={0,2}$"))return 2;
-                    return Execute(verb,args[1]);
-                }
-                return 2;
-            }
             if(args.Length==1) {
                 string verb=args[0].ToLowerInvariant();
-                if(verb=="--prepare-canaries"||verb=="--repair-canaries"){try{LinkScope.CanaryTemplates.Trace("Worker entered; PID="+Process.GetCurrentProcess().Id);int rc=LinkScope.CanaryTemplates.Prepare(verb=="--repair-canaries");LinkScope.CanaryTemplates.Trace("Worker completed; exit="+rc);return rc;}catch(Exception ex){LinkScope.CanaryTemplates.Trace("Worker failed; LinkScope-Canary-errors.log: "+ex);return 1;}}
                 if(verb=="--check-clamav")return CheckClamAvForWizard();
                 if(verb=="-install")verb="--install";
-                if(verb=="--install"||verb=="--upgrade"||verb=="--upgrade-pwa"||verb=="--desktop-app"||verb=="--register-pwa"||verb=="--uninstall"||verb=="--uninstall-clamav"||verb=="--install-clamav"||verb=="--configure-clamav"||verb=="--update-clamav"||verb=="--clamav-providers")return Execute(verb);
+                if(verb=="--install"||verb=="--upgrade"||verb=="--upgrade-pwa"||verb=="--desktop-app"||verb=="--register-pwa"||verb=="--uninstall"||verb=="--uninstall-clamav"||verb=="--install-clamav"||verb=="--configure-clamav"||verb=="--update-clamav"||verb=="--clamav-providers"||verb=="--endpoint-permissions")return Execute(verb);
             }
             return 2;
         }catch(Exception ex){

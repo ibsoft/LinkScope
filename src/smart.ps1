@@ -69,7 +69,7 @@ function DriveReport($n,$d,$nativeStatus) {
     $identity=if ($serial) { $model+'|'+$serial } elseif ($d.UniqueId) { [string]$d.UniqueId } else { $bus+'|'+$model+'|'+$device }
     $scan=if ($n.scanUtc) { $n.scanUtc } else { [datetime]::UtcNow.ToString('o') }
     [pscustomobject]@{diskId=(ShortId $identity); device=$device; model=$model; firmware=$firmware; serial=$serial; capacityBytes=$capacity; vendor=$vendor; bus=$bus
-        scanUtc=$scan; reportBy='Unixfor LinkScope'; media=[string]$d.MediaType; health=$health; operational=$op
+        scanUtc=$scan; reportBy='LinkScope'; media=[string]$d.MediaType; health=$health; operational=$op
         recommendation=$state; headline=$head; advice=$advice; findings=@($findings.ToArray()); diagnostics=@($diags.ToArray())
         smartSource=$n.smartSource; attributes=$attrs; nvme=$nv; predictFailure=$n.predictFailure; wearUsedPercent=$wear; estimatedLifeRemainingPercent=$remaining
         lifeSource=$lifeSource; thresholdPercent=$limit; temperatureC=$(if ($null -ne $nv.temperatureC) { $nv.temperatureC } else { $counter.Temperature })

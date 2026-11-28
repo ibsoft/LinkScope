@@ -1,0 +1,14 @@
+V50 targeted regression results
+PASS validate_profile_defaults.py — explicit setup scope, no default enrollment, scan guard and actual JS settings round-trip
+PASS validate_canary_setup.py — fixed harmless templates, portable Office readers, explicit enrollment, SQLite baseline and activity retention, source checks
+PASS validate_desktop_app.py — shortcut and optional PWA wiring, static checks
+PASS validate_setup_build.py — project and setup build wiring, static checks
+PASS validate_signature_schedule.py — JS settings round-trip and persistence source checks
+PASS validate_endpoint_permissions_v49.py — wizard, rollback, access policy source checks (after updating exact historical version assertion to permit later releases)
+PASS validate_endpoint_workspace_v45.py — Chromium overview, all tested views, disabled state and neutral KPIs, resource pauses and stale telemetry, mobile widths and themes
+PASS validate_containment_test_center_v48.py — static policy checks and Chromium mock API test center
+PASS validate_endpoint_scope.py — portable SQLite scope retirement and preserved historical evidence
+PASS validate_settings_layout_v43.py — responsive settings and help dialog
+PASS node --check src/app.js
+PASS ZIP CRC integrity
+Updated old automatic enrollment regression fixtures to reflect the intentional new policy; preserved relevant canary integrity tests. No native Windows compiler or runtime available. Full inherited regression suite not rerun. No actual Windows install, upgrade, ACL, scan, or production containment executed.

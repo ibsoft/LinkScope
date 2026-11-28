@@ -1,21 +1,35 @@
 $ErrorActionPreference='Stop'
-$name='Unixfor LinkScope SMART'
+$name='LinkScope SMART'
 $exe=Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'LinkScope\LinkScope.exe'
+# Upgrade-only migration: remove exactly the retired tasks owned by this installation.
+# Do not touch unrelated tasks or stop a running maintenance operation.
+$legacyTasks=@{
+    'Unixfor LinkScope SMART'='--smart-once';
+    'Unixfor LinkScope Restart'='--restart-installed';
+    'Unixfor LinkScope Signature Update'='--signature-update-installed';
+    'Unixfor LinkScope ClamD Query Access'='--clam-peer-access-installed'
+}
+$oldTasks=@(Get-ScheduledTask -TaskPath '\' | Where-Object { $legacyTasks.ContainsKey($_.TaskName) })
+foreach($task in $oldTasks){
+    if (@($task.Actions).Count -ne 1 -or $task.Actions[0].Execute -ne $exe -or $task.Actions[0].Arguments -ne $legacyTasks[$task.TaskName]) {throw 'A retired task name is used by a different action; review Task Scheduler before upgrading.'}
+    if ($task.State -eq 'Running') {throw 'A previous LinkScope maintenance task is running. Retry after completion.'}
+}
+foreach($task in $oldTasks){Unregister-ScheduledTask -TaskPath '\' -TaskName $task.TaskName -Confirm:$false}
 $existing=Get-ScheduledTask -TaskPath '\' | Where-Object TaskName -eq $name
 if ($existing -and (@($existing.Actions).Count -ne 1 -or $existing.Actions[0].Execute -ne $exe -or $existing.Actions[0].Arguments -ne '--smart-once')) {
     throw 'A different task uses the LinkScope SMART task name.'
 }
-$restartName='Unixfor LinkScope Restart'
+$restartName='LinkScope Restart'
 $restart=Get-ScheduledTask -TaskPath '\' | Where-Object TaskName -eq $restartName
 if ($restart -and (@($restart.Actions).Count -ne 1 -or $restart.Actions[0].Execute -ne $exe -or $restart.Actions[0].Arguments -ne '--restart-installed')) {
     throw 'A different task uses the LinkScope restart task name.'
 }
-$signatureName='Unixfor LinkScope Signature Update'
+$signatureName='LinkScope Signature Update'
 $signature=Get-ScheduledTask -TaskPath '\' | Where-Object TaskName -eq $signatureName
 if ($signature -and (@($signature.Actions).Count -ne 1 -or $signature.Actions[0].Execute -ne $exe -or $signature.Actions[0].Arguments -ne '--signature-update-installed')) {
     throw 'A different task uses the LinkScope signature update task name.'
 }
-$peerName='Unixfor LinkScope ClamD Query Access'
+$peerName='LinkScope ClamD Query Access'
 $peer=Get-ScheduledTask -TaskPath '\' | Where-Object TaskName -eq $peerName
 if ($peer -and (@($peer.Actions).Count -ne 1 -or $peer.Actions[0].Execute -ne $exe -or $peer.Actions[0].Arguments -ne '--clam-peer-access-installed')) {
     throw 'A different task uses the LinkScope ClamD query-access task name.'

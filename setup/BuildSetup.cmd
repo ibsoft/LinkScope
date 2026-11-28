@@ -15,7 +15,7 @@ if not exist "%payload%" (
 )
 if exist "%output%" del /q "%output%"
 if exist "%output%" exit /b 1
-"%compiler%" /nologo /target:winexe /win32manifest:"%~dp0setup.manifest" /platform:x64 /optimize+ /out:"%output%" /win32icon:"%~dp0..\linkscope.ico" /reference:System.dll /reference:System.Core.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.ServiceProcess.dll /reference:System.Security.dll /reference:System.Web.Extensions.dll /resource:"%payload%",LinkScope.exe /resource:"%~dp0wizard.ps1",wizard.ps1 "%~dp0Setup.cs" "%~dp0ClamSetup.cs" "%~dp0ClamSignature.cs" "%~dp0..\src\CanaryTemplates.cs" "%~dp0..\src\ClamUpdateWorker.cs" /resource:"%~dp0cisco-talos.gpg",cisco-talos.gpg
+"%compiler%" /nologo /target:winexe /win32manifest:"%~dp0setup.manifest" /platform:x64 /optimize+ /out:"%output%" /win32icon:"%~dp0..\linkscope.ico" /reference:System.dll /reference:System.Core.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.ServiceProcess.dll /reference:System.Security.dll /reference:System.Web.Extensions.dll /resource:"%payload%",LinkScope.exe /resource:"%~dp0wizard.ps1",wizard.ps1 "%~dp0Setup.cs" "%~dp0EndpointPermissions.cs" "%~dp0ClamSetup.cs" "%~dp0ClamSignature.cs" "%~dp0..\src\CanaryTemplates.cs" "%~dp0..\src\ClamUpdateWorker.cs" /resource:"%~dp0cisco-talos.gpg",cisco-talos.gpg
 if errorlevel 1 exit /b 1
 if not exist "%output%" exit /b 1
 rem Optional local prerequisite, copied beside Visual Studio build outputs.

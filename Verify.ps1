@@ -9,7 +9,7 @@ $expected = '"{0}" --service' -f (Join-Path $env:ProgramFiles 'LinkScope\LinkSco
 if ($registered.PathName -ne $expected -or $registered.StartName -ne 'NT AUTHORITY\LocalService') {
     throw "Unexpected service registration. Path $($registered.PathName), account $($registered.StartName)."
 }
-$restartTask = Get-ScheduledTask -TaskPath '\' -TaskName 'Unixfor LinkScope Restart' -ErrorAction Stop
+$restartTask = Get-ScheduledTask -TaskPath '\' -TaskName 'LinkScope Restart' -ErrorAction Stop
 if (@($restartTask.Actions).Count -ne 1 -or $restartTask.Actions[0].Execute -ne (Join-Path $env:ProgramFiles 'LinkScope\LinkScope.exe') -or $restartTask.Actions[0].Arguments -ne '--restart-installed') {
     throw 'Unexpected dashboard restart task action.'
 }

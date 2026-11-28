@@ -1,3 +1,5 @@
+> Historical documentation — superseded by V50. Setup no longer adds user profiles or creates home-directory canaries. See [ENDPOINT-PROTECTION-V50.md](ENDPOINT-PROTECTION-V50.md). Existing settings remain unchanged.
+
 # Default user profile protection (V26)
 
 ## Installation and upgrade

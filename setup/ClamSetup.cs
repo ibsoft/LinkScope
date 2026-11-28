@@ -180,7 +180,7 @@ internal static partial class Setup {
         // Refuse unknown directives for *automatic* configuration. Never execute user-defined updater hooks.
         string allowed = updater
             ? "DatabaseDirectory DatabaseMirror DNSDatabaseInfo TestDatabases Checks UpdateLogFile LogTime LogRotate LogFileMaxSize LogVerbose MaxAttempts ConnectTimeout ReceiveTimeout ScriptedUpdates CompressLocalDatabase NotifyClamd DatabaseCustomURL Bytecode"
-            : "DatabaseDirectory TCPAddr TCPSocket StreamMaxLength MaxFileSize MaxScanSize AlertExceedsMax LogFile LogTime LogRotate LogFileMaxSize LogVerbose LogClean MaxThreads MaxQueue ReadTimeout CommandReadTimeout SendBufTimeout SelfCheck Bytecode BytecodeSecurity";
+            : "DatabaseDirectory TCPAddr TCPSocket StreamMaxLength MaxFileSize MaxScanSize AlertExceedsMax LogFile LogTime LogRotate LogFileMaxSize LogVerbose LogClean MaxThreads MaxQueue ReadTimeout CommandReadTimeout SendBufTimeout SelfCheck Bytecode BytecodeSecurity ConcurrentDatabaseReload";
         var keys = new HashSet<string>(allowed.Split(' '),StringComparer.OrdinalIgnoreCase);
         foreach (var pair in c.Values) {
             if (!keys.Contains(pair.Key) || (pair.Value.Count != 1 && !pair.Key.Equals("DatabaseCustomURL",StringComparison.OrdinalIgnoreCase))) {
@@ -198,6 +198,7 @@ internal static partial class Setup {
             if (c.Values.TryGetValue("DatabaseCustomURL",out feeds) && !LinkScope.ClamProviderSources.ValidSet(feeds)) { log.WriteLine("Custom signature source requires host-local review (unsupported URL, format or duplicate database filename)."); return false; }
         } else {
             if (c.One("TCPAddr") != "127.0.0.1" || c.One("TCPSocket") != "3310") { log.WriteLine("ClamD is not configured for the standard IPv4 loopback port 3310. Existing settings preserved."); return false; }
+            if (c.Has("ConcurrentDatabaseReload") && !new[]{"yes","no"}.Contains(c.One("ConcurrentDatabaseReload"),StringComparer.OrdinalIgnoreCase)) { log.WriteLine("Invalid database reload setting; preserve and review."); return false; }
             if (c.Has("BytecodeSecurity") && !String.Equals(c.One("BytecodeSecurity"),"TrustSigned",StringComparison.OrdinalIgnoreCase)) { log.WriteLine("Unsafe or custom bytecode trust setting; preserve."); return false; }
             if (c.Has("LogFile") && !SamePath(c.One("LogFile"),Path.Combine(ClamRoot,"clamd.log"))) { log.WriteLine("Custom ClamD log path; preserve."); return false; }
         }
@@ -271,13 +272,7 @@ internal static partial class Setup {
             }
         }
     }
-    static bool VersionCurrent(string version,TextWriter log) {
-        string[] parts=version.Split('/');long db;DateTime stamp;
-        log.WriteLine("ClamD VERSION: " + version);
-        if(parts.Length<3 || !parts[0].StartsWith("ClamAV",StringComparison.OrdinalIgnoreCase) || !Int64.TryParse(parts[1],out db) || db<=0) return false;
-        // VERSION supplies the engine's definition date, not per-provider freshness.
-        return DateTime.TryParseExact(Regex.Replace(parts[2].Trim(),@"\s+"," "),"ddd MMM d HH:mm:ss yyyy",CultureInfo.InvariantCulture,DateTimeStyles.None,out stamp) && (DateTime.Now-stamp).TotalDays<3 && stamp<DateTime.Now.AddDays(1);
-    }
+    static bool VersionCurrent(string version,TextWriter log){return LinkScope.ClamUpdateWorker.LogDefinitionReadiness(version,log);}
     static int CheckClamAv(TextWriter log) {
         bool installed=File.Exists(ClamdExe)&&File.Exists(FreshExe);
         if(!installed) {
@@ -294,12 +289,13 @@ internal static partial class Setup {
         if(daemon.Missing||daemon.Sample||updater.Missing||updater.Sample){log.WriteLine("ClamAV configuration is missing or is an untouched example.");return ClamUnconfigured;}
         log.WriteLine("Standard configuration detected. Definitions present: "+DatabasesPresent()+". ClamD running: "+Running("clamd")+". FreshClam running: "+Running("freshclam"));
         if(!DatabasesPresent()||!Running("clamd"))return ClamNotReady;
+        bool current;
         try {
             if(ClamCommand("PING")!="PONG")return ClamNotReady;
-            if(!VersionCurrent(ClamCommand("VERSION"),log))return ClamStale;
+            current=VersionCurrent(ClamCommand("VERSION"),log);
         } catch(Exception ex){log.WriteLine("Engine readiness test: "+ex.Message);return ClamNotReady;}
         if(!Running("freshclam")||!AutoService("clamd")||!AutoService("freshclam"))return ClamUpdaterNotReady;
-        return 0;
+        return current?0:ClamStale;
     }
     static bool TrustedSid(SecurityIdentifier sid) {
         if(sid==null)return false;
@@ -330,7 +326,7 @@ internal static partial class Setup {
     static string QuotedConfigPath(string path) {return "\""+path+"\"";}
     static void WriteMissingConfig(string path,bool updater,TextWriter log) {
         var current=ReadClamConfig(path);if(!current.Missing&&!current.Sample)return;
-        string[] lines=updater?new[]{"# LinkScope setup - approved local ClamAV configuration", "DatabaseDirectory "+QuotedConfigPath(ClamDatabase), "DatabaseMirror database.clamav.net", "TestDatabases yes", "Checks 12", "NotifyClamd "+QuotedConfigPath(ClamdConfig), "UpdateLogFile "+QuotedConfigPath(Path.Combine(ClamRoot,"freshclam.log")), "LogTime yes", "LogFileMaxSize 10M", "LogRotate yes"}
+        string[] lines=updater?new[]{"# LinkScope setup - approved local ClamAV configuration", "DatabaseDirectory "+QuotedConfigPath(ClamDatabase), "DatabaseMirror database.clamav.net", "TestDatabases yes", "Checks 24", "NotifyClamd "+QuotedConfigPath(ClamdConfig), "UpdateLogFile "+QuotedConfigPath(Path.Combine(ClamRoot,"freshclam.log")), "LogTime yes", "LogFileMaxSize 10M", "LogRotate yes"}
             :new[]{"# LinkScope setup - IPv4 loopback only", "DatabaseDirectory "+QuotedConfigPath(ClamDatabase), "TCPAddr 127.0.0.1", "TCPSocket 3310", "StreamMaxLength 100M", "MaxFileSize 100M", "MaxScanSize 200M", "AlertExceedsMax yes", "BytecodeSecurity TrustSigned", "LogFile "+QuotedConfigPath(Path.Combine(ClamRoot,"clamd.log")), "LogTime yes", "LogFileMaxSize 10M", "LogRotate yes"};
         string temp=path+"."+Guid.NewGuid().ToString("N")+".tmp";
         try {
@@ -445,6 +441,38 @@ internal static partial class Setup {
         if(!LinkScope.ClamProviderSources.ValidSet(result))throw new InvalidDataException("Provider list exceeds the limit or contains duplicate filenames.");
         return result;
     }
+    // Before deploying an upgrade, separate already configured standard feeds without downloading anything.
+    // Custom installations are not taken over; the administrator must migrate those locally.
+    static void PrepareProviderUpgrade(TextWriter log){
+        if(!File.Exists(FreshConfig)||!File.Exists(FreshExe)||!Running("freshclam"))return;
+        using(var mutex=new Mutex(false,@"Global\LinkScopeClamProvision")){
+            bool locked=false;
+            try{
+                try{locked=mutex.WaitOne(0);}catch(AbandonedMutexException){locked=true;}
+                if(!locked)throw new IOException("ClamAV maintenance is active. Retry the upgrade when it completes.");
+                var cfg=ReadClamConfig(FreshConfig);
+                if(!StandardRegistryPaths(log)||!NativeService("freshclam",FreshExe)||!LocalSystemUpdater()||cfg.Missing||cfg.Sample||!StandardConfig(cfg,true,log)){log.WriteLine("Non-standard updater preserved; review provider configuration locally.");return;}
+                if(!cfg.Has("DatabaseCustomURL")&&cfg.One("Checks")=="24"&&String.Equals(cfg.One("TestDatabases"),"yes",StringComparison.OrdinalIgnoreCase)&&SamePath(cfg.One("NotifyClamd"),ClamdConfig))return;
+                ProviderPreflight(log);
+                using(var updater=new ServiceController("freshclam")){
+                    LinkScope.ClamUpdateWorker.WaitForFreshClamServiceOnly(log,120);
+                    try{
+                        updater.Stop();updater.WaitForStatus(ServiceControllerStatus.Stopped,TimeSpan.FromSeconds(60));
+                        LinkScope.ClamUpdateWorker.WaitForFreshClamExit(log,120);VerifyClamTree(ClamRoot);
+                        if(cfg.Has("DatabaseCustomURL"))SecureSignatureLogs();
+                        LinkScope.ClamUpdateWorker.SeparateStoppedUpdater(log);
+                    }finally{
+                        updater.Refresh();if(updater.Status==ServiceControllerStatus.StopPending)updater.WaitForStatus(ServiceControllerStatus.Stopped,TimeSpan.FromSeconds(60));
+                        if(updater.Status==ServiceControllerStatus.Stopped){
+                            if(ReadClamConfig(FreshConfig).Has("DatabaseCustomURL"))throw new IOException("Provider migration incomplete; updater remains stopped. Use Configure / repair ClamAV before retrying.");
+                            LinkScope.ClamUpdateWorker.WaitForFreshClamExit(log,5);updater.Start();updater.WaitForStatus(ServiceControllerStatus.Running,TimeSpan.FromMinutes(2));
+                        }
+                    }
+                }
+                log.WriteLine("Official and third-party updater configurations separated; no provider download requested.");
+            }finally{if(locked)mutex.ReleaseMutex();}
+        }
+    }
     static int EditProviderSources(TextWriter log){
         RequireAdmin();ProviderPreflight(log);
         ProviderStep(log,"validating existing FreshClam configuration");
@@ -454,28 +482,32 @@ internal static partial class Setup {
         // StandardConfig refuses explicit TestDatabases no; an omitted directive is made explicit after consent.
         string originalConfig=File.ReadAllText(FreshConfig);
         ProviderStep(log,"opening the provider editor");
-        List<string> previous;if(!config.Values.TryGetValue("DatabaseCustomURL",out previous))previous=new List<string>();
+        List<string> legacy;if(!config.Values.TryGetValue("DatabaseCustomURL",out legacy))legacy=new List<string>();
+        var managed=LinkScope.ClamUpdateWorker.ReadProviderPolicy();
+        var previous=MergeProviderSources(managed.Select(x=>x.Url).ToList(),legacy);
         var shown=new List<string>();foreach(string feed in previous){Uri uri;if(LinkScope.ClamProviderSources.TryParse(feed,out uri))shown.Add(LinkScope.ClamProviderSources.Label(uri)+(LinkScope.ClamProviderSources.Suppresses(uri)?" (allow/ignore list)":""));}
         // The user pastes credentials into an elevated local-only editor, not browser settings.
-        List<string> next=null;
-        using(var form=new Form{Text="LinkScope Setup | Third-party signature sources",StartPosition=FormStartPosition.CenterScreen,ClientSize=new System.Drawing.Size(720,580),MinimumSize=new System.Drawing.Size(620,480),Font=new System.Drawing.Font("Segoe UI",10),AutoScaleMode=AutoScaleMode.Dpi}){
-            var layout=new TableLayoutPanel{Dock=DockStyle.Fill,Padding=new Padding(16),ColumnCount=1,RowCount=7};
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));layout.RowStyles.Add(new RowStyle(SizeType.Percent,28));layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));layout.RowStyles.Add(new RowStyle(SizeType.Percent,72));layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        List<string> next=null;var intervals=new Dictionary<string,int>(StringComparer.OrdinalIgnoreCase);
+        using(var form=new Form{Text="LinkScope Setup | Third-party signature sources",StartPosition=FormStartPosition.CenterScreen,ClientSize=new System.Drawing.Size(760,680),MinimumSize=new System.Drawing.Size(660,560),Font=new System.Drawing.Font("Segoe UI",10),AutoScaleMode=AutoScaleMode.Dpi}){
+            var layout=new TableLayoutPanel{Dock=DockStyle.Fill,Padding=new Padding(16),ColumnCount=1,RowCount=8};
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));layout.RowStyles.Add(new RowStyle(SizeType.Percent,25));layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));layout.RowStyles.Add(new RowStyle(SizeType.Percent,45));layout.RowStyles.Add(new RowStyle(SizeType.Percent,30));layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             var title=new Label{Text="Configured custom databases (credentials hidden)",AutoSize=true};layout.Controls.Add(title,0,0);
             var current=new TextBox{Dock=DockStyle.Fill,Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Vertical,Text=shown.Count==0?"No third-party sources configured.":String.Join(Environment.NewLine,shown.ToArray())};layout.Controls.Add(current,0,1);
-            var hint=new Label{Text="Paste HTTPS URLs or DatabaseCustomURL lines (one per line). Same provider + filename updates an existing URL. Official definitions and other sources are preserved.",AutoSize=true,MaximumSize=new System.Drawing.Size(650,0)};layout.Controls.Add(hint,0,2);
+            var hint=new Label{Text="Paste HTTPS URLs or DatabaseCustomURL lines (one per line), or leave blank to migrate existing sources. Set provider intervals in the second box: hostname=hours. Default 24; allowed 1–720 hours.",AutoSize=true,MaximumSize=new System.Drawing.Size(650,0)};layout.Controls.Add(hint,0,2);
             var input=new TextBox{Dock=DockStyle.Fill,Multiline=true,ScrollBars=ScrollBars.Both,WordWrap=false,MaxLength=262144,Font=new System.Drawing.Font("Consolas",10)};layout.Controls.Add(input,0,3);
-            var allow=new CheckBox{AutoSize=true,Text="I explicitly trust .ign2 / .wdb feeds, which may suppress detections."};layout.Controls.Add(allow,0,4);
-            var caution=new Label{AutoSize=true,MaximumSize=new System.Drawing.Size(650,0),Text="Trust your provider and test in Monitor mode before enabling automatic responses. FreshClam validates database syntax, not the publisher of unsigned custom feeds. Saving enforces database validation and restarts only the updater."};layout.Controls.Add(caution,0,5);
-            var buttons=new FlowLayoutPanel{AutoSize=true,Dock=DockStyle.Fill,FlowDirection=FlowDirection.RightToLeft};var cancel=new Button{Text="Cancel",AutoSize=true,DialogResult=DialogResult.Cancel};var save=new Button{Text="Save sources",AutoSize=true};buttons.Controls.Add(save);buttons.Controls.Add(cancel);layout.Controls.Add(buttons,0,6);
+            var schedule=new TextBox{Dock=DockStyle.Fill,Multiline=true,ScrollBars=ScrollBars.Vertical,MaxLength=32768,Font=new System.Drawing.Font("Consolas",10),Text=String.Join(Environment.NewLine,previous.Select(x=>new Uri(x).DnsSafeHost.ToLowerInvariant()).Distinct().Select(host=>host+"="+(managed.FirstOrDefault(x=>new Uri(x.Url).DnsSafeHost.Equals(host,StringComparison.OrdinalIgnoreCase))??new LinkScope.ProviderPolicyEntry{Hours=24}).Hours).ToArray())};layout.Controls.Add(schedule,0,4);
+            var allow=new CheckBox{AutoSize=true,Text="I explicitly trust .ign2 / .wdb feeds, which may suppress detections."};layout.Controls.Add(allow,0,5);
+            var caution=new Label{AutoSize=true,MaximumSize=new System.Drawing.Size(650,0),Text="Trust your provider and test in Monitor mode before enabling automatic responses. FreshClam validates database syntax, not the publisher of unsigned custom feeds. Saving separates custom sources from the official updater. Existing source cooldowns are never shortened. New hosts default to 24 hours between attempts."};layout.Controls.Add(caution,0,6);
+            var buttons=new FlowLayoutPanel{AutoSize=true,Dock=DockStyle.Fill,FlowDirection=FlowDirection.RightToLeft};var cancel=new Button{Text="Cancel",AutoSize=true,DialogResult=DialogResult.Cancel};var save=new Button{Text="Save sources",AutoSize=true};buttons.Controls.Add(save);buttons.Controls.Add(cancel);layout.Controls.Add(buttons,0,7);
             form.Controls.Add(layout);form.CancelButton=cancel;
             save.Click+=(sender,args)=>{try{
-                var entered=LinkScope.ClamProviderSources.ParseInput(input.Text);if(entered.Count==0)throw new InvalidDataException("Paste at least one custom database URL.");
+                var entered=LinkScope.ClamProviderSources.ParseInput(input.Text);
                 foreach(string feed in entered){Uri uri;LinkScope.ClamProviderSources.TryParse(feed,out uri);if(LinkScope.ClamProviderSources.Suppresses(uri)&&!allow.Checked)throw new InvalidDataException("Explicit approval is required for ignore-list and phishing allow-list databases.");}
                 var candidate=MergeProviderSources(previous,entered);
-                if(candidate.SequenceEqual(previous,StringComparer.Ordinal)){MessageBox.Show(form,"All supplied sources are already configured. Nothing changed.","Third-party signatures",MessageBoxButtons.OK,MessageBoxIcon.Information);return;}
-                if(MessageBox.Show(form,"Save "+candidate.Count+" custom database sources and restart FreshClam? Existing settings and official signatures remain intact. A provider URL can contain a subscription credential; it will be stored in the protected FreshClam configuration. This does not confirm all downloads succeeded.","Confirm signature sources",MessageBoxButtons.YesNo,MessageBoxIcon.Warning,MessageBoxDefaultButton.Button2)!=DialogResult.Yes)return;
-                next=candidate;input.Clear();form.DialogResult=DialogResult.OK;form.Close();
+                var hosts=new HashSet<string>(candidate.Select(x=>new Uri(x).DnsSafeHost),StringComparer.OrdinalIgnoreCase);intervals.Clear();
+                foreach(string line in schedule.Lines){if(String.IsNullOrWhiteSpace(line))continue;var parts=line.Split('=');int hours;if(parts.Length!=2||!hosts.Contains(parts[0].Trim())||!Int32.TryParse(parts[1].Trim(),out hours)||hours<1||hours>720||intervals.ContainsKey(parts[0].Trim()))throw new InvalidDataException("Use one configured hostname=hours per line, from 1 to 720 hours.");intervals.Add(parts[0].Trim(),hours);}
+                if(MessageBox.Show(form,"Save provider schedules and separate third-party downloads from the official updater? Existing databases are retained; migrated providers wait at least 24 hours. URLs are kept in administrator-only storage. No download is triggered by saving.","Confirm signature sources",MessageBoxButtons.YesNo,MessageBoxIcon.Warning,MessageBoxDefaultButton.Button2)!=DialogResult.Yes)return;
+                next=entered;input.Clear();form.DialogResult=DialogResult.OK;form.Close();
             }catch(InvalidDataException ex){MessageBox.Show(form,ex.Message,"Invalid signature sources",MessageBoxButtons.OK,MessageBoxIcon.Warning);}catch(Exception){MessageBox.Show(form,"Unable to validate the supplied source list. No changes made.","Third-party signatures",MessageBoxButtons.OK,MessageBoxIcon.Error);}};
             if(form.ShowDialog()!=DialogResult.OK||next==null)return 1602;
         }
@@ -489,65 +521,26 @@ internal static partial class Setup {
                 ProviderPreflight(log);ProviderStep(log,"checking for configuration changes");
                 if(!Running("freshclam"))throw new IOException("Updater state changed. Review Setup.");
                 var current=ReadClamConfig(FreshConfig);List<string> existing;if(!current.Values.TryGetValue("DatabaseCustomURL",out existing))existing=new List<string>();
-                if(!StandardConfig(current,true,log)||!existing.SequenceEqual(previous,StringComparer.Ordinal)||!String.Equals(File.ReadAllText(FreshConfig),originalConfig,StringComparison.Ordinal))throw new IOException("Configuration changed since the editor was opened. Reopen the editor.");
+                if(!StandardConfig(current,true,log)||!existing.SequenceEqual(legacy,StringComparer.Ordinal)||!String.Equals(File.ReadAllText(FreshConfig),originalConfig,StringComparison.Ordinal))throw new IOException("Configuration changed since the editor was opened. Reopen the editor.");
                 using(var updater=new ServiceController("freshclam")){
-                    string backup=null,temp=null;bool replaced=false,stopRequested=false;
+                    bool stopped=false;
                     try{
                         ProviderStep(log,"waiting for other FreshClam updates");LinkScope.ClamUpdateWorker.WaitForFreshClamServiceOnly(log,120);
-                        ProviderStep(log,"stopping the FreshClam updater");stopRequested=true;
-                        updater.Stop();updater.WaitForStatus(ServiceControllerStatus.Stopped,TimeSpan.FromSeconds(60));
-                        ProviderStep(log,"waiting for FreshClam process exit");LinkScope.ClamUpdateWorker.WaitForFreshClamExit(log,120);
-                        // The mutable signature tree must not be traversed while FreshClam is downloading files.
-                        ProviderStep(log,"verifying the stopped updater's installation tree");VerifyClamTree(ClamRoot);
-                        if(!NativeService("freshclam",FreshExe)||!LocalSystemUpdater()||!String.Equals(File.ReadAllText(FreshConfig),originalConfig,StringComparison.Ordinal))throw new IOException("Updater identity or configuration changed during maintenance. No provider settings were replaced.");
-                        ProviderStep(log,"securing signature logs and configuration backup");
-                        string nativeLog=SecureSignatureLogs();
-                        // Preserve non-provider settings; explicitly enforce database validation.
-                        var lines=File.ReadAllLines(FreshConfig).Where(line=>!Regex.IsMatch(line,@"^\s*(DatabaseCustomURL|UpdateLogFile|TestDatabases)(?:\s|$)",RegexOptions.IgnoreCase|RegexOptions.CultureInvariant)).ToList();
-                        lines.Add("TestDatabases yes");lines.Add("UpdateLogFile "+QuotedConfigPath(nativeLog));foreach(string url in next)lines.Add("DatabaseCustomURL "+url);
-                        File.SetAccessControl(FreshConfig,PrivateFeedFileAcl(false));
-                        string folder=Path.GetDirectoryName(nativeLog);temp=Path.Combine(folder,"provider-"+Guid.NewGuid().ToString("N")+".tmp");backup=Path.Combine(folder,"freshclam-"+Guid.NewGuid().ToString("N")+".conf.bak");
-                        ProviderStep(log,"writing and validating the proposed configuration");
-                        using(var fs=new FileStream(temp,FileMode.CreateNew,FileSystemRights.FullControl,FileShare.None,4096,FileOptions.None,PrivateFeedFileAcl(false)))using(var writer=new StreamWriter(fs,new UTF8Encoding(false)))foreach(string line in lines)writer.WriteLine(line);
-                        if(new FileInfo(temp).Length>1024*1024)throw new IOException("New configuration exceeds the 1 MiB limit.");
-                        if(!StandardConfig(ReadClamConfig(temp),true,log))throw new IOException("Generated configuration did not pass validation.");
-                        ProviderStep(log,"atomically replacing freshclam.conf");
-                        LinkScope.ClamUpdateWorker.WaitForFreshClamExit(log,5);
-                        File.Replace(temp,FreshConfig,backup);replaced=true;File.SetAccessControl(FreshConfig,PrivateFeedFileAcl(false));File.SetAccessControl(backup,PrivateFeedFileAcl(false));
-                        ProviderStep(log,"starting FreshClam with the new sources");
-                        LinkScope.ClamUpdateWorker.WaitForFreshClamExit(log,5);
-                        updater.Start();updater.WaitForStatus(ServiceControllerStatus.Running,TimeSpan.FromMinutes(2));
-                        log.WriteLine("Saved "+next.Count+" administrator-approved custom signature sources. FreshClam restarted; per-feed downloads not yet verified. Previous config retained in a protected backup.");log.Flush();
-                        return 0;
-                    }catch(Exception original){
-                        // Preserve the failed step and original exception even if rollback also fails.
-                        string failedStage=providerStage;log.WriteLine("Failed step: "+failedStage+". "+ProviderFailureDetail(original));log.Flush();
-                        try{
-                            if(replaced&&backup!=null&&File.Exists(backup)){
-                                ProviderStep(log,"restoring previous FreshClam configuration");
-                                updater.Refresh();if(updater.Status==ServiceControllerStatus.StartPending)updater.WaitForStatus(ServiceControllerStatus.Running,TimeSpan.FromMinutes(2));
-                                updater.Refresh();if(updater.Status==ServiceControllerStatus.Running){updater.Stop();updater.WaitForStatus(ServiceControllerStatus.Stopped,TimeSpan.FromSeconds(60));}
-                                if(updater.Status==ServiceControllerStatus.StopPending)updater.WaitForStatus(ServiceControllerStatus.Stopped,TimeSpan.FromSeconds(60));
-                                updater.Refresh();if(updater.Status!=ServiceControllerStatus.Stopped)throw new IOException("Updater did not stop; manual recovery required.");
-                                LinkScope.ClamUpdateWorker.WaitForFreshClamExit(log,120);
-                                // Keep the protected backup even after rollback.
-                                string restore=Path.Combine(Path.GetDirectoryName(backup),"restore-"+Guid.NewGuid().ToString("N")+".tmp");
-                                try{using(var input=File.OpenRead(backup))using(var output=new FileStream(restore,FileMode.CreateNew,FileSystemRights.FullControl,FileShare.None,4096,FileOptions.None,PrivateFeedFileAcl(false)))input.CopyTo(output);File.Replace(restore,FreshConfig,null);File.SetAccessControl(FreshConfig,PrivateFeedFileAcl(false));replaced=false;}
-                                finally{if(File.Exists(restore))File.Delete(restore);}
-                                log.WriteLine("Previous configuration restored. Protected backup retained.");
-                            }
-                            if(stopRequested&&!replaced){
-                                ProviderStep(log,"restarting the previous FreshClam service");
-                                updater.Refresh();if(updater.Status==ServiceControllerStatus.StopPending)updater.WaitForStatus(ServiceControllerStatus.Stopped,TimeSpan.FromSeconds(60));
-                                updater.Refresh();if(updater.Status==ServiceControllerStatus.Stopped){LinkScope.ClamUpdateWorker.WaitForFreshClamExit(log,5);updater.Start();}updater.WaitForStatus(ServiceControllerStatus.Running,TimeSpan.FromMinutes(2));
-                                log.WriteLine("Previous FreshClam service is running.");
-                            }
-                        }catch(Exception recovery){log.WriteLine("RECOVERY FAILED: "+ProviderFailureDetail(recovery));log.Flush();failedStage+="; automatic recovery also failed (review log and protected backup; if updater remains stopped, start it only after all other FreshClam processes exit)";}
-                        providerStage=failedStage;throw;
+                        ProviderStep(log,"stopping the FreshClam updater");updater.Stop();updater.WaitForStatus(ServiceControllerStatus.Stopped,TimeSpan.FromSeconds(60));stopped=true;
+                        LinkScope.ClamUpdateWorker.WaitForFreshClamExit(log,120);VerifyClamTree(ClamRoot);
+                        if(!NativeService("freshclam",FreshExe)||!LocalSystemUpdater()||!String.Equals(File.ReadAllText(FreshConfig),originalConfig,StringComparison.Ordinal))throw new IOException("Updater identity or configuration changed during maintenance.");
+                        SecureSignatureLogs();
+                        ProviderStep(log,"separating the official updater from provider sources");LinkScope.ClamUpdateWorker.SeparateStoppedUpdater(log);
+                        ProviderStep(log,"saving provider intervals");LinkScope.ClamUpdateWorker.SaveManagedProviders(new string[0],next,intervals);
                     }finally{
-                        try{if(temp!=null&&File.Exists(temp))File.Delete(temp);}catch(Exception cleanup){log.WriteLine("Could not remove protected temporary file: "+ProviderFailureDetail(cleanup));}
+                        updater.Refresh();if(updater.Status==ServiceControllerStatus.StopPending)updater.WaitForStatus(ServiceControllerStatus.Stopped,TimeSpan.FromSeconds(60));
+                        if(stopped||updater.Status==ServiceControllerStatus.Stopped){
+                            if(ReadClamConfig(FreshConfig).Has("DatabaseCustomURL"))throw new IOException("Migration incomplete; updater left stopped to prevent unscheduled provider downloads. Retry provider setup as administrator.");
+                            LinkScope.ClamUpdateWorker.WaitForFreshClamExit(log,5);updater.Refresh();if(updater.Status==ServiceControllerStatus.Stopped)updater.Start();updater.WaitForStatus(ServiceControllerStatus.Running,TimeSpan.FromMinutes(2));
+                        }
                     }
                 }
+                log.WriteLine("Provider schedules saved; official FreshClam restarted without third-party URLs. No provider download requested by the editor.");return 0;
             }finally{if(locked)mutex.ReleaseMutex();}
         }
     }
@@ -559,7 +552,7 @@ internal static partial class Setup {
         int initial=CheckClamAv(log);
         if(initial==0){log.WriteLine("ClamAV already configured and responding; no changes.");return 0;}
         if(initial==ClamMissing||initial==ClamCustom||initial==ClamPartial)return initial;
-        if(MessageBox.Show("Configure or repair the standard ClamAV installation?\r\n\r\nSetup will create missing configurations (backing up untouched examples), download official signatures if needed, install missing native services, set both to automatic startup and test 127.0.0.1:3310. Existing custom configurations are preserved.\r\n\r\nFreshClam requires Internet access or already provisioned definitions. Existing approved custom feeds, if present, may be contacted by FreshClam. Continue only if you trust this installed engine and its configuration. LinkScope protection modes and settings will not be changed.","LinkScope Setup | Configure ClamAV",MessageBoxButtons.YesNo,MessageBoxIcon.Question,MessageBoxDefaultButton.Button2)!=DialogResult.Yes)return 1602;
+        if(MessageBox.Show("Configure or repair the standard ClamAV installation?\r\n\r\nSetup will create missing configurations (backing up untouched examples), download official signatures if needed, install missing native services, set both to automatic startup and test 127.0.0.1:3310. Existing custom configurations are preserved.\r\n\r\nFreshClam requires Internet access or already provisioned definitions. Existing approved custom feeds are migrated into the separate provider policy before starting a stopped updater. Continue only if you trust this installed engine and its configuration. LinkScope protection modes and settings will not be changed.","LinkScope Setup | Configure ClamAV",MessageBoxButtons.YesNo,MessageBoxIcon.Question,MessageBoxDefaultButton.Button2)!=DialogResult.Yes)return 1602;
         // Recheck after consent and refuse concurrent provisioning or changed/custom paths.
         using(var mutex=new Mutex(false,@"Global\LinkScopeClamProvision")) {
             bool locked=false;
@@ -577,6 +570,7 @@ internal static partial class Setup {
                 WriteMissingConfig(ClamdConfig,false,log);WriteMissingConfig(FreshConfig,true,log);
                 VerifyClamPath(ClamdConfig);VerifyClamPath(FreshConfig);
                 if(!StandardConfig(ReadClamConfig(ClamdConfig),false,log)||!StandardConfig(ReadClamConfig(FreshConfig),true,log))throw new IOException("Configuration changed unexpectedly; setup stopped.");
+                if(!Running("freshclam")){LinkScope.ClamUpdateWorker.WaitForFreshClamExit(log,120);LinkScope.ClamUpdateWorker.SeparateStoppedUpdater(log);}
                 if(!DatabasesPresent()||initial==ClamStale) {
                     if(!Running("freshclam")&&!FreshClamProcessPresent()){
                         string previous=null;try{previous=LinkScope.ClamUpdateWorker.DatabaseFingerprint();}catch(Exception ex){log.WriteLine("Previous database fingerprint unavailable: "+ex.Message);}

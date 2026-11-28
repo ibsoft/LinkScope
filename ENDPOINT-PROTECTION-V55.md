@@ -1,0 +1,11 @@
+# V55 — Audit evidence diagnostics
+
+V54's reported live Security channel read and response-directory access passed on the user's Windows host. Its File system audit evidence check timed out at about 100 ms. The previous diagnostic requested any 4663 record with a 100 ms ReadEvent timeout; that could not distinguish a read timeout from absent matching audit evidence.
+
+V55 changes only ContainmentDiagnostics: the general channel read uses a 1-second read budget; the file audit query requests recent (15 minutes) Event 4663 records with ObjectType File, newest first. It reads one record per batch, inspects at most 128, and uses a shared 3-second budget for event reads (not a hard wall-clock guarantee for native query construction/cleanup). A pass requires a write/delete-class access mask and an in-scope, non-excluded path. The result gives record ID, UTC and path. Exhausted queries without matching evidence, bounded incomplete queries and exceptions are all Review, with distinct evidence text. A read failure is not proof that auditing is disabled. Neither unrelated 4663 events nor synthetic vectors count as a scoped audit pass.
+
+The production writer correlation (30 seconds, up to 512 records, original 1.5-second loop / 100 ms read timeout), detector, response decisions, ClamAV signatures, permissions, setup integration and saved policies are unchanged. Lab writer correlation can still time out; this release does not claim to fix production correlation. In-memory detector passes are not live containment validation.
+
+After installing, generate a fresh harmless file write within the authorized disposable test folder and run diagnostics. A successful scoped audit check is not proof of process attribution, quarantine or containment. If a timeout remains, use the Windows Security log to verify actual recent 4663 records and the folder SACL. Do not grant additional rights merely because a query timed out.
+
+Six targeted regression scripts passed: five include static assertions and two exercise mocked browser telemetry (overlap); see test report. Native C# compilation, Windows XPath execution and live audit events have not been tested here. V54's setup regression version assertion was relaxed to accept newer releases. The complete historical suite was not rerun.

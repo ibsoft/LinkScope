@@ -1,0 +1,13 @@
+V60 development verification (not a target-host validation report)
+
+Executed and passed:
+- node --check src/app.js
+- python tests/validate_signature_versions_v57.py (source assertions and modeled DNS ABI; not a native DNS test)
+- python tests/validate_live_audit_v56.py (source assertions and Chromium with mocked responses)
+- python tests/validate_guided_test_center_v58.py (Chromium with mocked responses)
+- python tests/validate_automated_suite_v59.py (installer source assertions and Chromium with mocked responses, including missing proof, wrong PID, old event, wrong mask, duplicate/missing checks, contradictory verdict, empty evidence and stale telemetry)
+- python tests/validate_setup_build.py (static project/payload checks)
+
+Not performed: native C# compile, native Windows self-check, Windows installer execution, actual Windows Event Log/DNS tests, actual quarantine or process termination, full historical regression suite.
+
+Modified C# delimiter checks passed (not compilation).

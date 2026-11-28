@@ -119,6 +119,7 @@
     <EmbeddedResource Include="src\settings.html"><LogicalName>settings.html</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="src\smart.ps1"><LogicalName>smart.ps1</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="src\system.html"><LogicalName>system.html</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="Test-LinkScopeContainmentLab.ps1"><LogicalName>Test-LinkScopeContainmentLab.ps1</LogicalName><WithCulture>false</WithCulture></EmbeddedResource>
     <EmbeddedResource Include="src\endpoint.html"><LogicalName>endpoint.html</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="src\integrity.html"><LogicalName>integrity.html</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="src\toast.css"><LogicalName>toast.css</LogicalName></EmbeddedResource>

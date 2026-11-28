@@ -1,0 +1,23 @@
+V56 selected regression results
+Native Windows build and runtime: NOT RUN. Chromium tests use mock API.
+
+=== tests/validate_live_audit_v56.py ===
+PASS: static scope, CREATE_NEW, delete-on-close, no ACL or production response, exact event/PID/image/write mask/time, admin/CSRF/rate-limit and delimiters
+PASS: Chromium saved directory selection, confirm/cancel, exact request, pass/review/error/stale UI, safe text and dark/light 320–1440 px (mock API)
+=== tests/validate_audit_diagnostics_v55.py ===
+PASS: bounded recent audit query, protected-scope and write-mask gate, no-match vs incomplete evidence, diagnostic isolation, source delimiters (static).
+=== tests/validate_containment_test_center_v48.py ===
+PASS: diagnostic isolation, route authorization, scope checks, negative verdict tests, local lab source constraints (static)
+PASS: real browser test center, fresh/stale readiness, diagnostics, evidence escaping, errors, 320–1440 px, dark/light and evidence navigation (mock API)
+=== tests/validate_setup_permissions_v54.py ===
+PASS: setup integration, explicit mode/scope gate, independent preflight, exact approval snapshots, cancellation/partial result, bounded restart, and delimiter checks (static).
+=== tests/validate_endpoint_workspace_v45.py ===
+PASS: full endpoint UI fixture: overview, tab routing, behavioral evidence, worker status, independent pause/signature status, stale telemetry and responsive overview
+PASS: worker frame and version wiring (static)
+=== tests/validate_setup_build.py ===
+PASS: MSBuild setup project, x64 GUI settings, exact payload resource, build order, conditional MSI copy, cleanup and standalone build compatibility (static checks only).
+=== tests/validate_visualstudio_config.py ===
+PASS: explicit legacy IDE configs, fresh consistent GUIDs, six enabled solution mappings, direct clean/build wrappers, setup verification and skipped-Clean regression guard.
+Windows MSBuild and PowerShell execution not tested.
+
+JavaScript syntax: PASS

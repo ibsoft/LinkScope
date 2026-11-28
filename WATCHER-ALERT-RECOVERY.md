@@ -4,7 +4,7 @@ V26 can update a finding in endpoint.sqlite without updating its corresponding a
 
 The privileged recursive watcher is now maintained for failed LocalService directory roots even while USN is Live or Replaying. Its independent pipe remains restricted to the configured scope. Coverage still requires a verified watcher response (no gap and fresh within 30 seconds), or live/replaying USN, or successful native watcher registration. An initial or genuine coverage failure is still reported. Existing limitations (serial polling, leases, reparse points, inaccessible objects and Windows-native execution) remain.
 
-The generic partial-coverage notification is not duplicated while the specific watcher warning is active. The endpoint collection status remains partial as appropriate. Other specific warnings remain active. The events alert evaluator excludes Application events from the exact provider Unixfor LinkScope with event ID 4201 because those are audit mirrors of already published endpoint/integrity alerts. The event viewer and Windows Event Log are not modified; other providers and event IDs remain eligible for alerts.
+The generic partial-coverage notification is not duplicated while the specific watcher warning is active. The endpoint collection status remains partial as appropriate. Other specific warnings remain active. The events alert evaluator excludes Application events from the exact provider LinkScope with event ID 4201 because those are audit mirrors of already published endpoint/integrity alerts. The event viewer and Windows Event Log are not modified; other providers and event IDs remain eligible for alerts.
 
 ## Windows acceptance check
 
