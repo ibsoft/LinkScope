@@ -38,7 +38,7 @@ $clamRemove=Button 'Uninstall ClamAV' 444 359 232
 $pwa=New-Object Windows.Forms.CheckBox;$pwa.Text='Register managed Edge PWA (local policy; optional)';$pwa.Checked=$true;$pwa.SetBounds(24,401,652,26);$form.Controls.Add($pwa)
 $pwaNote=Label 'Desktop shortcut is created by default. Managed Edge PWA installs at browser launch and cannot be removed in Edge. Existing policies are preserved.' 24 429 652 45
 $canaries=New-Object Windows.Forms.CheckBox;$canaries.Text='Create and enroll Word, Excel and text canaries in my Documents';$canaries.Checked=$true;$canaries.SetBounds(24,474,652,25);$form.Controls.Add($canaries)
-$note=Label 'ClamAV settings are preserved. Definitions need Internet access. Canaries enable Monitor mode only if protection was disabled.' 24 505 652 72
+$note=Label 'New installs protect your Windows profile in Monitor mode. Existing paths are retained; add more in Settings. ClamAV definitions need Internet access.' 24 505 652 72
 $progress=New-Object Windows.Forms.ProgressBar;$progress.SetBounds(24,590,652,16);$form.Controls.Add($progress)
 $status=Label 'Ready.' 24 616 550 58
 $close=Button 'Close' 586 627 90
@@ -133,7 +133,12 @@ function Start-Operation($verb,[bool]$skipPreparation=$false,[string]$canaryToke
    $close.Enabled=$true;$progress.Style='Marquee';$status.Text='Preparing optional canary documents (30 second limit)...'
    $prepTimer.Start();return $true
   }
-  if($canaryToken){$arguments+=$canaryToken}
+  if($verb -in @('--upgrade','--upgrade-pwa','--install')){
+   $profileSid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+   $profileToken=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('profile-v1|'+$profileSid+'|'+$canaryToken))
+   $arguments+=$profileToken
+   Write-DebugLog ('Profile policy requested for SID '+$profileSid)
+  } elseif($canaryToken){$arguments+=$canaryToken}
   Write-DebugLog ('Starting elevated operation '+$verb)
   $script:operation=$verb
   $script:operationStarted=[DateTime]::UtcNow

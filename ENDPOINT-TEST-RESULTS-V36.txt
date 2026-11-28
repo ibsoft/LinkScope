@@ -1,0 +1,210 @@
+Portable tests only; Windows compiler/SCM/ClamAV integration and resource benchmarks not run.
+24/26 scripts passed.
+validate_endpoint.py: 0
+PASS: all JavaScript files parse with Node.js
+PASS: default endpoint policy is disabled, monitor-only, no response targets or engine pin
+PASS: project XML, resource existence and Build.cmd parity
+PASS: all C# sources discovered exactly once; EndpointResponse declaration, references and missing-file diagnostics checked
+PASS: endpoint settings fields exist, HTML IDs unique
+PASS: actual SQLite schema and SQL literals for file state, canary baseline, incident/open-close outbox and bounded deletion
+PASS: C# lexer delimiter checks (not compilation)
+PASS: portable validation completed; Windows compilation, runtime and security testing remain required.
+
+validate_scan_scheduling.py: 0
+PASS: source wiring, queue dedup and scope guards, canary priority, scheduled scan fairness, coverage gap preservation, queue metrics, scheduling reference fixtures. Windows runtime not executed.
+
+validate_endpoint_protection_v29.py: 0
+PASS: root faults, recovery scheduling, strict verdict, scan pause, per-folder evidence, and durable deduplicated SQLite retries; Windows runtime pending.
+
+validate_endpoint_protection_v30.py: 0
+PASS: V30 source contracts (not native runtime tests)
+
+validate_endpoint_protection_v31.py: 0
+PASS: durable backoff SQLite, duplicate deferral, restart persistence, FIFO eligibility, acknowledgement cleanup, and source wiring; Windows runtime not executed.
+
+validate_endpoint_protection_v32.py: 0
+PASS: boundary handling source contracts; actual SQLite coverage category and ready queue queries; Windows runtime not executed.
+
+validate_endpoint_protection_v33.py: 0
+PASS: actual SQLite endpoint reset, retained active evidence/queues/canaries, restart marker, idempotent category-scoped central purge, monotonic alert sequence and admin/confirmation wiring; Windows runtime not executed.
+
+validate_endpoint_protection_v34.py: 0
+PASS: Chromium coverage rendering, fallback, collapsed exceptions, refresh state, stale/disabled states, journal-only, uncovered, excluded, scheduled, safe text and mobile width. Native Windows watcher not tested.
+
+validate_endpoint_protection_v36.py: 0
+PASS: actual SQLite cache expiry, policy/hash/generation matching, active finding guard, persisted cache, rollback and LIFO restart checkpoint, reset isolation; source checks for privileged protocol, signature generation, recovery and telemetry. Native Windows tests not run.
+
+validate_privileged_watcher.py: 0
+PASS: restricted watcher pipe, exact scope, metadata bounds, lease, event priority, gap handling, UI and coverage truth table. Windows runtime NOT tested.
+
+validate_privileged_arrivals.py: 0
+PASS: restricted privileged scan source wiring, shared verdict path, priority arrival persistence/rollback/dedup/ack, reset scope and independent metric source checks. Native Windows compilation and EICAR testing NOT RUN.
+
+validate_download_reconciliation.py: 0
+PASS: Downloads scope discovery, independent scheduling, privileged metadata protocol, bounded retry and activity telemetry source checks. Native behavior NOT tested.
+
+validate_usn_journal.py: 0
+PASS: USN source, privilege separation, service lifecycle, dashboard, parser guard wiring, transactional rollback, durable checkpoint/queue across reopen, deduplication and acknowledgement SQL.
+NOT RUN: Windows C# compilation, native IOCTLs, SCM, named pipe permissions, parser executable fixtures and end-to-end throughput.
+
+validate_usn_transport.py: 0
+PASS: transport lifecycle source checks, timeout wiring, native regression fixture wiring, active scope UI, actual JS path-boundary/canary selection test.
+NOT RUN: Windows named-pipe test, service integration, native NTFS I/O.
+
+validate_endpoint_summary.py: 0
+PASS: actual renderer preserves severity, moves raw messages, filters unrelated/resolved alerts, retains open state and clears summary when healthy
+
+validate_endpoint_reset_discoverability.py: 0
+PASS: admin shortcut, early Settings placement, actual deep-link expansion, cancel sends no request, explicit confirmation sends one POST, queued and completed UI states (mocked backend).
+
+validate_clamav_setup.py: 0
+PASS: ClamAV setup source/build inclusion, readiness-state branches, loopback configuration, service/update safeguards, wizard command length, and C# delimiter checks. Not Windows compilation or runtime tests.
+
+validate_profile_scan_access.py: 0
+PASS: source checks for explicit scope/ACL consent and bounded independent watcher retry; Windows execution not tested.
+
+validate_watcher_clam_recovery.py: 0
+PASS: independent watcher heartbeat, shared bounded ClamD transport source, and durable SQLite deferral/recovery. Native Windows transport and watcher not run.
+
+validate_watcher_alert_recovery.py: 0
+PASS: watcher redundancy, genuine coverage predicate, exact alert refresh SQL and own-event filter wiring; Windows runtime not executed.
+
+validate_signature_schedule.py: 1
+node:assert:95
+  throw new AssertionError(obj);
+  ^
+
+AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
++ actual - expected
+... Skipped lines
+
+  {
+    BackgroundExcludedPaths: [],
+    BehaviorWindowSeconds: 60,
+    CanaryPaths: [],
+    ChangeThreshold: 50,
+...
+    ProcessCorrelation: false,
+-   ProfileDefaultsApplied: false,
+    RealTime: true,
+    ResponsePaths: [],
+    SignatureScheduleEnabled: false,
+    SignatureScheduleFrequency: 'daily',
+    SignatureScheduleMonthDay: 1,
+
+    at [eval]:10:862
+    at runScriptInThisContext (node:internal/vm:209:10)
+    at node:internal/process/execution:449:12
+    at [eval]-wrapper:6:24
+    at runScriptInContext (node:internal/process/execution:447:60)
+    at evalFunction (node:internal/process/execution:87:30)
+    at evalScript (node:internal/process/execution:99:3)
+    at node:internal/main/eval_string:74:3 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: {
+    SignatureScheduleFrequency: 'daily',
+    SignatureScheduleTime: '03:00',
+    SignatureScheduleWeekday: 1,
+    SignatureScheduleMonthDay: 1,
+    Mode: 'monitor',
+    TrustedEnginePath: '',
+    TrustedEngineSha256: '',
+    Enabled: false,
+    WriteEvents: false,
+    RealTime: true,
+    ProcessCorrelation: false,
+    SignatureScheduleEnabled: false,
+    IntervalSeconds: 86400,
+    ChangeThreshold: 50,
+    Port: 3310,
+    MaxFileMiB: 25,
+    BehaviorWindowSeconds: 60,
+    Paths: [],
+    ExcludedPaths: [],
+    BackgroundExcludedPaths: [],
+    ExcludedPatterns: [],
+    CanaryPaths: [],
+    ResponsePaths: [],
+    ContainmentExecutables: []
+  },
+  expected: {
+    Enabled: false,
+    ProfileDefaultsApplied: false,
+    BackgroundExcludedPaths: [],
+    WriteEvents: false,
+    IntervalSeconds: 86400,
+    ChangeThreshold: 50,
+    Port: 3310,
+    Paths: [],
+    ExcludedPaths: [],
+    RealTime: true,
+    ProcessCorrelation: false,
+    MaxFileMiB: 25,
+    BehaviorWindowSeconds: 60,
+    Mode: 'monitor',
+    ExcludedPatterns: [],
+    CanaryPaths: [],
+    ResponsePaths: [],
+    ContainmentExecutables: [],
+    TrustedEnginePath: '',
+    TrustedEngineSha256: '',
+    SignatureScheduleEnabled: false,
+    SignatureScheduleFrequency: 'daily',
+    SignatureScheduleTime: '03:00',
+    SignatureScheduleWeekday: 1,
+    SignatureScheduleMonthDay: 1
+  },
+  operator: 'deepStrictEqual'
+}
+
+Node.js v22.16.0
+Traceback (most recent call last):
+  File "/mnt/data/v36/tests/validate_signature_schedule.py", line 24, in <module>
+    subprocess.run(['node','-e',js],check=True)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/subprocess.py", line 577, in run
+    raise CalledProcessError(retcode, process.args,
+                             output=stdout, stderr=stderr)
+subprocess.CalledProcessError: Command '['node', '-e', '\nconst assert=require(\'node:assert/strict\');const els={};const byId=id=>els[id]??={value:\'\',checked:false,disabled:false,hidden:false,textContent:\'\'};const integrityLines=id=>String(byId(id).value).split(/\\r?\\n/).filter(Boolean);\nconst endpointFlags=[\'Enabled\',\'WriteEvents\',\'RealTime\',\'ProcessCorrelation\',\'SignatureScheduleEnabled\'];\nconst endpointNumbers={IntervalSeconds:\'EndpointInterval\',ChangeThreshold:\'EndpointThreshold\',Port:\'EndpointPort\',MaxFileMiB:\'EndpointMaxFileMiB\',BehaviorWindowSeconds:\'EndpointBehaviorWindowSeconds\'};\nconst endpointArrays=[\'Paths\',\'ExcludedPaths\',\'BackgroundExcludedPaths\',\'ExcludedPatterns\',\'CanaryPaths\',\'ResponsePaths\',\'ContainmentExecutables\'];\nfunction fillEndpoint(c){const e=c.Endpoint;for(const k of endpointFlags)byId(\'Endpoint\'+k).checked=!!e[k];for(const [k,id] of Object.entries(endpointNumbers))byId(id).value=e[k];for(const k of endpointArrays)byId(\'Endpoint\'+k).value=(e[k]||[]).join(\'\\n\');byId(\'EndpointMode\').value=e.Mode;byId(\'EndpointTrustedEnginePath\').value=e.TrustedEnginePath||\'\';byId(\'EndpointTrustedEngineSha256\').value=e.TrustedEngineSha256||\'\';byId(\'EndpointSignatureScheduleFrequency\').value=e.SignatureScheduleFrequency||\'daily\';byId(\'EndpointSignatureScheduleTime\').value=e.SignatureScheduleTime||\'03:00\';byId(\'EndpointSignatureScheduleWeekday\').value=String(e.SignatureScheduleWeekday??1);byId(\'EndpointSignatureScheduleMonthDay\').value=e.SignatureScheduleMonthDay??1;signatureScheduleFields();}\nfunction signatureScheduleFields(){const enabled=byId(\'EndpointSignatureScheduleEnabled\').checked,f=byId(\'EndpointSignatureScheduleFrequency\').value;byId(\'signature-schedule-fields\').hidden=!enabled;byId(\'signature-weekday-field\').hidden=f!==\'weekly\';byId(\'signature-monthday-field\').hidden=f!==\'monthly\';for(const id of [\'Frequency\',\'Time\',\'Weekday\',\'MonthDay\'])byId(\'EndpointSignatureSchedule\'+id).disabled=!enabled||(id===\'Weekday\'&&f!==\'weekly\')||(id===\'MonthDay\'&&f!==\'monthly\');byId(\'signature-schedule-summary\').textContent=enabled?\'Saved schedules run while Endpoint Protection is enabled and LinkScope is installed as a Windows service. Next run appears under Endpoint Protection → Signature maintenance.\':\'No additional LinkScope-scheduled updates.\';}\nfunction readEndpoint(){const e={SignatureScheduleFrequency:byId(\'EndpointSignatureScheduleFrequency\').value,SignatureScheduleTime:byId(\'EndpointSignatureScheduleTime\').value,SignatureScheduleWeekday:Number(byId(\'EndpointSignatureScheduleWeekday\').value),SignatureScheduleMonthDay:Number(byId(\'EndpointSignatureScheduleMonthDay\').value),Mode:byId(\'EndpointMode\').value,TrustedEnginePath:byId(\'EndpointTrustedEnginePath\').value.trim(),TrustedEngineSha256:byId(\'EndpointTrustedEngineSha256\').value.trim().toLowerCase()};for(const k of endpointFlags)e[k]=byId(\'Endpoint\'+k).checked;for(const [k,id] of Object.entries(endpointNumbers))e[k]=Number(byId(id).value);for(const k of endpointArrays)e[k]=integrityLines(\'Endpoint\'+k);return e;}\nfunction fillIntegrity(c){const i=c.Integrity;byId(\'IntegrityEnabled\').checked=i.Enabled;byId(\'IntegrityInterval\').value=i.IntervalSeconds;byId(\'IntegrityRecursive\').checked=i.Recursive;byId(\'IntegrityWriteEvents\').checked=i.WriteEvents;for(const key of [\'Paths\',\'ExcludedPaths\',\'ExcludedPatterns\'])byId(\'Integrity\'+key).value=(i[key]||[]).join(\'\\n\');byId(\'IntegrityReason\').value=\'\';}\nconst defaults={"Enabled": false, "ProfileDefaultsApplied": false, "BackgroundExcludedPaths": [], "WriteEvents": false, "IntervalSeconds": 86400, "ChangeThreshold": 50, "Port": 3310, "Paths": [], "ExcludedPaths": [], "RealTime": true, "ProcessCorrelation": false, "MaxFileMiB": 25, "BehaviorWindowSeconds": 60, "Mode": "monitor", "ExcludedPatterns": [], "CanaryPaths": [], "ResponsePaths": [], "ContainmentExecutables": [], "TrustedEnginePath": "", "TrustedEngineSha256": "", "SignatureScheduleEnabled": false, "SignatureScheduleFrequency": "daily", "SignatureScheduleTime": "03:00", "SignatureScheduleWeekday": 1, "SignatureScheduleMonthDay": 1};fillEndpoint({Endpoint:defaults});assert.equal(byId(\'EndpointSignatureScheduleEnabled\').checked,false);assert(byId(\'signature-schedule-fields\').hidden);assert(byId(\'EndpointSignatureScheduleTime\').disabled);assert.deepEqual(readEndpoint(),defaults);\nbyId(\'EndpointSignatureScheduleEnabled\').checked=true;byId(\'EndpointSignatureScheduleFrequency\').value=\'weekly\';byId(\'EndpointSignatureScheduleWeekday\').value=\'5\';byId(\'EndpointSignatureScheduleTime\').value=\'04:30\';signatureScheduleFields();assert(!byId(\'signature-weekday-field\').hidden);assert(byId(\'signature-monthday-field\').hidden);assert(!byId(\'EndpointSignatureScheduleWeekday\').disabled);assert(byId(\'EndpointSignatureScheduleMonthDay\').disabled);\nlet saved=readEndpoint();assert.equal(saved.SignatureScheduleEnabled,true);assert.equal(saved.SignatureScheduleFrequency,\'weekly\');assert.equal(saved.SignatureScheduleWeekday,5);assert.equal(saved.SignatureScheduleTime,\'04:30\');fillEndpoint({Endpoint:saved});assert.deepEqual(readEndpoint(),saved);\nbyId(\'EndpointSignatureScheduleFrequency\').value=\'monthly\';byId(\'EndpointSignatureScheduleMonthDay\').value=\'31\';signatureScheduleFields();assert(byId(\'signature-weekday-field\').hidden);assert(!byId(\'signature-monthday-field\').hidden);assert.equal(readEndpoint().SignatureScheduleMonthDay,31);byId(\'EndpointSignatureScheduleEnabled\').checked=false;signatureScheduleFields();assert(byId(\'signature-schedule-fields\').hidden);assert.equal(readEndpoint().SignatureScheduleEnabled,false);\nconsole.log(\'PASS: actual settings JS roundtrip, optional schedule, daily/weekly/monthly, hidden inputs and preserved choices\');\n']' returned non-zero exit status 1.
+
+validate_endpoint_scope.py: 0
+PASS: portable SQLite scope retirement, idempotency, boundary/exclusion model, preserved threats and historical incidents; native self-test added (not run).
+
+validate_priority_arrivals.py: 0
+PASS: watcher creation/rename priority wiring, debounce/retry guards, actual SQLite ordering with 3,000 old items, recent copied files and Downloads, bounded retry reference model.
+NOT RUN: Windows copy/download events, EICAR detection, ACL access, native C# build or actual latency.
+
+validate_coverage_aggregation.py: 0
+PASS: 1,000 unique paths, repeated failures, migration and acknowledgement SQL, preserved malware/canary alerts; source checks for aggregation and UI.
+
+validate_endpoint_activity_version.py: 1
+PASS: scoped SQLite acknowledgement preserves all history, active incidents, unrelated categories and later unread events
+[eval]:29
+    const expanded=new Set(Array.from(panel.querySelectorAll('details[open]')).map(d=>d.dataset.root));
+                                            ^
+
+TypeError: panel.querySelectorAll is not a function
+    at renderEndpointRootCoverage ([eval]:29:45)
+    at endpointActivity ([eval]:70:5)
+    at activity ([eval]:175:33)
+    at [eval]:176:14
+    at runScriptInThisContext (node:internal/vm:209:10)
+    at node:internal/process/execution:449:12
+    at [eval]-wrapper:6:24
+    at runScriptInContext (node:internal/process/execution:447:60)
+    at evalFunction (node:internal/process/execution:87:30)
+    at evalScript (node:internal/process/execution:99:3)
+
+Node.js v22.16.0
+Traceback (most recent call last):
+  File "/mnt/data/v36/tests/validate_endpoint_activity_version.py", line 31, in <module>
+    subprocess.run(['node','-e',js],check=True)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/subprocess.py", line 577, in run
+    raise CalledProcessError(retcode, process.args,
+                             output=stdout, stderr=stderr)
+subprocess.CalledProcessError: Command '['node', '-e', "const assert=require('node:assert/strict');const controls={};const byId=id=>controls[id]??=( {dataset:{},textContent:'',disabled:false});let csrf='admin';\nlet endpointAck=null,endpointAckEpoch=0,endpointAckBusy=false,endpointScanBusy=false,endpointScanRequested=null,endpointLastSample=null;\nfunction endpointAckControls(){\n    const b=byId('endpoint-ack-previous');if(!b)return;\n    b.disabled=!csrf||endpointAckBusy||!endpointAck||!endpointAck.unread;\n    b.textContent=endpointAckBusy?'Acknowledging…':'Acknowledge previous alerts'+(endpointAck?.unread?' ('+endpointAck.unread+')':'');\n    byId('endpoint-ack-count').textContent=endpointAck?endpointAck.unread+' unread endpoint alerts · '+endpointAck.activeUnread+' active unread':'Acknowledgement status unavailable';\n}\n// Monitoring-provider health is distinct from file signature coverage. Never infer\n// a healthy watcher from stale telemetry, an old diagnostic, or journal presence.\nfunction endpointRootPresentation(root){\n    const state=root.state,local=root.localWatcher===true,system=root.privilegedWatcher===true,journal=root.journal===true;\n    if(state==='Excluded')return ['Excluded by policy','review','Real-time monitoring excluded'];\n    if(state==='Scheduled only')return ['Scheduled only','info','Real-time monitoring disabled by policy'];\n    if(state==='Watching'&&local)return ['Real-time monitoring active','ok','Local filesystem watcher'];\n    if(state==='Watching'&&system)return ['Real-time monitoring active','ok','Privileged SYSTEM watcher · automatic fallback'];\n    if(state==='Journal only'&&journal)return ['Journal-only monitoring','review','NTFS journal · no verified live watcher'];\n    if(state==='Initializing')return ['Monitoring initializing','review','Awaiting verified monitoring provider'];\n    if(state==='Uncovered')return ['Monitoring unavailable','fail','No verified monitoring provider'];\n    return ['Monitoring status unverified','review','Provider evidence is incomplete'];\n}\nfunction renderEndpointRootCoverage(panel,result,fresh){\n    if(!panel)return;\n    const roots=Array.isArray(result.rootCoverage)?result.rootCoverage:[];\n    const message=result.status==='disabled'?'Endpoint Protection disabled':!fresh?'Awaiting fresh per-folder coverage evidence':!roots.length?'No protected folder coverage reported':null;\n    // Avoid replacing unchanged DOM (keeps keyboard focus and disclosures open).\n    const key=JSON.stringify(message===null?roots:message);\n    if(panel.dataset.coverageKey===key)return;\n    const expanded=new Set(Array.from(panel.querySelectorAll('details[open]')).map(d=>d.dataset.root));\n    panel.dataset.coverageKey=key;\n    if(message!==null){panel.textContent=message;return;}\n    const rows=roots.map(root=>{\n        const [label,kind,provider]=endpointRootPresentation(root);\n        const row=element('div');row.className='endpoint-coverage-row';\n        const head=element('div');head.className='endpoint-coverage-heading';\n        const path=element('strong',root.path||'Unknown path');path.className='endpoint-coverage-path';\n        head.append(path,healthBadge(label,kind));row.append(head);\n        const meta=element('div');meta.className='endpoint-coverage-meta';\n        meta.append(element('span',provider),element('span','NTFS journal: '+(root.journal===true?'Available (live or replaying)':'Not available')));row.append(meta);\n        const diagnostics=element('details');diagnostics.className='endpoint-coverage-diagnostics';diagnostics.dataset.root=root.path||'';diagnostics.open=expanded.has(diagnostics.dataset.root);\n        diagnostics.append(element('summary','Technical diagnostics'));\n        const body=element('div');body.className='endpoint-coverage-diagnostic-body';\n        body.append(element('div','Local watcher: '+(root.localWatcher===true?'Active':root.localWatcherDiagnostic?'Failed / inactive':'Not active')),element('div','SYSTEM watcher: '+(root.privilegedWatcher===true?'Verified active':'Not verified active')));\n        if(root.localWatcherDiagnostic)body.append(element('div','Local watcher diagnostic: '+root.localWatcherDiagnostic));\n        if(root.privilegedWatcherDiagnostic)body.append(element('div','SYSTEM watcher diagnostic: '+root.privilegedWatcherDiagnostic));\n        if(root.localWatcherDiagnostic===undefined&&root.privilegedWatcherDiagnostic===undefined&&root.detail)body.append(element('div',root.detail));\n        diagnostics.append(body);row.append(diagnostics);return row;\n    });\n    panel.replaceChildren(...rows);\n}\nfunction endpointActivity(v,generatedUtc){\n    endpointLastSample=v;const r=v?.result||v||{},panel=byId('endpoint-live');if(!panel)return;\n    const age=Number(v?.ageSeconds??Infinity),fresh=!v?.stale&&age<=20,now=Date.parse(generatedUtc),recent=Number.isFinite(now)&&r.lastRealTimeScanUtc&&now-Date.parse(r.lastRealTimeScanUtc)<=8000&&now>=Date.parse(r.lastRealTimeScanUtc);\n    if(endpointScanRequested&&((fresh&&(r.scanRunning||r.lastScanUtc!==endpointScanRequested.previous||r.scanStartedUtc!==endpointScanRequested.started))||Date.now()-endpointScanRequested.at>30000))endpointScanRequested=null;\n    let state='waiting',message='Waiting for endpoint telemetry';\n    if(r.status==='disabled'){state='disabled';message='Endpoint Protection disabled';}\n    else if(!fresh){state='waiting';message=v?.collectedUtc?'Awaiting fresh scanner telemetry':'Waiting for endpoint telemetry';}\n    else if(r.engineOnline!==true){state='warning';message='ClamAV unavailable · monitoring coverage incomplete';}\n    else if((r.rootCoverage||[]).some(x=>['Uncovered','Initializing','Excluded'].includes(x.state))){state='warning';message='Configured scope has unverified real-time coverage';}\n    else if(r.signatureFreshness&&r.signatureFreshness!=='Current'){state='warning';message='Signature freshness not verified';}\n    else if(r.scanRunning){state='scanning';message=r.baselineResumed?'Resuming baseline · reconciliation to follow':'Baseline verification in progress';}\n    else if(endpointScanRequested){state='queued';message='Scan requested · waiting for scanner';}\n    else if(Number(r.queueDepth)>0){state='queued';message='Processing real-time file events';}\n    else if(recent){state='activity';message='Real-time file scan just completed';}\n    else if(r.realTime&&(r.watcherCount>0||r.watcherRootsCoveredByJournal>0||r.watcherRootsCoveredByPrivileged>0)){state=r.status==='partial'?'warning':'watching';message=r.status==='partial'?'Watching files · coverage warning':'Real-time monitoring active · waiting for changes';}\n    else if(r.realTime){state='warning';message='Real-time watcher unavailable';}\n    else {state='idle';message='Scheduled monitoring · waiting for next scan';}\n    panel.dataset.state=state;byId('endpoint-live-state').textContent=message;\n    if(byId('endpoint-active-scope'))byId('endpoint-active-scope').textContent=!fresh?'Active scan scope: awaiting fresh telemetry':r.status==='disabled'?'Active scan scope: disabled':'Active scan scope: '+(Array.isArray(r.protectedPaths)&&r.protectedPaths.length?r.protectedPaths.join(' · '):'Not reported');\n    renderEndpointRootCoverage(byId('endpoint-root-coverage'),r,fresh);\n    if(byId('endpoint-usn-state')){const volumes=Array.isArray(r.usnVolumes)?r.usnVolumes:[];byId('endpoint-usn-state').textContent=!fresh?'NTFS journal: awaiting fresh telemetry':!r.realTime?'NTFS journal: real-time disabled':volumes.length?'NTFS journal · '+volumes.map(v=>v.volume+' '+v.status).join(' · ')+' · Durable pending: '+(r.usnQueueDepth??'—'):'NTFS journal: no configured local volumes';byId('endpoint-usn-detail').textContent=fresh?volumes.map(v=>v.volume+' '+v.detail+(v.status==='Live'||v.status==='Replaying'?' · checkpoint '+v.checkpoint+' / '+v.tail:'')).concat((r.privilegedWatcherDetails||[]).map(w=>w.path+' · '+(w.active?'Privileged watcher active':w.detail))).join(' | '):'';}\n    byId('endpoint-live-counts').textContent='Full scan: '+(r.scannedFiles??'—')+' files (cached: '+(r.baselineCached??'—')+') · Real-time checks: '+(r.realTimeChecked??'—')+' since reset / policy start · SYSTEM-assisted checks: '+(r.privilegedFileChecks??'—')+' · Pending: '+(r.queueDepth??'—')+' · Priority entries: '+(r.priorityQueueDepth??'—')+' · Durable cooldown: '+(r.deferredQueueDepth??'—')+' · Durable ready: '+(r.durableReadyDepth??'—');\n    if(byId('endpoint-download-state'))byId('endpoint-download-state').textContent='Downloads: '+(r.downloadStatus??'Not available')+' · Attempts: '+(r.downloadChecks??'—')+' · Pending: '+(r.downloadPending??'—')+(r.downloadRoots?.length?' · Folders: '+r.downloadRoots.join(' · '):'')+(r.downloadLastPath?' · Last: '+r.downloadLastPath+' · '+(r.downloadLastResult??''):'');\n    byId('endpoint-live-file').textContent=r.lastFileScanUtc?'Last successful signature check: '+new Date(r.lastFileScanUtc).toLocaleString()+(r.lastScannedPath?' · '+r.lastScannedPath:''):'No successful file signature check reported yet.';\n    if(byId('endpoint-signature-schedule')){const schedule=r.signatureSchedule,day=schedule?.frequency==='weekly'?' on '+(['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][schedule.weekday]||'—'):schedule?.frequency==='monthly'?' on day '+schedule.monthDay:'';byId('endpoint-signature-schedule').textContent=r.status==='disabled'?'Scheduled refresh · Paused (Endpoint Protection disabled)':!fresh?'Scheduled refresh · Awaiting fresh status':schedule?.enabled?'Scheduled refresh · '+schedule.frequency+day+' at '+schedule.localTime+' (monitoring host) · '+schedule.status+' · Next: '+localEndpointDate(schedule.nextRunUtc)+' · Last request: '+localEndpointDate(schedule.lastScheduledRequestUtc):schedule?'Scheduled refresh · Disabled':'Scheduled refresh · Status not recorded';}\n    if(byId('endpoint-signature-log'))byId('endpoint-signature-log').textContent='Latest database update reported by FreshClam log: '+localEndpointDate(r.lastReportedSignatureUpdateUtc)+(r.signatureUpdateLogRecognized?'':' · No recent matching log record');\n    const reset=byId('endpoint-reset');if(reset)reset.disabled=!csrf||!fresh||r.status==='disabled'||endpointScanBusy||!!endpointScanRequested;\n    const b=byId('endpoint-scan-now');b.disabled=!csrf||endpointScanBusy||!!endpointScanRequested||r.status==='disabled'||!!r.scanRunning||!fresh;b.textContent=r.scanRunning&&fresh?'Scanning…':endpointScanRequested?'Scan queued…':'Scan now';\n}\nlet signatureBusy=false,signatureRequested=null,signatureState=null,canaryBusy=false,maintenanceLast=0,maintenanceBusy=false;\nfunction localEndpointDate(value){return value&&Number.isFinite(Date.parse(value))?new Date(value).toLocaleString():'Not recorded';}\nasync function refreshEndpointMaintenance(){\n    if(maintenanceBusy)return;maintenanceBusy=true;\n    try{\n        const [m,c]=await Promise.all([request('/ui/endpoint-signatures'),request('/ui/endpoint-canaries')]);signatureState=m.state||{};\n        let startupError='';\n        if(signatureRequested&&(signatureState.attemptUtc!==signatureRequested.attempt||Date.now()-signatureRequested.at>60000)){\n            if(signatureState.attemptUtc===signatureRequested.attempt)startupError='Task did not report startup. Check Windows Task Scheduler.';\n            signatureRequested=null;\n        }\n        const elapsed=Date.now()-Date.parse(signatureState.attemptUtc||''),cooldown=Number.isFinite(elapsed)&&elapsed<3600000;\n        const button=byId('endpoint-signatures');button.disabled=!csrf||!m.supported||signatureBusy||!!signatureRequested||signatureState.status==='Running'||signatureState.status==='Unavailable'||cooldown;button.textContent=signatureState.status==='Running'?'Updating signatures…':signatureRequested?'Update queued…':'Update signatures now';\n        const state=byId('endpoint-signature-state');state.replaceChildren(healthBadge(signatureRequested?'Queued':signatureState.status||'Not recorded',({Running:'info',Updated:'ok',Checked:'ok',Failed:'fail',Warning:'review',Interrupted:'review',Unavailable:'unknown'})[signatureState.status]||'unknown'),document.createTextNode(' '+(startupError||signatureState.detail||'')+(cooldown&&signatureState.status!=='Running'?' · Next request after '+localEndpointDate(new Date(Date.parse(signatureState.attemptUtc)+3600000).toISOString()):'')+(!m.supported?' · Standard local service/port required.':'')));\n        byId('endpoint-signature-check').textContent='Last successful FreshClam check (LinkScope initiated): '+localEndpointDate(signatureState.checkedUtc);\n        byId('endpoint-signature-download').textContent='Last confirmed signature database content change (LinkScope initiated): '+localEndpointDate(signatureState.updatedUtc);\n        const select=byId('endpoint-canary-dir'),prior=select.value,dirs=c.directories||[];if(JSON.stringify([...select.options].map(o=>o.value))!==JSON.stringify(['',...dirs])){select.replaceChildren(new Option(dirs.length?'Select a protected directory':'No eligible saved directory',''),...dirs.map(p=>new Option(p,p)));if(dirs.includes(prior))select.value=prior;}\n        select.disabled=!dirs.length||canaryBusy;byId('endpoint-create-canaries').disabled=canaryBusy||!csrf||!select.value;\n    }catch(e){byId('endpoint-signature-state').textContent='Maintenance status unavailable. '+e.message;byId('endpoint-signatures').disabled=true;byId('endpoint-create-canaries').disabled=true;}\n    finally{maintenanceBusy=false;maintenanceLast=Date.now();}\n}\n// The vault is independent of the telemetry-rendered cards. Keep selection,\n// filters and paging stable during live refreshes; never send browser-supplied paths.\nlet quarantineItems=[],quarantineReceipts=[],quarantineSelected=new Set(),quarantinePage=1;\nlet quarantineBusy=false,quarantineLoading=false,quarantineLast=0,quarantineSnapshotKey='',quarantineAvailable=false;\nconst quarantinePageSize=20,quarantineLimit=100;\nfunction quarantineMatching(){\n    const query=byId('quarantine-search').value.trim().toLowerCase();\n    return quarantineItems.filter(r=>!query||[r.path,r.sha256,r.id,r.state,r.utc].some(x=>String(x??'').toLowerCase().includes(query)));\n}\nfunction quarantinePageRows(){const rows=quarantineMatching(),pages=Math.max(1,Math.ceil(rows.length/quarantinePageSize));quarantinePage=Math.max(1,Math.min(pages,quarantinePage));return {rows:rows.slice((quarantinePage-1)*quarantinePageSize,quarantinePage*quarantinePageSize),pages,matches:rows.length};}\nfunction quarantineSelectionState(){\n    const {rows}=quarantinePageRows(),eligible=rows.filter(r=>r.deletable===true);\n    const pageSelect=byId('quarantine-select-page');pageSelect.checked=eligible.length>0&&eligible.every(r=>quarantineSelected.has(r.id));pageSelect.indeterminate=!pageSelect.checked&&eligible.some(r=>quarantineSelected.has(r.id));\n    pageSelect.disabled=!csrf||quarantineBusy||!quarantineAvailable||!eligible.length;\n    byId('quarantine-delete').disabled=!csrf||quarantineBusy||!quarantineAvailable||!quarantineSelected.size;\n    byId('quarantine-selection').textContent=quarantineSelected.size+' selected'+(quarantineSelected.size===quarantineLimit?' (maximum per operation)':'');\n    for(const box of byId('quarantine-rows').querySelectorAll('input[type=checkbox]')){box.checked=quarantineSelected.has(box.dataset.evidence);box.disabled=!csrf||quarantineBusy||!quarantineAvailable||box.dataset.eligible!=='true'||(!box.checked&&quarantineSelected.size>=quarantineLimit);}\n}\nfunction renderQuarantine(){\n    const {rows,pages,matches}=quarantinePageRows(),body=byId('quarantine-rows');body.replaceChildren();\n    for(const r of rows){\n        const row=body.insertRow(),box=element('input');box.type='checkbox';box.dataset.evidence=r.id;box.dataset.eligible=String(r.deletable===true);box.setAttribute('aria-label','Select '+(r.path||r.id));\n        box.onchange=()=>{if(box.checked&&quarantineSelected.size<quarantineLimit)quarantineSelected.add(r.id);else quarantineSelected.delete(r.id);quarantineSelectionState();};row.insertCell().append(box);\n        row.insertCell().textContent=r.utc&&Number.isFinite(Date.parse(r.utc))?new Date(r.utc).toLocaleString():'—';\n        row.insertCell().textContent=r.path||'Unavailable';\n        const evidence=row.insertCell(),hash=element('code',r.sha256||'—');hash.className='quarantine-hash';evidence.append(hash,element('small',r.id||'—'));\n        row.insertCell().textContent=Number.isFinite(r.sealedBytes)?(r.sealedBytes/1024).toLocaleString(undefined,{maximumFractionDigits:1})+' KiB':'—';\n        const state=r.state==='quarantined'?'Quarantined':r.state==='purge_pending'?'Deletion pending':r.state==='evidence_saved'?'Incomplete evidence':'Review required';\n        row.insertCell().append(healthBadge(state,r.state==='quarantined'?'ok':'review'));\n    }\n    if(!rows.length){const row=body.insertRow(),cell=row.insertCell();cell.colSpan=6;cell.textContent=quarantineItems.length?'No records match your search.':'No sealed malware evidence in quarantine.';}\n    byId('quarantine-total').textContent=quarantineItems.length.toLocaleString()+' vault items · '+matches.toLocaleString()+' matching';\n    byId('quarantine-page').textContent='Page '+quarantinePage+' of '+pages;\n    byId('quarantine-previous').disabled=quarantinePage===1;byId('quarantine-next').disabled=quarantinePage===pages;\n    quarantineSelectionState();\n}\nasync function refreshQuarantine(force=false){\n    if(quarantineLoading||quarantineBusy||(!force&&Date.now()-quarantineLast<5000))return;\n    quarantineLoading=true;byId('quarantine-refresh').disabled=true;\n    try{\n        const data=await request('/ui/endpoint-quarantine');\n        if(quarantineBusy)return;\n        const items=Array.isArray(data.items)?data.items:[],receipts=Array.isArray(data.recentDeletions)?data.recentDeletions:[],key=JSON.stringify([items,receipts]);\n        quarantineAvailable=true;\n        if(quarantineSnapshotKey!==key){quarantineItems=items;quarantineReceipts=receipts;quarantineSnapshotKey=key;\n            const eligible=new Set(items.filter(r=>r.deletable===true).map(r=>r.id));for(const id of quarantineSelected)if(!eligible.has(id))quarantineSelected.delete(id);\n            renderQuarantine();const target=byId('quarantine-deletions');target.replaceChildren(receipts.length?table(receipts,'endpoint quarantine deletions'):element('p','No permanent deletions recorded.'));\n        }else quarantineSelectionState();\n        byId('quarantine-status').textContent='Updated '+new Date().toLocaleTimeString()+' · '+Number(data.deletedCount||0).toLocaleString()+' payloads permanently deleted'+(csrf?'':' · Read-only access');\n    }catch(e){quarantineAvailable=false;byId('quarantine-status').textContent='Vault status unavailable: '+e.message;quarantineSelectionState();}\n    finally{quarantineLoading=false;quarantineLast=Date.now();byId('quarantine-refresh').disabled=false;}\n}\nfunction setupQuarantineManager(){\n    byId('quarantine-search').oninput=()=>{quarantinePage=1;renderQuarantine();};\n    byId('quarantine-previous').onclick=()=>{quarantinePage--;renderQuarantine();};byId('quarantine-next').onclick=()=>{quarantinePage++;renderQuarantine();};\n    byId('quarantine-refresh').onclick=()=>refreshQuarantine(true);\n    byId('quarantine-select-page').onchange=()=>{const select=byId('quarantine-select-page').checked;for(const r of quarantinePageRows().rows.filter(r=>r.deletable===true)){if(select&&quarantineSelected.size<quarantineLimit)quarantineSelected.add(r.id);else if(!select)quarantineSelected.delete(r.id);}quarantineSelectionState();};\n    byId('quarantine-delete').onclick=async()=>{\n        if(!csrf||!quarantineAvailable||quarantineBusy||!quarantineSelected.size)return;\n        const ids=[...quarantineSelected];quarantineBusy=true;quarantineSelectionState();\n        try{if(!(await confirmAction('Permanently delete '+ids.length+' quarantined file'+(ids.length===1?'':'s')+'?', 'The selected sealed malware payloads will be removed irreversibly from the LinkScope vault. You cannot restore them through LinkScope. Detection records, original paths, hashes and audit history will remain. Backups and disk recovery are not affected.','Delete permanently',true)))return;\n            const result=await request('/ui/endpoint-quarantine',{ids});\n            for(const item of result.results||[])if(item.ok)quarantineSelected.delete(item.id);\n            const details=(result.results||[]).filter(r=>!r.ok).map(r=>r.id+': '+r.detail).join(' · ');\n            notice(result.deleted+' payloads deleted; '+result.failed+' not deleted.'+(details?' '+details:''),result.failed?'error':'success');\n            byId('quarantine-status').textContent=result.deleted+' deleted; '+result.failed+' failed.';\n            quarantineSnapshotKey='';\n        }catch(e){failure(e);}finally{quarantineBusy=false;quarantineSelectionState();await refreshQuarantine(true);}\n    };\n    if(!csrf){byId('quarantine-delete').hidden=true;byId('quarantine-select-page').hidden=true;}\n    refreshQuarantine(true);setInterval(refreshQuarantine,5000);\n}\n\nconst now='2026-11-27T08:42:00Z',base={engineOnline:true,status:'ok',realTime:true,watcherCount:1,queueDepth:0,scanRunning:false,scannedFiles:10,realTimeChecked:1};\nfunction activity(result,age=1){endpointActivity({result:{...base,...result},ageSeconds:age,collectedUtc:now,stale:false},now);return byId('endpoint-live').dataset.state;}\nassert.equal(activity({}),'watching');assert.equal(activity({scanRunning:true}),'scanning');assert.equal(activity({queueDepth:2}),'queued');assert.equal(activity({lastRealTimeScanUtc:'2026-11-27T08:41:57Z'}),'activity');assert.equal(activity({lastRealTimeScanUtc:'2026-11-27T08:41:30Z'}),'watching');assert.equal(activity({engineOnline:false,scanRunning:true}),'warning');assert.equal(activity({scanRunning:true},21),'waiting');assert.equal(activity({status:'disabled'}),'disabled');assert.equal(activity({realTime:false}),'idle');assert.equal(activity({watcherCount:0}),'warning');assert.equal(activity({status:'partial'}),'warning');endpointAck={unread:0,through:1,activeUnread:0};endpointAckControls();assert.equal(byId('endpoint-ack-previous').disabled,true);endpointAck={unread:2,through:3,activeUnread:1};endpointAckControls();assert.equal(byId('endpoint-ack-previous').disabled,false);assert.match(byId('endpoint-ack-previous').textContent,/2/);\n"]' returned non-zero exit status 1.
+
+validate_endpoint_maintenance.py: 0
+PASS: maintenance fixed action, state semantics, canary reservation, log patterns, version wiring, project XML and JavaScript

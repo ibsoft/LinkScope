@@ -1,0 +1,311 @@
+38 passed, 7 failed/timed out, 45 scripts. Portable source/SQL/UI checks, not native runtime.
+validate_account_menu_icons.py exit=124
+Timed out after 12 seconds
+validate_canary_setup.py exit=0
+PASS: three fixed harmless templates, valid ZIP/XML Office packages, SHA-256 changes on mutation
+PASS: Word and Excel templates opened by portable document readers
+PASS: setup opt-in default, original user creation, explicit baseline seed, no overwrite/explicit recovery and fixed-original recovery wiring (source assertions)
+PASS: immutable baseline INSERT, 1,000-row activity retention, detection outbox, dashboard/API/report data, local signature update controls
+Windows compilation, ACLs, Office compatibility in Microsoft Office, ClamAV runtime, notifications and PDF/API end-to-end tests remain pending.
+PASS: nonblocking canary worker, timeout, cancellation and noninteractive error handling (source checks)
+PASS: direct worker execution, explicit UAC manifest on both build paths, no automatic skip on preparation failure
+PASS: explicit enrolled recovery, fixed originals only, baseline preservation wiring (source checks)
+
+validate_clam_signature.py exit=0
+PASS: official key import/fingerprint, genuine synthetic detached signature, tampered payload, wrong signer, malformed signature, expiry/revocation status rejection, setup ordering and embedded resources. Windows runtime not tested.
+
+validate_clamav_setup.py exit=0
+PASS: ClamAV setup source/build inclusion, readiness-state branches, loopback configuration, service/update safeguards, wizard command length, and C# delimiter checks. Not Windows compilation or runtime tests.
+
+validate_coverage_aggregation.py exit=0
+PASS: 1,000 unique paths, repeated failures, migration and acknowledgement SQL, preserved malware/canary alerts; source checks for aggregation and UI.
+
+validate_desktop_app.py exit=0
+PASS: response type shares correct namespace in a separately compiled source; all timeout constructions qualified; installer shortcut and optional managed PWA wiring; policy ownership guards; non-caching PWA. Windows compilation, COM shortcuts and policy application not executed.
+
+validate_download_reconciliation.py exit=0
+PASS: Downloads scope discovery, independent scheduling, privileged metadata protocol, bounded retry and activity telemetry source checks. Native behavior NOT tested.
+
+validate_endpoint.py exit=0
+PASS: all JavaScript files parse with Node.js
+PASS: default endpoint policy is disabled, monitor-only, no response targets or engine pin
+PASS: project XML, resource existence and Build.cmd parity
+PASS: all C# sources discovered exactly once; EndpointResponse declaration, references and missing-file diagnostics checked
+PASS: endpoint settings fields exist, HTML IDs unique
+PASS: actual SQLite schema and SQL literals for file state, canary baseline, incident/open-close outbox and bounded deletion
+PASS: C# lexer delimiter checks (not compilation)
+PASS: portable validation completed; Windows compilation, runtime and security testing remain required.
+
+validate_endpoint_activity_version.py exit=0
+PASS: scoped SQLite acknowledgement preserves all history, active incidents, unrelated categories and later unread events
+PASS: live UI state logic in Node.js (not visual rendering)
+PASS: authenticated/CSRF-protected route, category-only toast dismissal, reconciliation gating and telemetry wiring (source assertions)
+PASS: every page version placeholder, embedded-resource build wiring and real Git merge-history selection (portable equivalent)
+
+validate_endpoint_layout_updater.py exit=1
+PASS: actual renderHealth places 8 summary and 6 scan statistic cards above stable activity controls; evidence below; repeat/disabled refresh
+Traceback (most recent call last):
+  File "/mnt/data/v32/tests/validate_endpoint_layout_updater.py", line 57, in <module>
+    assert '15px/1.3' in css and 'font-size:16px;min-height:44px' in css
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+
+validate_endpoint_maintenance.py exit=0
+PASS: maintenance fixed action, state semantics, canary reservation, log patterns, version wiring, project XML and JavaScript
+
+validate_endpoint_protection_v29.py exit=0
+PASS: root faults, recovery scheduling, strict verdict, scan pause, per-folder evidence, and durable deduplicated SQLite retries; Windows runtime pending.
+
+validate_endpoint_protection_v30.py exit=0
+PASS: V30 source contracts (not native runtime tests)
+
+validate_endpoint_protection_v31.py exit=0
+PASS: durable backoff SQLite, duplicate deferral, restart persistence, FIFO eligibility, acknowledgement cleanup, and source wiring; Windows runtime not executed.
+
+validate_endpoint_protection_v32.py exit=0
+PASS: boundary handling source contracts; actual SQLite coverage category and ready queue queries; Windows runtime not executed.
+
+validate_endpoint_scope.py exit=0
+PASS: portable SQLite scope retirement, idempotency, boundary/exclusion model, preserved threats and historical incidents; native self-test added (not run).
+
+validate_endpoint_summary.py exit=0
+PASS: actual renderer preserves severity, moves raw messages, filters unrelated/resolved alerts, retains open state and clears summary when healthy
+
+validate_file_status.py exit=0
+PASS: exact-path read-only diagnostics, SQLite case-insensitive query and scope guard, engine error retries, priority fairness source wiring. Native Windows runtime not executed.
+
+validate_header_alignment.py exit=124
+Timed out after 12 seconds
+validate_integrity_activity.py exit=0
+PASS: actual integrity activity and renderer: initial collection, live counts, prior findings, fixed panel placement, completed, queued, partial, viewer, disabled.
+PASS: integrity activity API publication and completed-result separation (source checks).
+
+validate_mfa_ui.py exit=0
+PASS: actual login handler hides MFA by default, reveals it after server challenge, retries invalid codes, resets on credential changes, handles first-use and verified login
+PASS: actual reminder code honors five minutes, survives navigation, shares account deadlines across tabs, covers both roles, skips hidden tabs and enrolled/unauthenticated users, links to MFA without a monitoring alert
+PASS: shared versioned assets on all 12 pages; workspace and dark logout/log panel CSS assertions
+Pending: Windows compilation, browser rendering and real authentication end-to-end testing.
+
+validate_navigation.py exit=1
+Traceback (most recent call last):
+  File "/mnt/data/v32/tests/validate_navigation.py", line 43, in <module>
+    page.set_viewport_size({'width':1536,'height':900});page.goto('http://127.0.0.1:9876'+path,wait_until='domcontentloaded');page.locator('#ls-theme-switch').wait_for()
+                                                        ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/pyvenv/lib/python3.13/site-packages/playwright/sync_api/_generated.py", line 9050, in goto
+    self._sync(
+    ~~~~~~~~~~^
+        self._impl_obj.goto(
+        ^^^^^^^^^^^^^^^^^^^^
+            url=url, timeout=timeout, waitUntil=wait_until, referer=referer
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        )
+        ^
+    )
+    ^
+  File "/opt/pyvenv/lib/python3.13/site-packages/playwright/_impl/_sync_base.py", line 115, in _sync
+    return task.result()
+           ~~~~~~~~~~~^^
+  File "/opt/pyvenv/lib/python3.13/site-packages/playwright/_impl/_page.py", line 552, in goto
+    return await self._main_frame.goto(**locals_to_params(locals()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/pyvenv/lib/python3.13/site-packages/playwright/_impl/_frame.py", line 153, in goto
+    await self._channel.send(
+        "goto", self._navigation_timeout, locals_to_params(locals())
+    )
+  File "/opt/pyvenv/lib/python3.13/site-packages/playwright/_impl/_connection.py", line 69, in send
+    return await self._connection.wrap_api_call(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/opt/pyvenv/lib/python3.13/site-packages/playwright/_impl/_connection.py", line 559, in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+playwright._impl._errors.Error: Page.goto: net::ERR_BLOCKED_BY_ADMINISTRATOR at http://127.0.0.1:9876/
+Call log:
+  - navigating to "http://127.0.0.1:9876/", waiting until "domcontentloaded"
+
+
+validate_navigation_security_evidence.py exit=0
+PASS: all 11 authenticated templates contain complete controls; Settings and Report are account links; Settings is hidden for viewers.
+PASS: separate security snapshots, exact final prompt and verdict evidence, sample limits, credential filtering and both build paths; Windows execution remains pending.
+
+validate_navigation_static.py exit=1
+Traceback (most recent call last):
+  File "/mnt/data/v32/tests/validate_navigation_static.py", line 36, in <module>
+    assert (ROOT/'FONT-AWESOME-NOTICE.md').is_file()
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+AssertionError
+
+validate_priority_arrivals.py exit=0
+PASS: watcher creation/rename priority wiring, debounce/retry guards, actual SQLite ordering with 3,000 old items, recent copied files and Downloads, bounded retry reference model.
+NOT RUN: Windows copy/download events, EICAR detection, ACL access, native C# build or actual latency.
+
+validate_privileged_arrivals.py exit=0
+PASS: restricted privileged scan source wiring, shared verdict path, priority arrival persistence/rollback/dedup/ack, reset scope and independent metric source checks. Native Windows compilation and EICAR testing NOT RUN.
+
+validate_privileged_watcher.py exit=0
+PASS: restricted watcher pipe, exact scope, metadata bounds, lease, event priority, gap handling, UI and coverage truth table. Windows runtime NOT tested.
+
+validate_profile_defaults.py exit=0
+PASS: setup identity wiring, one-time additive profile migration, background-only scan guard, evidence preservation, actual JS settings round-trip. Native self-test not executed.
+
+validate_profile_scan_access.py exit=0
+PASS: source checks for explicit scope/ACL consent and bounded independent watcher retry; Windows execution not tested.
+
+validate_provider_sources.py exit=1
+Traceback (most recent call last):
+  File "/mnt/data/v32/tests/validate_provider_sources.py", line 43, in <module>
+    assert 'width:13px;height:13px' in css and 'width:44px;height:44px' in css
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+
+validate_quarantine_cidr.py exit=0
+PASS: actual quarantine SQL syntax, matched-hash recovery, journal ordering, authorization/source checks and CIDR reference cases; Windows APIs and C# CIDR execution not tested.
+
+validate_response_access_settings.py exit=0
+PASS: SYSTEM-only fixed standard ClamD helper, query-only ACL, fail-closed quarantine verification, response diagnostics, repair cooldown and all 16 accessible settings categories (source checks).
+Pending Windows test: actual ACL changes, task execution, ClamD restarts, quarantine and C# compilation.
+
+validate_response_defaults.py exit=0
+PASS: suggestions, scope boundaries, explicit additions, no implicit authorization, no duplicates, existing settings preserved
+PASS: observed engine hash requires explicit confirmation, never replaces an existing pin or nonstandard path
+PASS: default monitor policy, admin settings route, bounded server-side discovery and existing confirmation wiring
+PASS: larger wordmark, regular navigation weight and responsive no-wrap layout rules
+
+validate_scan_scheduling.py exit=0
+PASS: source wiring, queue dedup and scope guards, canary priority, scheduled scan fairness, coverage gap preservation, queue metrics, scheduling reference fixtures. Windows runtime not executed.
+
+validate_service_file_probe.py exit=0
+PASS: service probe authorization, queue persistence, fresh verdict selection, retry/coverage checks, EICAR memory fixture length. Windows runtime not executed.
+
+validate_settings_accordion.py exit=0
+PASS: 16 categories, expand/collapse, retained edits, native invalid-field reveal, deep links, and 36 field/button layouts across six viewport widths and two themes.
+
+validate_setup_build.py exit=0
+PASS: MSBuild setup project, x64 GUI settings, exact payload resource, build order, conditional MSI copy, cleanup and standalone build compatibility (static checks only).
+
+validate_signature_schedule.py exit=1
+node:assert:95
+  throw new AssertionError(obj);
+  ^
+
+AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
++ actual - expected
+... Skipped lines
+
+  {
+    BackgroundExcludedPaths: [],
+    BehaviorWindowSeconds: 60,
+    CanaryPaths: [],
+    ChangeThreshold: 50,
+...
+    ProcessCorrelation: false,
+-   ProfileDefaultsApplied: false,
+    RealTime: true,
+    ResponsePaths: [],
+    SignatureScheduleEnabled: false,
+    SignatureScheduleFrequency: 'daily',
+    SignatureScheduleMonthDay: 1,
+
+    at [eval]:10:860
+    at runScriptInThisContext (node:internal/vm:209:10)
+    at node:internal/process/execution:449:12
+    at [eval]-wrapper:6:24
+    at runScriptInContext (node:internal/process/execution:447:60)
+    at evalFunction (node:internal/process/execution:87:30)
+    at evalScript (node:internal/process/execution:99:3)
+    at node:internal/main/eval_string:74:3 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: {
+    SignatureScheduleFrequency: 'daily',
+    SignatureScheduleTime: '03:00',
+    SignatureScheduleWeekday: 1,
+    SignatureScheduleMonthDay: 1,
+    Mode: 'monitor',
+    TrustedEnginePath: '',
+    TrustedEngineSha256: '',
+    Enabled: false,
+    WriteEvents: false,
+    RealTime: true,
+    ProcessCorrelation: false,
+    SignatureScheduleEnabled: false,
+    IntervalSeconds: 300,
+    ChangeThreshold: 50,
+    Port: 3310,
+    MaxFileMiB: 25,
+    BehaviorWindowSeconds: 60,
+    Paths: [],
+    ExcludedPaths: [],
+    BackgroundExcludedPaths: [],
+    ExcludedPatterns: [],
+    CanaryPaths: [],
+    ResponsePaths: [],
+    ContainmentExecutables: []
+  },
+  expected: {
+    Enabled: false,
+    ProfileDefaultsApplied: false,
+    BackgroundExcludedPaths: [],
+    WriteEvents: false,
+    IntervalSeconds: 300,
+    ChangeThreshold: 50,
+    Port: 3310,
+    Paths: [],
+    ExcludedPaths: [],
+    RealTime: true,
+    ProcessCorrelation: false,
+    MaxFileMiB: 25,
+    BehaviorWindowSeconds: 60,
+    Mode: 'monitor',
+    ExcludedPatterns: [],
+    CanaryPaths: [],
+    ResponsePaths: [],
+    ContainmentExecutables: [],
+    TrustedEnginePath: '',
+    TrustedEngineSha256: '',
+    SignatureScheduleEnabled: false,
+    SignatureScheduleFrequency: 'daily',
+    SignatureScheduleTime: '03:00',
+    SignatureScheduleWeekday: 1,
+    SignatureScheduleMonthDay: 1
+  },
+  operator: 'deepStrictEqual'
+}
+
+Node.js v22.16.0
+Traceback (most recent call last):
+  File "/mnt/data/v32/tests/validate_signature_schedule.py", line 24, in <module>
+    subprocess.run(['node','-e',js],check=True)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/subprocess.py", line 577, in run
+    raise CalledProcessError(retcode, process.args,
+                             output=stdout, stderr=stderr)
+subprocess.CalledProcessError: Command '['node', '-e', '\nconst assert=require(\'node:assert/strict\');const els={};const byId=id=>els[id]??={value:\'\',checked:false,disabled:false,hidden:false,textContent:\'\'};const integrityLines=id=>String(byId(id).value).split(/\\r?\\n/).filter(Boolean);\nconst endpointFlags=[\'Enabled\',\'WriteEvents\',\'RealTime\',\'ProcessCorrelation\',\'SignatureScheduleEnabled\'];\nconst endpointNumbers={IntervalSeconds:\'EndpointInterval\',ChangeThreshold:\'EndpointThreshold\',Port:\'EndpointPort\',MaxFileMiB:\'EndpointMaxFileMiB\',BehaviorWindowSeconds:\'EndpointBehaviorWindowSeconds\'};\nconst endpointArrays=[\'Paths\',\'ExcludedPaths\',\'BackgroundExcludedPaths\',\'ExcludedPatterns\',\'CanaryPaths\',\'ResponsePaths\',\'ContainmentExecutables\'];\nfunction fillEndpoint(c){const e=c.Endpoint;for(const k of endpointFlags)byId(\'Endpoint\'+k).checked=!!e[k];for(const [k,id] of Object.entries(endpointNumbers))byId(id).value=e[k];for(const k of endpointArrays)byId(\'Endpoint\'+k).value=(e[k]||[]).join(\'\\n\');byId(\'EndpointMode\').value=e.Mode;byId(\'EndpointTrustedEnginePath\').value=e.TrustedEnginePath||\'\';byId(\'EndpointTrustedEngineSha256\').value=e.TrustedEngineSha256||\'\';byId(\'EndpointSignatureScheduleFrequency\').value=e.SignatureScheduleFrequency||\'daily\';byId(\'EndpointSignatureScheduleTime\').value=e.SignatureScheduleTime||\'03:00\';byId(\'EndpointSignatureScheduleWeekday\').value=String(e.SignatureScheduleWeekday??1);byId(\'EndpointSignatureScheduleMonthDay\').value=e.SignatureScheduleMonthDay??1;signatureScheduleFields();}\nfunction signatureScheduleFields(){const enabled=byId(\'EndpointSignatureScheduleEnabled\').checked,f=byId(\'EndpointSignatureScheduleFrequency\').value;byId(\'signature-schedule-fields\').hidden=!enabled;byId(\'signature-weekday-field\').hidden=f!==\'weekly\';byId(\'signature-monthday-field\').hidden=f!==\'monthly\';for(const id of [\'Frequency\',\'Time\',\'Weekday\',\'MonthDay\'])byId(\'EndpointSignatureSchedule\'+id).disabled=!enabled||(id===\'Weekday\'&&f!==\'weekly\')||(id===\'MonthDay\'&&f!==\'monthly\');byId(\'signature-schedule-summary\').textContent=enabled?\'Saved schedules run while Endpoint Protection is enabled and LinkScope is installed as a Windows service. Next run appears under Endpoint Protection → Signature maintenance.\':\'No additional LinkScope-scheduled updates.\';}\nfunction readEndpoint(){const e={SignatureScheduleFrequency:byId(\'EndpointSignatureScheduleFrequency\').value,SignatureScheduleTime:byId(\'EndpointSignatureScheduleTime\').value,SignatureScheduleWeekday:Number(byId(\'EndpointSignatureScheduleWeekday\').value),SignatureScheduleMonthDay:Number(byId(\'EndpointSignatureScheduleMonthDay\').value),Mode:byId(\'EndpointMode\').value,TrustedEnginePath:byId(\'EndpointTrustedEnginePath\').value.trim(),TrustedEngineSha256:byId(\'EndpointTrustedEngineSha256\').value.trim().toLowerCase()};for(const k of endpointFlags)e[k]=byId(\'Endpoint\'+k).checked;for(const [k,id] of Object.entries(endpointNumbers))e[k]=Number(byId(id).value);for(const k of endpointArrays)e[k]=integrityLines(\'Endpoint\'+k);return e;}\nfunction fillIntegrity(c){const i=c.Integrity;byId(\'IntegrityEnabled\').checked=i.Enabled;byId(\'IntegrityInterval\').value=i.IntervalSeconds;byId(\'IntegrityRecursive\').checked=i.Recursive;byId(\'IntegrityWriteEvents\').checked=i.WriteEvents;for(const key of [\'Paths\',\'ExcludedPaths\',\'ExcludedPatterns\'])byId(\'Integrity\'+key).value=(i[key]||[]).join(\'\\n\');byId(\'IntegrityReason\').value=\'\';}\nconst defaults={"Enabled": false, "ProfileDefaultsApplied": false, "BackgroundExcludedPaths": [], "WriteEvents": false, "IntervalSeconds": 300, "ChangeThreshold": 50, "Port": 3310, "Paths": [], "ExcludedPaths": [], "RealTime": true, "ProcessCorrelation": false, "MaxFileMiB": 25, "BehaviorWindowSeconds": 60, "Mode": "monitor", "ExcludedPatterns": [], "CanaryPaths": [], "ResponsePaths": [], "ContainmentExecutables": [], "TrustedEnginePath": "", "TrustedEngineSha256": "", "SignatureScheduleEnabled": false, "SignatureScheduleFrequency": "daily", "SignatureScheduleTime": "03:00", "SignatureScheduleWeekday": 1, "SignatureScheduleMonthDay": 1};fillEndpoint({Endpoint:defaults});assert.equal(byId(\'EndpointSignatureScheduleEnabled\').checked,false);assert(byId(\'signature-schedule-fields\').hidden);assert(byId(\'EndpointSignatureScheduleTime\').disabled);assert.deepEqual(readEndpoint(),defaults);\nbyId(\'EndpointSignatureScheduleEnabled\').checked=true;byId(\'EndpointSignatureScheduleFrequency\').value=\'weekly\';byId(\'EndpointSignatureScheduleWeekday\').value=\'5\';byId(\'EndpointSignatureScheduleTime\').value=\'04:30\';signatureScheduleFields();assert(!byId(\'signature-weekday-field\').hidden);assert(byId(\'signature-monthday-field\').hidden);assert(!byId(\'EndpointSignatureScheduleWeekday\').disabled);assert(byId(\'EndpointSignatureScheduleMonthDay\').disabled);\nlet saved=readEndpoint();assert.equal(saved.SignatureScheduleEnabled,true);assert.equal(saved.SignatureScheduleFrequency,\'weekly\');assert.equal(saved.SignatureScheduleWeekday,5);assert.equal(saved.SignatureScheduleTime,\'04:30\');fillEndpoint({Endpoint:saved});assert.deepEqual(readEndpoint(),saved);\nbyId(\'EndpointSignatureScheduleFrequency\').value=\'monthly\';byId(\'EndpointSignatureScheduleMonthDay\').value=\'31\';signatureScheduleFields();assert(byId(\'signature-weekday-field\').hidden);assert(!byId(\'signature-monthday-field\').hidden);assert.equal(readEndpoint().SignatureScheduleMonthDay,31);byId(\'EndpointSignatureScheduleEnabled\').checked=false;signatureScheduleFields();assert(byId(\'signature-schedule-fields\').hidden);assert.equal(readEndpoint().SignatureScheduleEnabled,false);\nconsole.log(\'PASS: actual settings JS roundtrip, optional schedule, daily/weekly/monthly, hidden inputs and preserved choices\');\n']' returned non-zero exit status 1.
+
+validate_source_discovery.py exit=0
+PASS: all 48 required sources selected once, five security-critical declarations at namespace depth, missing/duplicate input models, evaluated-source guard and setup build wiring.
+Windows PowerShell guard execution and C# compilation: not run.
+
+validate_users.py exit=0
+PASS: real locally generated authenticator QR decoded to exact otpauth URI
+PASS: role/CSRF gates, password derivation and MFA replay source checks, audit attribution, resource parity and JavaScript syntax
+Pending: Windows compilation, C# self-tests, browser login/enrollment, authorization and DPAPI runtime validation.
+
+validate_usn_journal.py exit=0
+PASS: USN source, privilege separation, service lifecycle, dashboard, parser guard wiring, transactional rollback, durable checkpoint/queue across reopen, deduplication and acknowledgement SQL.
+NOT RUN: Windows C# compilation, native IOCTLs, SCM, named pipe permissions, parser executable fixtures and end-to-end throughput.
+
+validate_usn_transport.py exit=0
+PASS: transport lifecycle source checks, timeout wiring, native regression fixture wiring, active scope UI, actual JS path-boundary/canary selection test.
+NOT RUN: Windows named-pipe test, service integration, native NTFS I/O.
+
+validate_visualstudio_config.py exit=0
+PASS: explicit legacy IDE configs, fresh consistent GUIDs, six enabled solution mappings, direct clean/build wrappers, setup verification and skipped-Clean regression guard.
+Windows MSBuild and PowerShell execution not tested.
+
+validate_watcher_alert_recovery.py exit=0
+PASS: watcher redundancy, genuine coverage predicate, exact alert refresh SQL and own-event filter wiring; Windows runtime not executed.
+
+validate_watcher_clam_recovery.py exit=0
+PASS: independent watcher heartbeat, shared bounded ClamD transport source, and durable SQLite deferral/recovery. Native Windows transport and watcher not run.

@@ -12,8 +12,8 @@ setup=(root/'setup/ClamSetup.cs').read_text()
 css=(root/'src/theme.css').read_text()
 assert 'id="metrics" class="endpoint-summary"' in html
 assert html.index('id="metrics"')<html.index('id="endpoint-live"')<html.index('id="results"')
-assert '/assets/app-signature-schedule-v17.js' in html
-assert 'Asset("/assets/app-signature-schedule-v17.js","app.js","application/javascript")' in (root/'src/Web.cs').read_text()
+assert '/assets/app-endpoint-protection-v34.js' in html
+assert 'Asset("/assets/app-endpoint-protection-v34.js","app.js","application/javascript")' in (root/'src/Web.cs').read_text()
 render=app[app.index('async function renderHealth(){'):app.index('function filterHealthCategories(){')]
 js=r'''
 const assert=require('node:assert/strict');

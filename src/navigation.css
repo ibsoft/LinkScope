@@ -70,9 +70,9 @@ body>header.ls-header #ls-menu-toggle>svg{display:block;flex:none;width:18px;hei
 body>header.ls-header .ls-account-menu{width:238px;min-width:0;max-width:calc(100vw - 28px);padding:6px;box-shadow:0 8px 24px #102b3926;line-height:1.4}
 body>header.ls-header .ls-account-menu :is(a,button){display:flex;align-items:center;justify-content:flex-start;gap:10px;width:100%;box-sizing:border-box;margin:2px 0;padding:9px 10px;min-height:38px;font:400 14px/20px "Segoe UI",Arial,sans-serif;text-align:left;white-space:normal;text-decoration:none;background:var(--control-bg)!important;color:var(--control-fg)!important;border:0!important;border-radius:5px}
 body>header.ls-header .ls-account-menu :is(a,button):hover:not(:disabled){background:var(--control-hover)!important;color:var(--control-fg)!important}
-body>header.ls-header .ls-account-menu :is(a,button) .ls-menu-icon{color:inherit!important;display:block;flex:0 0 16px;width:16px;height:16px;margin:0;opacity:1}
+body>header.ls-header .ls-account-menu :is(a,button)>svg.ls-menu-icon{color:inherit!important;display:block;flex:0 0 16px;width:16px;height:16px;margin:0;opacity:1;pointer-events:none;filter:none}
 body>header.ls-header .ls-account-menu .ls-menu-icon[fill="currentColor"],body>header.ls-header .ls-account-menu .ls-menu-icon[fill="currentColor"] *{fill:currentColor!important;stroke:none!important}
-body>header.ls-header .ls-account-menu .ls-menu-icon[stroke="currentColor"],body>header.ls-header .ls-account-menu .ls-menu-icon[stroke="currentColor"] *{fill:none!important;stroke:currentColor!important}
+body>header.ls-header .ls-account-menu :is(a,button)>svg.ls-menu-icon[stroke="currentColor"],body>header.ls-header .ls-account-menu :is(a,button)>svg.ls-menu-icon[stroke="currentColor"] *{color:inherit!important;fill:none!important;stroke:currentColor!important;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 body>header.ls-header .ls-account-menu .ls-account-identity{display:block;padding:10px;margin:0 0 4px;font-size:12px;overflow-wrap:anywhere;border-bottom:1px solid var(--line)}
 body>header.ls-header .ls-account-menu [aria-current=page]{box-shadow:inset 3px 0 var(--sea)}
 body>header.ls-header #global-export[aria-disabled=true]{opacity:.55;cursor:progress}

@@ -120,6 +120,21 @@ namespace LinkScope {
                 Changed();return EndpointAckState(db);
             }
         }
+        // Only Endpoint Protection history is affected; keep the global monotonic sequence.
+        internal long ResetEndpointHistory(){
+            lock(this)using(var db=Open()){
+                db.Exec("BEGIN IMMEDIATE");long cutoff;
+                try{
+                    cutoff=Head(db);
+                    db.Exec("DELETE FROM alert_mail_queue WHERE alert_id IN (SELECT id FROM alert_events WHERE category='endpoint_protection')");
+                    db.Exec("DELETE FROM alert_search_index WHERE seq IN (SELECT seq FROM alert_events WHERE category='endpoint_protection')");
+                    db.Exec("DELETE FROM alert_events WHERE category='endpoint_protection'");
+                    db.Exec("COMMIT");
+                }catch{db.Exec("ROLLBACK");throw;}
+                foreach(var key in current.Values.Where(a=>a.Category=="endpoint_protection").Select(a=>a.Key).ToArray())current.Remove(key);
+                Changed();return cutoff;
+            }
+        }
         internal void Trim(string[] categories){
             lock(this)foreach(string cat in current.Values.Select(a=>a.Category).Except(categories).ToArray())Update(cat,new List<HealthAlert>());
         }
@@ -178,7 +193,14 @@ namespace LinkScope {
                         foreach(var e in events){long seq=Convert.ToInt64(e[0]);if(seq<=through)continue;string key="endpoint_protection/"+(string)e[2];HealthAlert old;
                             if(!changed.TryGetValue(key,out old))current.TryGetValue(key,out old);
                             long utc=Convert.ToInt64(e[1]);bool active=Convert.ToInt64(e[8])!=0;
-                            if(old!=null){db.Exec("UPDATE alert_events SET resolved=1,ended=? WHERE id=?",utc,old.Id);if(Policy.EmailEnabled&&Policy.EmailRecovery)AlertDelivery.Queue(db,old,true,utc);closed.Add(old);}
+                            bool consolidated=!active&&Equals(e[6],EndpointProtection.CoverageConsolidated);
+                            if(consolidated){
+                                // Retire only old routine scan notices with this exact finding key.
+                                // Keep their history and avoid a second wave of recovery emails.
+                                db.Exec("UPDATE alert_events SET is_read=1 WHERE category='endpoint_protection' AND alert_key=?",key);
+                                db.Exec("DELETE FROM alert_mail_queue WHERE alert_id IN (SELECT id FROM alert_events WHERE category='endpoint_protection' AND alert_key=?)",key);
+                            }
+                            if(old!=null){db.Exec("UPDATE alert_events SET resolved=1,ended=? WHERE id=?",utc,old.Id);if(!consolidated&&Policy.EmailEnabled&&Policy.EmailRecovery)AlertDelivery.Queue(db,old,true,utc);if(!consolidated)closed.Add(old);}
                             if(active){string message=(string)e[3]+" · "+(string)e[6]+(string.IsNullOrEmpty((string)e[7])?"":" · SHA-256: "+(string)e[7]);var alert=Signal("endpoint_protection",(string)e[2],(string)e[5],(string)e[4],message,stream+":"+seq);alert.Id=Guid.NewGuid().ToString("N");alert.Since=utc;Insert(db,alert);if(Policy.EmailEnabled)AlertDelivery.Queue(db,alert,false,utc);changed[key]=alert;opened.Add(alert);}else changed[key]=null;through=seq;
                         }
                         db.Exec("INSERT OR REPLACE INTO endpoint_delivery_cursor VALUES(?,?)",stream,through);db.Exec("COMMIT");
@@ -199,11 +221,26 @@ namespace LinkScope {
                 Update(cat,live);
             }
         }
+        // A live coverage warning can acquire new diagnostics without being a new incident.
+        // Refresh its existing alert identity/read state, or retire only this exact warning.
+        internal void RefreshEndpointWatcherFinding(string id,string message){
+            const string cat="endpoint_protection";
+            lock(this){HealthAlert old;
+                if(!current.TryGetValue(cat+"/"+id,out old)||old.Title!="Watcher coverage incomplete"||old.Severity!="warning")return;
+                if(message==old.Message)return;
+                var live=current.Values.Where(a=>a.Category==cat&&a.Key!=old.Key).ToList();
+                if(message!=null)live.Add(Signal(cat,id,old.Severity,old.Title,message,old.Revision));
+                Update(cat,live);
+            }
+        }
         static Dictionary<string,object> Map(object v){return v as Dictionary<string,object>??new Dictionary<string,object>();}
         static object Field(Dictionary<string,object> o,string key){object v;return o.TryGetValue(key,out v)?v:null;}
         static string S(Dictionary<string,object> o,string key){return Convert.ToString(Field(o,key),System.Globalization.CultureInfo.InvariantCulture);}
         static IEnumerable<Dictionary<string,object>> Rows(Dictionary<string,object> o,string key="items"){
             var a=Field(o,key) as IEnumerable;return a==null?Enumerable.Empty<Dictionary<string,object>>():a.Cast<object>().Select(Map);}
+        internal static bool IsOwnEndpointEvent(string channel,string provider,string eventId){
+            return string.Equals(channel,"Application",StringComparison.OrdinalIgnoreCase)&&string.Equals(provider,"Unixfor LinkScope",StringComparison.OrdinalIgnoreCase)&&eventId=="4201";
+        }
         internal void Sample(string cat,object result,Config cfg){
             var value=result as Dictionary<string,object>??Map(Config.Json().DeserializeObject(Config.Json().Serialize(result)));
             var list=new List<HealthAlert>();string status=S(value,"status");
@@ -212,12 +249,16 @@ namespace LinkScope {
                 status=="unavailable"?"Collection unavailable.":status=="partial"?"Partial collection.":"Collection completed.");
             AppJournal.Event(LogLevel.Debug,"Alerts","evaluate","Evaluated "+cat+" alert rules.");
             if(status=="warming_up")return;
-            if(status=="unavailable"||status=="partial")list.Add(Signal(cat,"coverage","warning",cat+" coverage is "+status,"Check the Windows provider, driver or access permissions."));
+            if(status=="unavailable"||status=="partial")list.Add(Signal(cat,"coverage","warning",cat+" coverage is "+status,cat=="endpoint_protection"?"See Endpoint Protection: scan completion, queue, engine and protected-folder coverage diagnostics.":"Check the Windows provider, driver or access permissions."));
             if(S(value,"truncated")=="True")list.Add(Signal(cat,"limit","info",cat+" inventory limit reached",cat=="endpoint_protection"?"Dashboard snapshot is limited; durable incidents continue through the alert queue.":"The response contains the first 256 records."));
             if(cat=="endpoint_protection"){
                 // The endpoint worker publishes every durable finding transition, including ones
                 // outside the display cap. Sampling may update only the coverage/limit notices.
-                lock(this){list.AddRange(current.Values.Where(x=>x.Category==cat&&x.Key!=cat+"/coverage"&&x.Key!=cat+"/limit"));Update(cat,list);}return;
+                lock(this){list.AddRange(current.Values.Where(x=>x.Category==cat&&x.Key!=cat+"/coverage"&&x.Key!=cat+"/limit"));
+                    // A specific watcher warning already explains partial coverage. Keep the
+                    // collection status and specific finding, not a second generic notification.
+                    if((status=="partial"||status=="unavailable")&&(list.Any(x=>x.Severity=="warning"&&new[]{"Watcher coverage incomplete","File scan coverage incomplete","Scan incomplete","Engine unavailable","USN journal unavailable","USN journal coverage gap","Protected path unavailable","Real-time queue overflow","Signature database may be stale"}.Contains(x.Title))||status=="partial"&&S(value,"watcherCoverageInitializing")=="True"))list.RemoveAll(x=>x.Key==cat+"/coverage");
+                    Update(cat,list);}return;
             }
             if(cat=="data_integrity"){
                 lock(this){
@@ -250,7 +291,9 @@ namespace LinkScope {
                 if(S(group,"status")=="unavailable")list.Add(Signal(cat,channel+"/coverage","warning","Event channel unavailable",channel));
                 // Event messages are another view of the same records. Raise one alert per channel and level.
                 if(cat!="events")continue;
-                foreach(var level in Rows(group).GroupBy(e=>S(e,"level"))){
+                // Own endpoint/integrity audit mirrors are visible in Event Details, but
+                // must not be re-ingested as unrelated Application alerts.
+                foreach(var level in Rows(group).Where(e=>!IsOwnEndpointEvent(channel,S(e,"provider"),S(e,"eventId"))).GroupBy(e=>S(e,"level"))){
                     var first=level.First();string severity=level.Key=="Critical"?"critical":level.Key=="Error"?"error":"warning";
                     list.Add(Signal(cat,channel+"/"+level.Key,severity,channel+" · "+level.Key,level.Count()+" in the returned 24-hour window. Latest: "+S(first,"provider")+" #"+S(first,"eventId"),S(first,"recordId")+"@"+S(first,"utc")));}
             }

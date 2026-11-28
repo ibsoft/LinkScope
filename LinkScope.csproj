@@ -51,6 +51,7 @@
     <Compile Include="src\AppJournal.cs" />
     <Compile Include="src\CanaryTemplates.cs" />
     <Compile Include="src\ClamUpdateWorker.cs" />
+    <Compile Include="src\ClamScanCacheGeneration.cs" />
     <Compile Include="src\ClientFirewall.cs" />
     <Compile Include="src\Collector.cs" />
     <Compile Include="src\Config.cs" />
@@ -59,6 +60,8 @@
     <Compile Include="src\DeliverySettings.cs" />
     <Compile Include="src\DesktopApp.cs" />
     <Compile Include="src\EndpointProtection.cs" />
+    <Compile Include="src\EndpointDiskBudget.cs" />
+    <Compile Include="src\UsnJournal.cs" />
     <Compile Include="src\EndpointResponse.cs" />
     <Compile Include="src\FileIntegrity.cs" />
     <Compile Include="src\History.cs" />

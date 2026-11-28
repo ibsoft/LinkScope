@@ -1,0 +1,15 @@
+# V22 — independent Downloads reconciliation
+
+V21 gave Downloads events priority, but could not prioritize an event that never reached the queue. V22 adds a separate reconciliation lane for standard Downloads directories discovered through Windows ProfileList or explicitly configured Downloads directories. It never uses the service account's USERPROFILE. It does not silently expand the configured monitoring scope or bypass exclusions.
+
+The SYSTEM helper lists only immediate regular files under an approved local fixed-drive Downloads path. It returns names, sizes and timestamps, not file contents. The normal verdict and finding pipeline scans the newest unverified version first using the restricted SYSTEM scan helper in service mode with the standard ClamD port. Missing files and failed verdicts remain eligible for retry; unchanged verified versions are not rescanned by this lane until reset or service restart. USN, FileSystemWatcher, normal reconciliation and canary checks remain active. This metadata lane does not detect same-size changes with preserved timestamps on its own. The nominal poll interval is five seconds per selected folder, round-robin; slow scans and multiple profiles can extend it. Listing and tracking caps are 8192 entries per folder and 32768 tracked files total. The independent lane is nonrecursive and not durable across restart (it enumerates again). Redirected or nonstandard browser download destinations require the normal configured monitoring mechanisms unless explicitly configured as a local folder named Downloads.
+
+## Windows acceptance test
+
+1. Rebuild and upgrade both LinkScope and LinkScopeUsn. Confirm they are running. Ensure the actual browser Downloads folder is included in active scan scope, and check filename and directory exclusions. Keep Monitor mode and real-time monitoring enabled.
+2. In PowerShell, check the actual Downloads known folder: `(New-Object -ComObject Shell.Application).NameSpace('shell:Downloads').Self.Path`.
+3. Run the existing `--endpoint-engine-self-test` and `--endpoint-scan-file` diagnostics. Verify the browser actually saved the EICAR test file and check other antivirus logs if absent; do not disable existing security software.
+4. Observe Protection activity → Downloads for discovered folder, pending count and last path/verdict, and scan activity for source `Downloads reconciliation`. A successful EICAR signature should produce a critical finding even in Monitor mode. Download and copy a harmless file too; its exact path should show a clean verdict.
+5. If the file exists but has no verdict, send the Downloads status and exact-file service probe output. A failed or missing verdict is not a clean scan. Confirm both services were upgraded (an old helper rejects the new request).
+
+Native Windows compilation and EICAR testing have not been performed in the Linux preparation environment. The helper is not a kernel minifilter and cannot intercept a file before other antivirus software removes it or before execution. Existing access, file size, hardlink, reparse and engine limits remain in place.

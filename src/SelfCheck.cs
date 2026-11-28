@@ -132,15 +132,74 @@ namespace LinkScope {
             Check(c.NextSignatureUpdate(new DateTime(2027,2,1,0,0,0,DateTimeKind.Utc),utc)==new DateTime(2027,2,28,3,0,0,DateTimeKind.Utc),"February signature schedule");
             c.SignatureScheduleTime="99:99";bool rejected=false;try{c.Validate();}catch(InvalidDataException){rejected=true;}Check(rejected,"invalid signature time rejected");
         }
+        static void CheckEndpointScope(string dir){
+            string previous=Path.Combine(dir,"desktop"),next=Path.Combine(dir,"unx"),excluded=Path.Combine(next,"skip");
+            var policy=new EndpointSettings{Enabled=true,Paths=new[]{next},ExcludedPaths=new[]{excluded},ExcludedPatterns=new[]{"*.tmp"}};policy.Validate();
+            string sibling=next+"-other",volume=Path.GetPathRoot(next);
+            Check(EndpointProtection.ObsoleteCoverageFinding(policy,previous,"File scan error"),"removed path warning retired");
+            Check(!EndpointProtection.ObsoleteCoverageFinding(policy,next.ToUpperInvariant(),"File scan error"),"current path warning retained case-insensitively");
+            Check(EndpointProtection.ObsoleteCoverageFinding(policy,sibling,"File scan error"),"scope boundary is not a string prefix");
+            Check(EndpointProtection.ObsoleteCoverageFinding(policy,Path.Combine(excluded,"a.txt"),"File scan limited"),"excluded directory warning retired");
+            Check(EndpointProtection.ObsoleteCoverageFinding(policy,Path.Combine(next,"a.tmp"),"Engine scan incomplete"),"excluded filename warning retired");
+            Check(!EndpointProtection.ObsoleteCoverageFinding(policy,volume,"USN journal coverage gap"),"same volume journal warning retained");
+            Check(!EndpointProtection.ObsoleteCoverageFinding(policy,previous,"Canary integrity violation"),"canary violation preserved");
+            Check(!EndpointProtection.ObsoleteCoverageFinding(policy,previous,"Malware signature detected"),"malware evidence preserved");
+            using(var db=new Sqlite(Path.Combine(dir,"ep-scope-test.sqlite"),false)){
+                db.Exec("CREATE TABLE findings(id TEXT PRIMARY KEY,path TEXT,change TEXT,severity TEXT,detail TEXT,hash TEXT,first INTEGER,last INTEGER,active INTEGER)");
+                db.Exec("CREATE TABLE endpoint_outbox(seq INTEGER PRIMARY KEY AUTOINCREMENT,utc INTEGER,id TEXT,path TEXT,change TEXT,severity TEXT,detail TEXT,hash TEXT,active INTEGER)");
+                db.Exec("CREATE TABLE incidents(id TEXT)");
+                foreach(var item in new[]{new[]{"old",previous,"File scan error"},new[]{"current",next,"File scan error"},new[]{"threat",previous,"Malware signature detected"},new[]{"canary",previous,"Canary integrity violation"}}){
+                    db.Exec("INSERT INTO findings VALUES(?,?,?,?,?,?,?,?,1)",item[0],item[1],item[2],"warning","test","",1L,1L);
+                    db.Exec("INSERT INTO incidents VALUES(?)",item[0]);
+                }
+                Check(EndpointProtection.ReconcileCoverageScope(db,policy)==1,"only obsolete operational finding retired");
+                Check(EndpointProtection.ReconcileCoverageScope(db,policy)==0,"scope reconciliation idempotent");
+                Check(Convert.ToInt64(db.Rows("SELECT active FROM findings WHERE id='old'")[0][0])==0&&Convert.ToInt64(db.Rows("SELECT COUNT(*) FROM findings WHERE active=1")[0][0])==3,"active state reconciled without suppressing threats");
+                Check(Convert.ToInt64(db.Rows("SELECT COUNT(*) FROM endpoint_outbox WHERE id='old' AND active=0")[0][0])==1,"durable alert closure");
+                Check(Convert.ToInt64(db.Rows("SELECT COUNT(*) FROM incidents")[0][0])==4,"history preserved");
+            }
+        }
+        static void CheckProfileDefaults(string dir){
+            string profile=Path.Combine(dir,"Profile"),additional=Path.Combine(dir,"Other"),canary=Path.Combine(profile,"Documents","canary.txt");
+            var fresh=new EndpointSettings();Program.ApplyProfileDefaults(fresh,profile,true);
+            Check(fresh.Enabled&&fresh.RealTime&&fresh.Mode=="monitor"&&fresh.IntervalSeconds==86400&&fresh.MaxFileMiB==100,"fresh profile safe default");
+            Check(fresh.Paths.SequenceEqual(new[]{profile})&&fresh.ProfileDefaultsApplied,"profile default applied once");
+            string cache=Path.Combine(profile,@"AppData\Local\Google\Chrome\User Data\Default\Cache\test.exe");
+            Check(EndpointProtection.BackgroundExcluded(fresh,cache)&&!EndpointProtection.Excluded(fresh,cache),"cache excluded only from full scans");
+            Check(!EndpointProtection.BackgroundExcluded(fresh,Path.Combine(profile,@"AppData\Local\Temp\test.exe")),"temp remains protected");
+            fresh.CanaryPaths=new[]{canary};fresh.BackgroundExcludedPaths=new[]{profile};
+            Check(!EndpointProtection.BackgroundExcluded(fresh,canary)&&!EndpointProtection.BackgroundExcluded(fresh,Path.Combine(profile,"Documents")),"canary traversal protected");
+            fresh.Paths=new[]{additional};fresh.CanaryPaths=new string[0];Program.ApplyProfileDefaults(fresh,profile,false);
+            Check(fresh.Paths.SequenceEqual(new[]{additional}),"later custom changes not overwritten");
+            var existing=new EndpointSettings{Enabled=true,Paths=new[]{additional},IntervalSeconds=900,MaxFileMiB=25,ExcludedPaths=new[]{Path.Combine(additional,"skip")}};
+            Program.ApplyProfileDefaults(existing,profile,false);
+            Check(existing.Paths.SequenceEqual(new[]{additional,profile})&&existing.IntervalSeconds==900&&existing.MaxFileMiB==25&&existing.ExcludedPaths.Length==1,"upgrade adds profile and preserves custom settings");
+            var disabled=new EndpointSettings{Paths=new[]{additional}};Program.ApplyProfileDefaults(disabled,profile,false);
+            Check(!disabled.Enabled&&disabled.Paths.SequenceEqual(new[]{additional}),"disabled configured policy stays disabled");
+        }
         static void CheckEndpoint(string dir){
-            CheckSignatureSchedule();
+            CheckSignatureSchedule();CheckEndpointScope(dir);CheckProfileDefaults(dir);
             var settings=new EndpointSettings{Enabled=true,Paths=new[]{dir},ExcludedPatterns=new[]{"*.tmp"}};settings.Validate();
             Check(settings.Mode=="monitor"&&settings.RealTime,"endpoint safe defaults");
+            Check(settings.BackgroundReadMiB==10&&settings.MetadataFastCache&&settings.BackgroundPauseOnBusyDisk&&!settings.BackgroundPauseOnBattery,"endpoint background resource defaults");
+            using(var cancel=new System.Threading.ManualResetEvent(false))using(var paced=new MemoryStream(new byte[]{1,2,3,4,5}))using(var direct=new MemoryStream(new byte[]{1,2,3,4,5})){Check(EndpointProtection.FileHash(paced,new EndpointReadBudget(10,cancel))==EndpointProtection.FileHash(direct),"paced hashing preserves SHA-256");}
+
             Check(EndpointProtection.Excluded(settings,Path.Combine(dir,"TRACE.TMP")),"case-insensitive endpoint exclusion");
             Check(!EndpointProtection.Excluded(settings,Path.Combine(dir,"trace.txt")),"endpoint exclusion boundary");
             var flat=new byte[4096];var uniform=Enumerable.Range(0,4096).Select(n=>(byte)(n%256)).ToArray();
+            Check(!EndpointProtection.RansomwareCorroborated(54,0,50)&&!EndpointProtection.RansomwareCorroborated(50,2,50)&&EndpointProtection.RansomwareCorroborated(50,3,50),"file activity alone is not ransomware evidence");
+            Check(EndpointProtection.EntropyTransition(65536,7.99,4.0)&&!EndpointProtection.EntropyTransition(65536,7.99,7.9)&&!EndpointProtection.EntropyTransition(100,7.99,0),"entropy transition requires established lower entropy and substantial sample");
+            var observedAt=DateTime.UtcNow;var entropyEvidence=new Dictionary<string,DateTime>(StringComparer.OrdinalIgnoreCase);
+            for(int i=0;i<5;i++)entropyEvidence[Path.Combine(dir,"test-"+i+".txt")]=observedAt.AddSeconds(-i*50);
+            entropyEvidence[Path.Combine(dir,"expired.txt")]=observedAt.AddSeconds(-301);
+            entropyEvidence[Path.Combine(dir,"future.txt")]=observedAt.AddSeconds(1);
+            entropyEvidence[Path.Combine(dir,"other","separate.txt")]=observedAt;
+            Check(EndpointProtection.ExtendedEntropyPeak(entropyEvidence,observedAt).Value==5,"extended entropy evidence is distinct, directory scoped, and expires");
+            Check(EndpointProtection.ExtendedEntropyPeak(entropyEvidence,observedAt.AddSeconds(302)).Value==0,"extended evidence ages out");
+            Check(EndpointProtection.EngineBackoffSeconds(1)==15&&EndpointProtection.EngineBackoffSeconds(4)==120&&EndpointProtection.EngineBackoffSeconds(99)==120,"engine retry bounded backoff");
             Check(EndpointProtection.Entropy(flat,flat.Length)==0&&Math.Abs(EndpointProtection.Entropy(uniform,uniform.Length)-8)<0.00001,"entropy known vectors");
             Check(EndpointProtection.Malware("stream: Test.Signature FOUND")&&!EndpointProtection.Malware("stream: Heuristics.Limits.Exceeded FOUND")&&!EndpointProtection.Malware("stream: OK"),"clamd classification");
+            Check(EndpointProtection.CleanVerdict("stream: OK")&&!EndpointProtection.CleanVerdict("other: OK")&&!EndpointProtection.Malware("other: Test FOUND")&&!EndpointProtection.Malware(null),"strict INSTREAM verdict classification");
             bool refused=false;settings.Mode="protect";try{settings.Validate();}catch(InvalidDataException){refused=true;}Check(refused,"automatic actions require explicit response scope and verified engine pin");
             var cfg=new Config();cfg.Endpoint.WriteEvents=false;var dbPath=Path.Combine(dir,"ep-alerts.sqlite");var legacy=Path.Combine(dir,"ep-no-legacy.json");var alerts=new Alerts(dbPath,legacy);long now=History.Now();
             var transitions=new List<object[]>{new object[]{1L,now,"test","test.txt","Test detection","critical","Test only","hash",1L},new object[]{2L,now,"test","test.txt","Test detection","critical","Test only","hash",0L}};
@@ -149,6 +208,7 @@ namespace LinkScope {
             alerts.EndpointTransitions("test-stream",new List<object[]>{new object[]{3L,now,"old-warning","ClamAV","Engine unavailable","warning","Legacy warning","",1L},new object[]{4L,now,"still-active","test.txt","Malware detected","critical","Test only","hash",1L}},cfg);
             alerts.Sample("endpoint_protection",new {status="partial",items=new object[0]},cfg);
             alerts.ReconcileEndpointFindings(new HashSet<string>{"still-active"});
+            alerts.Sample("endpoint_protection",new {status="partial",items=new object[0]},cfg);
             var remaining=alerts.List(new[]{"endpoint_protection"},true).Select(AsMap).ToArray();
             Check(remaining.Length==2&&remaining.Any(a=>Equals(a["title"],"Malware detected"))&&remaining.Any(a=>Equals(a["title"],"endpoint_protection coverage is partial")),"reconciliation keeps actual findings and coverage");
             using(var db=new Sqlite(dbPath,true))Check(Convert.ToInt64(db.Rows("SELECT COUNT(*) FROM alert_events WHERE alert_key='endpoint_protection/old-warning' AND resolved=1 AND is_read=0")[0][0])==1,"orphan alert resolved, unread history preserved");
@@ -160,6 +220,23 @@ namespace LinkScope {
             remaining=alerts.List(new[]{"endpoint_protection"},true).Select(AsMap).ToArray();
             Check(remaining.Any(a=>Equals(a["title"],"Malware detected")&&Equals(a["read"],true))&&remaining.Any(a=>Equals(a["title"],"New detection")&&Equals(a["read"],false)),"endpoint acknowledgement preserves active threats");
             using(var db=new Sqlite(dbPath,true))Check(Convert.ToInt64(db.Rows("SELECT COUNT(*) FROM alert_events WHERE category='endpoint_protection' AND seq<=? AND is_read=0",cutoff)[0][0])==0&&Convert.ToInt64(db.Rows("SELECT COUNT(*) FROM alert_events WHERE category='ram' AND is_read=0")[0][0])>0,"endpoint acknowledgement does not mark RAM alerts read");
+            // Refresh coverage in place, retaining identity, timestamp, read flags and malware evidence.
+            alerts.EndpointTransitions("test-stream",new List<object[]>{new object[]{6L,now,"watcher-test","Protected paths","Watcher coverage incomplete","warning","old diagnostic","",1L}},cfg);
+            var watcherBefore=alerts.List(new[]{"endpoint_protection"},true).Select(AsMap).Single(a=>Equals(a["title"],"Watcher coverage incomplete"));
+            alerts.ReadEndpointThrough(Convert.ToInt64(watcherBefore["sequence"]));
+            alerts.RefreshEndpointWatcherFinding("watcher-test","Protected paths · helper: pipe connection failed");
+            var watcherAfter=alerts.List(new[]{"endpoint_protection"},true).Select(AsMap).Single(a=>Equals(a["title"],"Watcher coverage incomplete"));
+            Check(Equals(watcherBefore["id"],watcherAfter["id"])&&Equals(watcherAfter["read"],true)&&Equals(watcherAfter["message"],"Protected paths · helper: pipe connection failed"),"watcher alert refreshed without reopening");
+            alerts.Sample("endpoint_protection",new {status="partial"},cfg);
+            Check(!alerts.List(new[]{"endpoint_protection"},true).Select(AsMap).Any(a=>Equals(a["title"],"endpoint_protection coverage is partial")),"specific watcher warning prevents duplicate generic warning");
+            alerts.RefreshEndpointWatcherFinding("watcher-test",null);
+            Check(!alerts.List(new[]{"endpoint_protection"},true).Select(AsMap).Any(a=>Equals(a["title"],"Watcher coverage incomplete"))&&alerts.List(new[]{"endpoint_protection"},true).Select(AsMap).Any(a=>Equals(a["title"],"Malware detected")),"retire watcher warning only");
+            var own=new {provider="Unixfor LinkScope",eventId=4201,level="Warning",recordId=2,utc="test"};
+            var external=new {provider="Other provider",eventId=4201,level="Warning",recordId=3,utc="test"};
+            alerts.Sample("events",new {status="ok",items=new[]{new {channel="Application",status="ok",items=new[]{own}}}},cfg);
+            Check(alerts.List(new[]{"events"},true).Length==0,"own mirrored endpoint event not re-alerted");
+            alerts.Sample("events",new {status="ok",items=new[]{new {channel="Application",status="ok",items=new[]{own,external}}}},cfg);
+            Check(alerts.List(new[]{"events"},true).Select(AsMap).Single()["message"].ToString().StartsWith("1 in "),"external application event retained");
         }
         internal static void Run(bool testPasswords=false){
             var allowedIPs=ClientFirewall.Validate(new[]{"192.168.1.10","2001:db8::10","::ffff:192.168.1.10"});

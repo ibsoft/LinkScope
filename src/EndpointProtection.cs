@@ -1,7 +1,6 @@
 // Endpoint source layout: split-response-v2
 using System;
 using System.Collections.Generic;
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -9,20 +8,22 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Diagnostics.Eventing.Reader;
 using System.Runtime.InteropServices;
 using System.Xml;
 using Microsoft.Win32.SafeHandles;
+using Microsoft.Win32;
 namespace LinkScope {
  public sealed class EndpointSettings {
   public bool Enabled {get;set;} public bool WriteEvents {get;set;} public bool RealTime {get;set;} public bool ProcessCorrelation {get;set;}
   public bool SignatureScheduleEnabled {get;set;} public string SignatureScheduleFrequency {get;set;} public string SignatureScheduleTime {get;set;} public int SignatureScheduleWeekday {get;set;} public int SignatureScheduleMonthDay {get;set;}
-  public int IntervalSeconds {get;set;} public int ChangeThreshold {get;set;} public int Port {get;set;} public int MaxFileMiB {get;set;} public int BehaviorWindowSeconds {get;set;}
-  public string Mode {get;set;} public string TrustedEnginePath {get;set;} public string TrustedEngineSha256 {get;set;} public string[] Paths {get;set;} public string[] ExcludedPaths {get;set;} public string[] ExcludedPatterns {get;set;} public string[] CanaryPaths {get;set;} public string[] ResponsePaths {get;set;} public string[] ContainmentExecutables {get;set;}
-  public EndpointSettings(){SignatureScheduleFrequency="daily";SignatureScheduleTime="03:00";SignatureScheduleWeekday=1;SignatureScheduleMonthDay=1;IntervalSeconds=300;ChangeThreshold=50;Port=3310;MaxFileMiB=25;BehaviorWindowSeconds=60;RealTime=true;Mode="monitor";TrustedEnginePath="";TrustedEngineSha256="";Paths=new string[0];ExcludedPaths=new string[0];ExcludedPatterns=new string[0];CanaryPaths=new string[0];ResponsePaths=new string[0];ContainmentExecutables=new string[0];}
-  internal void Validate(){if(!new[]{"daily","weekly","monthly"}.Contains(SignatureScheduleFrequency)||!Regex.IsMatch(SignatureScheduleTime??"",@"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$")||SignatureScheduleWeekday<0||SignatureScheduleWeekday>6||SignatureScheduleMonthDay<1||SignatureScheduleMonthDay>31)throw new InvalidDataException("Invalid ClamAV signature schedule.");if(SignatureScheduleEnabled&&Port!=3310)throw new InvalidDataException("Scheduled signature maintenance requires the standard ClamD port 3310.");if(IntervalSeconds<60||IntervalSeconds>86400||ChangeThreshold<5||ChangeThreshold>10000||Port<1||Port>65535||MaxFileMiB<1||MaxFileMiB>100||BehaviorWindowSeconds<10||BehaviorWindowSeconds>600||!new[]{"monitor","protect","contain"}.Contains(Mode))throw new InvalidDataException("Invalid endpoint monitoring settings.");Paths=Normalize(Paths);ExcludedPaths=Normalize(ExcludedPaths);CanaryPaths=Normalize(CanaryPaths);ResponsePaths=Normalize(ResponsePaths);ContainmentExecutables=Normalize(ContainmentExecutables);ExcludedPatterns=ExcludedPatterns??new string[0];if(ExcludedPatterns.Length>100||ExcludedPatterns.Any(x=>string.IsNullOrWhiteSpace(x)||x.Length>200||x.Any(char.IsControl)||x.IndexOfAny(new[]{'\\','/',':'})>=0))throw new InvalidDataException("Use filename wildcard patterns only.");if(Enabled&&Paths.Length==0)throw new InvalidDataException("Configure at least one endpoint scan path.");if(CanaryPaths.Any(x=>!Paths.Any(p=>EndpointProtection.Under(x,p))||EndpointProtection.Excluded(this,x)))throw new InvalidDataException("Canary files must be monitored and not excluded.");if(ResponsePaths.Any(x=>!Paths.Any(p=>EndpointProtection.Under(x,p))||!EndpointResponse.SafeScope(x)))throw new InvalidDataException("Response paths must be monitored non-system directories or files, not drive roots.");TrustedEnginePath=TrustedEnginePath??"";TrustedEngineSha256=(TrustedEngineSha256??"").Trim().ToLowerInvariant();if(Mode!="monitor"&&(!EndpointResponse.TrustedEngineLocation(TrustedEnginePath)||!Regex.IsMatch(TrustedEngineSha256,"^[a-f0-9]{64}$")))throw new InvalidDataException("Automatic response requires an administrator-pinned clamd.exe path under Program Files and SHA-256.");if(Mode!="monitor"&&ResponsePaths.Length==0)throw new InvalidDataException("Specify restricted response paths before enabling automatic actions.");if(ContainmentExecutables.Any(x=>!ResponsePaths.Any(p=>EndpointProtection.Under(x,p))||!x.EndsWith(".exe",StringComparison.OrdinalIgnoreCase)||EndpointProtection.Excluded(this,x)))throw new InvalidDataException("Containment executables must be exact monitored EXE paths inside response scope.");if(Mode=="contain"&&(!RealTime||!ProcessCorrelation||ContainmentExecutables.Length==0))throw new InvalidDataException("Contain mode requires real-time monitoring, process auditing and explicit executable paths.");}
+  public bool MetadataFastCache {get;set;} public bool BackgroundPauseOnBattery {get;set;} public bool BackgroundPauseOnBusyDisk {get;set;} public int BackgroundReadMiB {get;set;} public int IntervalSeconds {get;set;} public int ChangeThreshold {get;set;} public int Port {get;set;} public int MaxFileMiB {get;set;} public int BehaviorWindowSeconds {get;set;}
+  public string Mode {get;set;} public string TrustedEnginePath {get;set;} public string TrustedEngineSha256 {get;set;} public string[] Paths {get;set;} public string[] ExcludedPaths {get;set;} public string[] BackgroundExcludedPaths {get;set;} public bool ProfileDefaultsApplied {get;set;} public string[] ExcludedPatterns {get;set;} public string[] CanaryPaths {get;set;} public string[] ResponsePaths {get;set;} public string[] ContainmentExecutables {get;set;}
+  public EndpointSettings(){SignatureScheduleFrequency="daily";SignatureScheduleTime="03:00";SignatureScheduleWeekday=1;SignatureScheduleMonthDay=1;MetadataFastCache=true;BackgroundPauseOnBusyDisk=true;BackgroundReadMiB=10;IntervalSeconds=86400;ChangeThreshold=50;Port=3310;MaxFileMiB=25;BehaviorWindowSeconds=60;RealTime=true;Mode="monitor";TrustedEnginePath="";TrustedEngineSha256="";Paths=new string[0];ExcludedPaths=new string[0];BackgroundExcludedPaths=new string[0];ExcludedPatterns=new string[0];CanaryPaths=new string[0];ResponsePaths=new string[0];ContainmentExecutables=new string[0];}
+  internal void Validate(){if(!new[]{"daily","weekly","monthly"}.Contains(SignatureScheduleFrequency)||!Regex.IsMatch(SignatureScheduleTime??"",@"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$")||SignatureScheduleWeekday<0||SignatureScheduleWeekday>6||SignatureScheduleMonthDay<1||SignatureScheduleMonthDay>31)throw new InvalidDataException("Invalid ClamAV signature schedule.");if(SignatureScheduleEnabled&&Port!=3310)throw new InvalidDataException("Scheduled signature maintenance requires the standard ClamD port 3310.");if(BackgroundReadMiB<5||BackgroundReadMiB>50||IntervalSeconds<60||IntervalSeconds>86400||ChangeThreshold<5||ChangeThreshold>10000||Port<1||Port>65535||MaxFileMiB<1||MaxFileMiB>100||BehaviorWindowSeconds<10||BehaviorWindowSeconds>600||!new[]{"monitor","protect","contain"}.Contains(Mode))throw new InvalidDataException("Invalid endpoint monitoring settings.");Paths=Normalize(Paths);ExcludedPaths=Normalize(ExcludedPaths);BackgroundExcludedPaths=Normalize(BackgroundExcludedPaths);CanaryPaths=Normalize(CanaryPaths);ResponsePaths=Normalize(ResponsePaths);ContainmentExecutables=Normalize(ContainmentExecutables);ExcludedPatterns=ExcludedPatterns??new string[0];if(ExcludedPatterns.Length>100||ExcludedPatterns.Any(x=>string.IsNullOrWhiteSpace(x)||x.Length>200||x.Any(char.IsControl)||x.IndexOfAny(new[]{'\\','/',':'})>=0))throw new InvalidDataException("Use filename wildcard patterns only.");if(Enabled&&Paths.Length==0)throw new InvalidDataException("Configure at least one endpoint scan path.");if(CanaryPaths.Any(x=>!Paths.Any(p=>EndpointProtection.Under(x,p))||EndpointProtection.Excluded(this,x)))throw new InvalidDataException("Canary files must be monitored and not excluded.");if(ResponsePaths.Any(x=>!Paths.Any(p=>EndpointProtection.Under(x,p))||!EndpointResponse.SafeScope(x)))throw new InvalidDataException("Response paths must be monitored non-system directories or files, not drive roots.");TrustedEnginePath=TrustedEnginePath??"";TrustedEngineSha256=(TrustedEngineSha256??"").Trim().ToLowerInvariant();if(Mode!="monitor"&&(!EndpointResponse.TrustedEngineLocation(TrustedEnginePath)||!Regex.IsMatch(TrustedEngineSha256,"^[a-f0-9]{64}$")))throw new InvalidDataException("Automatic response requires an administrator-pinned clamd.exe path under Program Files and SHA-256.");if(Mode!="monitor"&&ResponsePaths.Length==0)throw new InvalidDataException("Specify restricted response paths before enabling automatic actions.");if(ContainmentExecutables.Any(x=>!ResponsePaths.Any(p=>EndpointProtection.Under(x,p))||!x.EndsWith(".exe",StringComparison.OrdinalIgnoreCase)||EndpointProtection.Excluded(this,x)))throw new InvalidDataException("Containment executables must be exact monitored EXE paths inside response scope.");if(Mode=="contain"&&(!RealTime||!ProcessCorrelation||ContainmentExecutables.Length==0))throw new InvalidDataException("Contain mode requires real-time monitoring, process auditing and explicit executable paths.");}
   internal string SignatureScheduleKey(){return string.Join("|",new[]{SignatureScheduleFrequency,SignatureScheduleTime,SignatureScheduleWeekday.ToString(System.Globalization.CultureInfo.InvariantCulture),SignatureScheduleMonthDay.ToString(System.Globalization.CultureInfo.InvariantCulture)});}
   internal DateTime NextSignatureUpdate(DateTime utc,TimeZoneInfo zone){
    if(utc.Kind!=DateTimeKind.Utc)throw new ArgumentException("UTC reference required.");
@@ -45,29 +46,305 @@ namespace LinkScope {
  internal sealed class EndpointProtection : IDisposable {
   const int MaxEntries=100000, MaxQueue=8192;
   readonly string store; readonly string dbPath; readonly object vaultGate=new object(); readonly List<FileSystemWatcher> watchers=new List<FileSystemWatcher>();
-  readonly ConcurrentQueue<string> queue=new ConcurrentQueue<string>(); int queued,overflow; long seenOverflow; int watcherFailures;
-  readonly Dictionary<string,DateTime> deferred=new Dictionary<string,DateTime>(StringComparer.OrdinalIgnoreCase);
+  readonly UsnJournalMonitor usn=new UsnJournalMonitor();
+  // One bounded, case-insensitive queue for watcher events. New arrivals reserve
+  // capacity and can bypass ordinary backlog without creating extra scan workers.
+  sealed class WatchWork {internal string Path;internal DateTime First,Last,NotBefore;internal bool Priority;internal int Retries;}
+  readonly object watchGate=new object();
+  readonly Dictionary<string,WatchWork> watchQueue=new Dictionary<string,WatchWork>(StringComparer.OrdinalIgnoreCase);
+  EndpointSettings watchPolicy; int overflow; long seenOverflow; int watcherFailures;
+  readonly Dictionary<string,FileSystemWatcher> localWatchers=new Dictionary<string,FileSystemWatcher>(StringComparer.OrdinalIgnoreCase);
+  readonly Dictionary<string,FileSystemWatcher> faultedWatchers=new Dictionary<string,FileSystemWatcher>(StringComparer.OrdinalIgnoreCase);
+  readonly Dictionary<string,string> failedWatchers=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase); long nextWatcherRetry;
+  const int PriorityReserve=1024, MaxLockedRetries=3;
   readonly Dictionary<string,DateTime> changes=new Dictionary<string,DateTime>(StringComparer.OrdinalIgnoreCase);
   readonly Dictionary<string,DateTime> highEntropy=new Dictionary<string,DateTime>(StringComparer.OrdinalIgnoreCase);
+  readonly Dictionary<string,DateTime> extendedEntropy=new Dictionary<string,DateTime>(StringComparer.OrdinalIgnoreCase);
+  const int ExtendedEntropyWindowSeconds=300, ExtendedEntropyThreshold=5;
+  int extendedEntropyPeak;
   readonly Stack<string> pending=new Stack<string>(); readonly HashSet<string> visited=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
   string signatureMaintenanceSeen="",reportedUpdateUtc=null;long lastSignatureLogCheck;bool signatureLogReadable;
   string responseEngineStatus="Not checked",responseEngineDetail="Waiting for response verification";
   long lastResponseCheck,responseVerifiedEpoch;object[] responsePathsReadiness=new object[0];
-  string signatureFreshness="Unknown"; string policy,scope,version="Unavailable",auditStatus="Disabled",signatureVersion="Unknown",signatureTimestamp="Unknown"; long nextScan,scanId,lastScan,lastEngine,lastCanary,lastSignatureCheck; bool running,online,complete,rescan,reconcilePending=true; int scanned,excluded,limited,errors; long cleanChecks,infectedChecks,heuristicChecks,excludedChecks,failedChecks,quarantinedChecks; long realTimeChecked,lastFileScan,lastRealTimeScan; string latestChanged="",lastScannedPath="";
+  string signatureFreshness="Unknown"; string policy,scope,version="Unavailable",auditStatus="Disabled",signatureVersion="Unknown",signatureTimestamp="Unknown"; long nextScan,scanId,lastScan,lastEngine,lastCanary,lastSignatureCheck; bool running,online,complete,rescan,traversalLimitReached,journalGapDuringScan,reconcilePending=true,scopeReconcilePending=true; int scanned,excluded,limited,errors; long cleanChecks,infectedChecks,heuristicChecks,excludedChecks,failedChecks,quarantinedChecks,deferredChecks; long realTimeChecked,lastFileScan,lastRealTimeScan; string latestChanged="",lastScannedPath="";
+  int resetRequested; long privilegedFileChecks;
+  const long VerdictCacheMaxAge=7*86400;
+  bool baselineRestorePending=true,baselineResumed;
+  List<string> baselineChildren;
+  long cachedChecks,metadataCachedChecks; int baselineCached;
+  readonly EndpointDiskPressure diskPressure=new EndpointDiskPressure(); string baselineThrottleReason="";
+  sealed class CacheCandidate {internal string Hash,Generation,Stamp;}
+  int engineFailures; bool engineNeedsScanProbe; long nextEngineProbe;
+  // Independent, bounded download-directory reconciliation. Never use the service account's USERPROFILE.
+  sealed class DownloadWork {internal UsnJournalService.DownloadEntry Entry;internal bool Done;internal long Next;}
+  readonly Dictionary<string,DownloadWork> downloadWork=new Dictionary<string,DownloadWork>(StringComparer.OrdinalIgnoreCase);
+  string[] downloadRoots=new string[0];int downloadRootIndex;long nextDownloadPoll,nextDownloadDiscovery,downloadChecks;string downloadStatus="Waiting",downloadLastPath="",downloadLastResult="";
+  string downloadSource;
+  void ResetDownloads(){downloadWork.Clear();downloadRoots=new string[0];downloadRootIndex=0;nextDownloadPoll=nextDownloadDiscovery=downloadChecks=0;downloadStatus="Waiting";downloadLastPath=downloadLastResult="";}
+  internal static string[] DownloadRoots(EndpointSettings c){
+   var roots=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+   Action<string> add=path=>{if(string.IsNullOrWhiteSpace(path))return;try{string p=Path.GetFullPath(path).TrimEnd('\\');if(p.Length>=3&&p[1]==':'&&p[2]=='\\'&&p.Substring(2).IndexOf(':')<0&&string.Equals(Path.GetFileName(p),"Downloads",StringComparison.OrdinalIgnoreCase)&&c.Paths.Any(x=>Under(p,x))&&!Excluded(c,p))roots.Add(p);}catch(ArgumentException){}catch(NotSupportedException){}catch(PathTooLongException){}};
+   foreach(var p in c.Paths){if(string.Equals(Path.GetFileName(p.TrimEnd('\\')),"Downloads",StringComparison.OrdinalIgnoreCase))add(p);}
+   try{using(var profiles=Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList")){
+    if(profiles!=null)foreach(string sid in profiles.GetSubKeyNames()){
+     if(!sid.StartsWith("S-1-5-21-",StringComparison.OrdinalIgnoreCase)&&!sid.StartsWith("S-1-12-1-",StringComparison.OrdinalIgnoreCase))continue;
+     using(var profile=profiles.OpenSubKey(sid)){string path=profile==null?null:profile.GetValue("ProfileImagePath") as string;if(!string.IsNullOrWhiteSpace(path))add(Path.Combine(path,"Downloads"));}
+    }
+   }}catch(System.Security.SecurityException){if(roots.Count==0)throw;}catch(UnauthorizedAccessException){if(roots.Count==0)throw;}
+   return roots.OrderBy(x=>x,StringComparer.OrdinalIgnoreCase).ToArray();
+  }
+  void PollDownloads(EndpointSettings c,long now){
+   if(now>=nextDownloadDiscovery){nextDownloadDiscovery=now+60;try{downloadRoots=DownloadRoots(c);downloadRootIndex=0;}catch(Exception ex){downloadStatus="Profile discovery failed: "+ex.Message;}}
+   if(downloadRoots.Length==0){if(!downloadStatus.StartsWith("Profile discovery failed",StringComparison.Ordinal))downloadStatus="No Downloads folder inside configured scan scope";return;}
+   if(now<nextDownloadPoll)return;nextDownloadPoll=now+5;
+   string root=downloadRoots[downloadRootIndex++%downloadRoots.Length];
+   try{
+    var list=UsnJournalService.FetchDownloads(root);
+    if(list.Kind=="Missing"){downloadStatus="Folder missing: "+root;foreach(var path in downloadWork.Keys.Where(x=>Under(x,root)).ToArray())downloadWork.Remove(path);return;}
+    if(list.Kind!="Downloads")throw new IOException(list.Detail??"Unexpected Downloads reply");
+    var current=new HashSet<string>(StringComparer.OrdinalIgnoreCase);bool capped=false;
+    foreach(var file in list.Downloads.OrderByDescending(x=>Math.Max(x.Created,x.Written))){
+     if(!c.Paths.Any(x=>Under(file.Path,x))||Excluded(c,file.Path))continue;current.Add(file.Path);DownloadWork work;
+     if(downloadWork.TryGetValue(file.Path,out work)&&work.Entry.Size==file.Size&&work.Entry.Written==file.Written&&work.Entry.Created==file.Created)continue;
+     if(!downloadWork.ContainsKey(file.Path)&&downloadWork.Count>=32768){capped=true;continue;}
+     downloadWork[file.Path]=new DownloadWork{Entry=file};
+    }
+    if(string.IsNullOrEmpty(list.Detail))foreach(var path in downloadWork.Keys.Where(x=>Under(x,root)&&!current.Contains(x)).ToArray())downloadWork.Remove(path);
+    downloadStatus=capped?"Downloads tracking capacity reached; coverage incomplete":list.Detail??("Listing verified: "+root);
+   }catch(Exception ex){downloadStatus="Downloads check failed: "+root+" · "+ex.Message;}
+  }
+  void ScanDownload(Sqlite db,EndpointSettings c,WaitHandle stop,Func<bool> authorized,long now){
+   if(!online||!authorized()||stop.WaitOne(0))return;
+   var work=downloadWork.Values.Where(x=>!x.Done&&x.Next<=now).OrderByDescending(x=>Math.Max(x.Entry.Created,x.Entry.Written)).FirstOrDefault(x=>!usn.RetryWaiting(db,x.Entry.Path));if(work==null)return;
+   string p=work.Entry.Path;if(!c.Paths.Any(x=>Under(p,x))||Excluded(c,p)){work.Done=true;return;}
+   long before=Convert.ToInt64(db.Rows("SELECT COALESCE(MAX(seq),0) FROM scan_activity")[0][0]);
+   downloadSource="Downloads reconciliation";
+   try{
+    if(Program.ServiceMode&&c.Port==3310)CheckPrivileged(db,c,p,stop,authorized,false,c.CanaryPaths.Contains(p,StringComparer.OrdinalIgnoreCase),MaxLockedRetries,Stopwatch.StartNew(),"Dedicated Downloads scan");
+    else CheckFile(db,c,p,stop,authorized,false,MaxLockedRetries);
+   }finally{downloadSource=null;}
+   var row=db.Rows("SELECT result,detail FROM scan_activity WHERE seq>? AND path=? COLLATE NOCASE ORDER BY seq DESC LIMIT 1",before,p).FirstOrDefault();
+   downloadLastPath=p;downloadLastResult=row==null?"No verdict":(string)row[0]+" · "+(string)row[1];downloadChecks++;
+   // A missing file is retried until the next complete listing confirms disappearance.
+   work.Done=row!=null&&new[]{"Clean","Infected","Heuristic","Quarantined","Limited","Excluded","Reparse boundary"}.Contains((string)row[0]);work.Next=now+15;
+  }
+
+  internal void RequestReset(){Interlocked.Exchange(ref resetRequested,1);}
+  readonly object historyResetGate=new object();
+  string historyResetId="",historyResetState="Idle";long historyResetCutoff;bool historyResetRecoveryChecked;
+  internal object HistoryResetStatus(){lock(historyResetGate)return new {id=historyResetId,state=historyResetState,through=historyResetCutoff};}
+  internal object RequestHistoryReset(){lock(historyResetGate){
+   if(historyResetState=="Queued"||historyResetState=="Running")throw new HttpError(409,"An endpoint history reset is already in progress.");
+   historyResetId=Guid.NewGuid().ToString("N");historyResetState="Queued";historyResetCutoff=0;return HistoryResetStatus();
+  }}
+  // Called exclusively by the endpoint worker, before scans or outbox publication.
+  // A local transaction records a restart-safe marker before the central alert purge.
+  internal void ProcessHistoryReset(Alerts alerts){
+   string requested;lock(historyResetGate)requested=historyResetState=="Queued"?historyResetId:null;
+   if(requested==null&&(historyResetRecoveryChecked||!File.Exists(dbPath)))return;
+   historyResetRecoveryChecked=false;
+   using(var db=Open()){
+    var marker=db.Rows("SELECT value FROM endpoint_metadata WHERE name='history-reset-pending'").FirstOrDefault();
+    if(marker==null&&requested==null){historyResetRecoveryChecked=true;return;}
+    string id=marker==null?requested:(string)marker[0];
+    lock(historyResetGate){historyResetId=id;historyResetState="Running";}
+    try{
+     if(marker==null){
+      db.Exec("BEGIN IMMEDIATE");try{
+       db.Exec("DELETE FROM scan_activity");db.Exec("DELETE FROM clean_verdict_cache");ClearBaselineRows(db);db.Exec("DELETE FROM incidents");db.Exec("DELETE FROM files WHERE NOT EXISTS (SELECT 1 FROM findings f WHERE f.path=files.path COLLATE NOCASE AND f.active=1 AND f.change IN ('Malware signature detected','Heuristic signature finding','Quarantine withheld or failed','Canary integrity violation'))");db.Exec("DELETE FROM endpoint_probe WHERE finished IS NOT NULL");
+       db.Exec("DELETE FROM findings WHERE active=0 OR severity='coverage' OR change IN ('File scan error','File scan limited','Engine scan incomplete','Protected path unavailable','Scan incomplete','File scan coverage incomplete','Watcher coverage incomplete','Scan traversal limit reached')");
+       // Retain active malware, canary, response and unresolved journal/overflow findings.
+       // Replace old pending transitions with a fresh publication of the retained findings.
+       db.Exec("DELETE FROM endpoint_outbox");
+       db.Exec("INSERT INTO endpoint_outbox (utc,id,path,change,severity,detail,hash,active) SELECT ?,id,path,change,severity,detail,hash,1 FROM findings WHERE active=1",History.Now());
+       db.Exec("INSERT OR REPLACE INTO endpoint_metadata(name,value) VALUES('history-reset-pending',?)",id);
+       db.Exec("COMMIT");
+      }catch{db.Exec("ROLLBACK");throw;}
+     }
+     long cutoff=alerts.ResetEndpointHistory();
+     // Do not discard live watcher arrivals, durable USN work, canary baselines or vault receipts.
+     changes.Clear();highEntropy.Clear();extendedEntropy.Clear();extendedEntropyPeak=0;pending.Clear();visited.Clear();running=false;complete=false;rescan=false;reconcilePending=true;scanId=lastScan=nextScan=lastCanary=0;
+     baselineRestorePending=false;baselineResumed=false;scanned=excluded=limited=errors=baselineCached=0;cachedChecks=metadataCachedChecks=0;cleanChecks=infectedChecks=heuristicChecks=excludedChecks=failedChecks=quarantinedChecks=deferredChecks=realTimeChecked=privilegedFileChecks=lastFileScan=lastRealTimeScan=0;
+     lastScannedPath="";ResetDownloads();Interlocked.Exchange(ref resetRequested,0);
+     db.Exec("DELETE FROM endpoint_metadata WHERE name='history-reset-pending'");historyResetRecoveryChecked=true;
+     lock(historyResetGate){historyResetCutoff=cutoff;historyResetState="Completed";}
+     AppJournal.Event(LogLevel.Info,"Endpoint","history-reset","Endpoint history reset "+id+"; active security findings, canary baselines, quarantine evidence and journal work retained; new baseline scheduled.");
+    }catch{lock(historyResetGate)historyResetState="Failed";throw;}
+   }
+  }
+
   internal EndpointProtection():this(Path.Combine(Config.Data,"endpoint")){} internal EndpointProtection(string directory){store=directory;dbPath=Path.Combine(store,"endpoint.sqlite");}
   internal static string Hash(byte[] b){using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(b)).Replace("-","").ToLowerInvariant();}
   internal static string Id(string p){return Hash(Encoding.UTF8.GetBytes(p.ToUpperInvariant()));}
   internal static bool Under(string p,string root){return string.Equals(p.TrimEnd('\\'),root.TrimEnd('\\'),StringComparison.OrdinalIgnoreCase)||p.StartsWith(root.TrimEnd('\\')+"\\",StringComparison.OrdinalIgnoreCase);}
   internal static bool Excluded(EndpointSettings c,string p){return Under(p,Config.Root)||c.ExcludedPaths.Any(x=>Under(p,x))||c.ExcludedPatterns.Any(x=>Regex.IsMatch(Path.GetFileName(p),"^"+Regex.Escape(x).Replace("\\*",".*").Replace("\\?",".")+"$",RegexOptions.IgnoreCase|RegexOptions.CultureInvariant,TimeSpan.FromMilliseconds(50)));}
-  internal static void SafePath(string p){for(string q=p;!string.IsNullOrEmpty(q);q=Path.GetDirectoryName(q)){if((File.GetAttributes(q)&FileAttributes.ReparsePoint)!=0)throw new IOException("Reparse point skipped");}}
+  // Scheduled traversal only. Never apply this to watcher, USN, download or manual file probes.
+  internal static bool BackgroundExcluded(EndpointSettings c,string p){return (c.BackgroundExcludedPaths??new string[0]).Any(x=>Under(p,x))&&!c.CanaryPaths.Any(x=>Under(x,p));}
+  // Do not follow junctions, symbolic links or cloud reparse points, even in SYSTEM mode.
+  internal sealed class ScanReparseException : IOException {internal ScanReparseException(string path):base("Reparse point skipped: "+path){} }
+  internal static void SafePath(string p){for(string q=p;!string.IsNullOrEmpty(q);q=Path.GetDirectoryName(q)){if((File.GetAttributes(q)&FileAttributes.ReparsePoint)!=0)throw new ScanReparseException(q);}}
   internal static double Entropy(byte[] b,int n){if(n==0)return 0;var counts=new int[256];for(int i=0;i<n;i++)counts[b[i]]++;double h=0;foreach(int count in counts)if(count>0){double f=(double)count/n;h-=f*Math.Log(f,2);}return h;}
-  internal static string FileHash(Stream s){using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
-  internal static string Command(int port,string cmd,Stream file,WaitHandle stop,Action<TcpClient> verifyPeer=null){using(var c=new TcpClient(AddressFamily.InterNetwork)){var ar=c.BeginConnect(IPAddress.Loopback,port,null,null);using(var wait=ar.AsyncWaitHandle){if(!wait.WaitOne(2000))throw new IOException("ClamAV connection timed out");c.EndConnect(ar);}if(verifyPeer!=null)verifyPeer(c);c.ReceiveTimeout=5000;c.SendTimeout=5000;using(var s=c.GetStream()){var command=Encoding.ASCII.GetBytes("z"+cmd+"\0");s.Write(command,0,command.Length);var deadline=Stopwatch.StartNew();if(file!=null){byte[] b=new byte[65536];int n;while((n=file.Read(b,0,b.Length))>0){if(stop.WaitOne(0))throw new OperationCanceledException();if(deadline.ElapsedMilliseconds>30000)throw new IOException("Scan deadline exceeded");var size=BitConverter.GetBytes(IPAddress.HostToNetworkOrder(n));s.Write(size,0,4);s.Write(b,0,n);}s.Write(new byte[4],0,4);}var reply=new List<byte>();while(reply.Count<4096){if(stop.WaitOne(0))throw new OperationCanceledException();if(deadline.ElapsedMilliseconds>30000)throw new IOException("Scan deadline exceeded");int x=s.ReadByte();if(x==0||x==10)return Encoding.UTF8.GetString(reply.ToArray());if(x<0)throw new IOException("Incomplete engine reply");reply.Add((byte)x);}throw new IOException("Oversized engine reply");}}}
-  internal static bool Malware(string reply){return reply.EndsWith(" FOUND",StringComparison.Ordinal)&&!reply.StartsWith("stream: Heuristics.Limits.Exceeded",StringComparison.OrdinalIgnoreCase);}
-  void Enqueue(string path){if(Interlocked.Increment(ref queued)>MaxQueue){Interlocked.Decrement(ref queued);Interlocked.Exchange(ref overflow,1);return;}queue.Enqueue(path);}
-  void CloseWatchers(){foreach(var w in watchers)w.Dispose();watchers.Clear();}
-  void Configure(EndpointSettings c){CloseWatchers();string q;while(queue.TryDequeue(out q))Interlocked.Decrement(ref queued);deferred.Clear();changes.Clear();highEntropy.Clear();pending.Clear();visited.Clear();running=false;rescan=false;reconcilePending=true;nextScan=0;lastEngine=0;lastCanary=0;lastResponseCheck=0;responseVerifiedEpoch=0;responseEngineStatus="Not checked";responseEngineDetail="Waiting for response verification";responsePathsReadiness=new object[0];watcherFailures=0;realTimeChecked=lastFileScan=lastRealTimeScan=0;cleanChecks=infectedChecks=heuristicChecks=excludedChecks=failedChecks=quarantinedChecks=0;lastScannedPath="";auditStatus=c.ProcessCorrelation?"Awaiting matching audit evidence":"Disabled";scope=Id(Config.Json().Serialize(new {c.Paths,c.ExcludedPaths,c.ExcludedPatterns}));if(!c.Enabled||!c.RealTime)return;foreach(var p in c.Paths)try{SafePath(p);bool dir=Directory.Exists(p);var w=new FileSystemWatcher(dir?p:Path.GetDirectoryName(p),dir?"*":Path.GetFileName(p));w.IncludeSubdirectories=dir;w.InternalBufferSize=32768;w.NotifyFilter=NotifyFilters.FileName|NotifyFilters.DirectoryName|NotifyFilters.LastWrite|NotifyFilters.Size;w.Changed+=(s,e)=>Enqueue(e.FullPath);w.Created+=(s,e)=>Enqueue(e.FullPath);w.Deleted+=(s,e)=>Enqueue(e.FullPath);w.Renamed+=(s,e)=>{Enqueue(e.OldFullPath);Enqueue(e.FullPath);};w.Error+=(s,e)=>Interlocked.Exchange(ref overflow,1);w.EnableRaisingEvents=true;watchers.Add(w);}catch(Exception){watcherFailures++;}}
-  Sqlite Open(){Directory.CreateDirectory(store);SafePath(store);var db=new Sqlite(dbPath,false);try{db.Exec("PRAGMA journal_mode=WAL");db.Exec("PRAGMA synchronous=FULL");db.Exec("CREATE TABLE IF NOT EXISTS files(scope TEXT,path TEXT COLLATE NOCASE,hash TEXT,entropy REAL,seen INTEGER,PRIMARY KEY(scope,path))");db.Exec("CREATE TABLE IF NOT EXISTS canaries(path TEXT COLLATE NOCASE PRIMARY KEY,hash TEXT NOT NULL)");db.Exec("CREATE TABLE IF NOT EXISTS findings(id TEXT PRIMARY KEY,path TEXT,change TEXT,severity TEXT,detail TEXT,hash TEXT,first INTEGER,last INTEGER,active INTEGER)");db.Exec("CREATE TABLE IF NOT EXISTS incidents(seq INTEGER PRIMARY KEY AUTOINCREMENT,utc INTEGER,id TEXT,path TEXT,change TEXT,severity TEXT,detail TEXT,hash TEXT)");db.Exec("CREATE INDEX IF NOT EXISTS ep_incidents_utc ON incidents(utc)");db.Exec("CREATE TABLE IF NOT EXISTS quarantine_deletions(id TEXT PRIMARY KEY,path TEXT NOT NULL,hash TEXT NOT NULL,actor TEXT NOT NULL,requested INTEGER NOT NULL,completed INTEGER)");db.Exec("CREATE TABLE IF NOT EXISTS scan_activity(seq INTEGER PRIMARY KEY AUTOINCREMENT,utc INTEGER,path TEXT,source TEXT,result TEXT,durationMs INTEGER,detail TEXT)");db.Exec("CREATE TABLE IF NOT EXISTS endpoint_metadata(name TEXT PRIMARY KEY,value TEXT NOT NULL)");db.Exec("CREATE TABLE IF NOT EXISTS endpoint_stream(id TEXT NOT NULL)");db.Exec("INSERT INTO endpoint_stream SELECT ? WHERE NOT EXISTS (SELECT 1 FROM endpoint_stream)",Guid.NewGuid().ToString("N"));db.Exec("CREATE TABLE IF NOT EXISTS endpoint_outbox(seq INTEGER PRIMARY KEY AUTOINCREMENT,utc INTEGER,id TEXT,path TEXT,change TEXT,severity TEXT,detail TEXT,hash TEXT,active INTEGER)");return db;}catch{db.Dispose();throw;}}
+  internal static string FileHash(Stream s,EndpointReadBudget budget=null){using(var h=SHA256.Create()){
+   if(budget==null)return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();
+   var b=new byte[65536];int n;while((n=budget.Read(s,b,0,b.Length))>0)h.TransformBlock(b,0,n,b,0);h.TransformFinalBlock(new byte[0],0,0);return BitConverter.ToString(h.Hash).Replace("-","").ToLowerInvariant();
+  }}
+  // ClamD may queue an INSTREAM request before returning its verdict. Use one
+  // bounded budget for connect, send and response, not a five-second read cap.
+  const int ClamScanDeadlineMs=30000,ClamControlDeadlineMs=5000;
+  static void AwaitClam(Task operation,Stopwatch deadline,int budget,WaitHandle stop,string stage){
+   while(!operation.IsCompleted){
+    int remaining=budget-(int)deadline.ElapsedMilliseconds;
+    if(stop.WaitOne(0)||remaining<=0){
+     operation.ContinueWith(t=>{var ignored=t.Exception;},CancellationToken.None,TaskContinuationOptions.OnlyOnFaulted|TaskContinuationOptions.ExecuteSynchronously,TaskScheduler.Default);
+     if(stop.WaitOne(0))throw new OperationCanceledException();
+     throw new IOException("ClamAV "+stage+" timed out after "+budget+" ms; no signature verdict");
+    }
+    Task.WhenAny(operation,Task.Delay(Math.Min(remaining,200))).GetAwaiter().GetResult();
+   }
+   if(stop.WaitOne(0))throw new OperationCanceledException();
+   operation.GetAwaiter().GetResult();
+   if(deadline.ElapsedMilliseconds>budget)throw new IOException("ClamAV "+stage+" exceeded deadline; no signature verdict");
+  }
+  internal static string Command(int port,string cmd,Stream file,WaitHandle stop,Action<TcpClient> verifyPeer=null,EndpointReadBudget readBudget=null){
+   int budget=file==null?ClamControlDeadlineMs:ClamScanDeadlineMs+(readBudget==null?0:20000);var deadline=Stopwatch.StartNew();string stage="connect";
+   using(var c=new TcpClient(AddressFamily.InterNetwork))try{
+    AwaitClam(c.ConnectAsync(IPAddress.Loopback,port),deadline,2000,stop,stage);
+    stage="peer verification";if(verifyPeer!=null)verifyPeer(c);
+    using(var stream=c.GetStream()){
+     Action<byte[],int> send=(bytes,count)=>AwaitClam(stream.WriteAsync(bytes,0,count),deadline,budget,stop,stage);
+     stage="send command";var command=Encoding.ASCII.GetBytes("z"+cmd+"\0");send(command,command.Length);
+     if(file!=null){stage="send file";byte[] b=new byte[65536];int n;while((n=readBudget==null?file.Read(b,0,b.Length):readBudget.Read(file,b,0,b.Length))>0){if(stop.WaitOne(0))throw new OperationCanceledException();if(deadline.ElapsedMilliseconds>=budget)throw new IOException("Scan deadline exceeded");var size=BitConverter.GetBytes(IPAddress.HostToNetworkOrder(n));send(size,4);send(b,n);}send(new byte[4],4);}
+     stage="await verdict";var reply=new List<byte>();var buf=new byte[512];
+     while(reply.Count<4096){var read=stream.ReadAsync(buf,0,Math.Min(buf.Length,4096-reply.Count));AwaitClam(read,deadline,budget,stop,stage);int n=read.GetAwaiter().GetResult();if(n==0)throw new IOException("Incomplete engine reply");for(int i=0;i<n;i++){int x=buf[i];if(x==0||x==10)return Encoding.UTF8.GetString(reply.ToArray());reply.Add((byte)x);}}
+     throw new IOException("Oversized engine reply");
+    }
+   }catch(OperationCanceledException){throw;}catch(Exception ex){throw new IOException("ClamAV "+stage+" ("+deadline.ElapsedMilliseconds+" ms): "+ex.Message,ex);}
+  }
+  internal static bool CleanVerdict(string reply){return string.Equals(reply,"stream: OK",StringComparison.Ordinal);}
+  internal static bool Malware(string reply){return reply!=null&&reply.StartsWith("stream: ",StringComparison.Ordinal)&&reply.EndsWith(" FOUND",StringComparison.Ordinal)&&reply.Length>14&&!reply.StartsWith("stream: Heuristics.Limits.Exceeded",StringComparison.OrdinalIgnoreCase);}
+  // Match a directory segment, not a filename or a substring of a folder name.
+  internal static bool DownloadPriority(string path){return path!=null&&path.IndexOf(@"\Downloads\",StringComparison.OrdinalIgnoreCase)>=0;}
+  void Enqueue(EndpointSettings c,string path,bool priority=false){
+   // Filter before allocating queue space; LinkScope's own writes must not feed back into scanning.
+   try{if(!c.Paths.Any(root=>Under(path,root))||Excluded(c,path))return;}catch(Exception){Interlocked.Exchange(ref overflow,1);return;}
+   lock(watchGate){if(!ReferenceEquals(watchPolicy,c))return;
+    var now=DateTime.UtcNow;priority=priority||DownloadPriority(path);WatchWork existing;
+    if(watchQueue.TryGetValue(path,out existing)){existing.Last=now;existing.Priority|=priority;return;}
+    if(watchQueue.Count>=(priority?MaxQueue:MaxQueue-PriorityReserve)){Interlocked.Exchange(ref overflow,1);return;}
+    watchQueue.Add(path,new WatchWork{Path=path,First=now,Last=now,NotBefore=now,Priority=priority});
+   }
+  }
+  bool RetryLocked(EndpointSettings c,string path,int retries){
+   if(!c.RealTime||retries>=MaxLockedRetries)return false;
+   lock(watchGate){if(watchPolicy==null)return false;
+    // A newer event already queued while scanning must not be overwritten.
+    if(watchQueue.ContainsKey(path))return true;
+    if(watchQueue.Count>=MaxQueue){Interlocked.Exchange(ref overflow,1);return false;}
+    var now=DateTime.UtcNow;watchQueue.Add(path,new WatchWork{Path=path,First=now,Last=now,NotBefore=now.AddSeconds(2<<retries),Priority=true,Retries=retries+1});return true;
+   }
+  }
+  internal static bool LockedFile(Exception error){var io=error as IOException;return io!=null&&((io.HResult&65535)==32||(io.HResult&65535)==33);}
+  bool HasWatcher(string path){lock(watchGate)return watchQueue.ContainsKey(path);}
+  void RemoveWatcher(string path){lock(watchGate)watchQueue.Remove(path);}
+  int[] WatchCounts(){lock(watchGate)return new[]{watchQueue.Count,watchQueue.Values.Count(x=>x.Priority)};}
+  // 0: urgent creation/rename/download, 1: oldest eligible, 2: newest eligible (e.g. overwritten copy).
+  WatchWork TakeWatcher(int lane){lock(watchGate){var now=DateTime.UtcNow;WatchWork best=null;
+   foreach(var item in watchQueue.Values){
+    if(now<item.NotBefore||((now-item.Last).TotalMilliseconds<750&&(now-item.First).TotalSeconds<5)|| (lane==0&&!item.Priority))continue;
+    if(best==null){best=item;continue;}
+    if(lane==0){bool download=DownloadPriority(item.Path),bestDownload=DownloadPriority(best.Path);if(download!=bestDownload?download:item.First<best.First)best=item;}
+    else if(lane==2?item.Last>best.Last:item.First<best.First)best=item;
+   }
+   if(best!=null)watchQueue.Remove(best.Path);return best;
+  }}
+  // Optional native self-test: no watcher, filesystem or antivirus access is needed.
+  internal static void PrioritySelfTest(){
+   string root=Path.Combine(Path.GetTempPath(),"LinkScope-priority-fixture-"+Guid.NewGuid().ToString("N"));
+   using(var ep=new EndpointProtection(root)){
+    var settings=new EndpointSettings{Enabled=true,Paths=new[]{root},ExcludedPatterns=new[]{"*.tmp"}};ep.watchPolicy=settings;
+    string old=Path.Combine(root,"old.txt"),copy=Path.Combine(root,"copy.exe"),download=Path.Combine(root,"Downloads","test.com");
+    ep.Enqueue(settings,old);ep.Enqueue(settings,copy);ep.Enqueue(settings,copy.ToUpperInvariant(),true);ep.Enqueue(settings,download);ep.Enqueue(settings,Path.Combine(root,"skip.tmp"),true);
+    if(ep.watchQueue.Count!=3||ep.watchQueue.Values.Count(x=>x.Priority)!=2)throw new IOException("Priority queue enqueue fixture failed");
+    foreach(var work in ep.watchQueue.Values)work.NotBefore=DateTime.UtcNow.AddMinutes(1);
+    if(ep.TakeWatcher(0)!=null)throw new IOException("Priority queue debounce fixture failed");
+    DateTime now=DateTime.UtcNow;foreach(var work in ep.watchQueue.Values){work.First=work.Last=work.NotBefore=now.AddSeconds(-2);}
+    ep.watchQueue[old].First=now.AddSeconds(-10);
+    if(ep.TakeWatcher(0).Path!=download||ep.TakeWatcher(1).Path!=old||!string.Equals(ep.TakeWatcher(0).Path,copy,StringComparison.OrdinalIgnoreCase))throw new IOException("Priority queue selection fixture failed");
+    if(!ep.RetryLocked(settings,copy,0)||ep.RetryLocked(settings,old,MaxLockedRetries))throw new IOException("Priority queue bounded retry fixture failed");
+    ep.watchQueue[copy].First=ep.watchQueue[copy].Last=ep.watchQueue[copy].NotBefore=now.AddSeconds(-10);
+    if(ep.TakeWatcher(0).Retries!=1)throw new IOException("Priority queue retry count fixture failed");
+   }
+  }
+  // Keep the metadata heartbeat independent of slow ClamAV scans and SQLite work.
+  // Only the scanner thread owns failedWatchers and the database. The pump owns
+  // its scoped requests; results are published under a lock and events use Enqueue.
+  const int PrivilegedWatcherFreshSeconds=30, PrivilegedWatcherStartupSeconds=15;
+  sealed class PrivilegedWatcherState {internal long Verified,Next,Created;internal bool Failed;internal string Detail="Awaiting first privileged watcher request";}
+  readonly object privilegedWatcherGate=new object();
+  readonly Dictionary<string,PrivilegedWatcherState> privilegedWatcherStates=new Dictionary<string,PrivilegedWatcherState>(StringComparer.OrdinalIgnoreCase);
+  EndpointSettings privilegedWatcherPolicy;Thread privilegedWatcherThread;bool privilegedWatcherStopping;int privilegedWatcherReconcile;
+  static bool PrivilegedWatcherCovers(PrivilegedWatcherState state,long now){return state!=null&&state.Verified>0&&now>=state.Verified&&now-state.Verified<=PrivilegedWatcherFreshSeconds;}
+  static bool PrivilegedWatcherInitializing(PrivilegedWatcherState state,long now){return state!=null&&!state.Failed&&state.Verified==0&&now>=state.Created&&now-state.Created<PrivilegedWatcherStartupSeconds;}
+  void ResetPrivilegedWatchers(){lock(privilegedWatcherGate){privilegedWatcherStates.Clear();privilegedWatcherPolicy=null;Interlocked.Exchange(ref privilegedWatcherReconcile,0);}}
+  void SyncPrivilegedWatchers(EndpointSettings c){lock(privilegedWatcherGate){
+   if(privilegedWatcherStopping||!Program.ServiceMode||!c.RealTime||watchPolicy==null)return;
+   privilegedWatcherPolicy=watchPolicy;
+   foreach(var root in privilegedWatcherStates.Keys.Where(x=>!failedWatchers.ContainsKey(x)).ToArray())privilegedWatcherStates.Remove(root);
+   foreach(var root in failedWatchers.Keys){if(c.CanaryPaths.Contains(root,StringComparer.OrdinalIgnoreCase))continue;if(!privilegedWatcherStates.ContainsKey(root))privilegedWatcherStates[root]=new PrivilegedWatcherState{Created=History.Now()};}
+   if(privilegedWatcherThread==null&&privilegedWatcherStates.Count>0){privilegedWatcherThread=new Thread(PrivilegedWatcherLoop){IsBackground=true,Name="LinkScope privileged watcher heartbeat"};privilegedWatcherThread.Start();}
+  }}
+  void PrivilegedWatcherLoop(){while(true){
+   string root=null;PrivilegedWatcherState state=null;EndpointSettings saved=null;
+   lock(privilegedWatcherGate){
+    if(privilegedWatcherStopping)return;
+    if(privilegedWatcherPolicy!=null){long now=History.Now();var next=privilegedWatcherStates.Where(x=>x.Value.Next<=now).OrderBy(x=>x.Value.Next).FirstOrDefault();
+     if(next.Key!=null){root=next.Key;state=next.Value;saved=privilegedWatcherPolicy;if(state.Verified==0)state.Detail="Contacting LinkScopeUsn privileged watcher";}}
+   }
+   if(root==null){Thread.Sleep(250);continue;}
+   UsnJournalService.ScanBatch batch=null;string error=null;
+   try{batch=UsnJournalService.FetchWatcher(root);if(batch.Kind!="Watcher")throw new IOException(batch.Detail??batch.Kind);}
+   catch(Exception ex){error=ex.GetType().Name+": "+ex.Message;}
+   long completed=History.Now();
+   lock(privilegedWatcherGate){
+    if(privilegedWatcherStopping)return;
+    PrivilegedWatcherState current;
+    // Never consume an old generation's results after a scope change or reset.
+    if(!ReferenceEquals(saved,privilegedWatcherPolicy)||!privilegedWatcherStates.TryGetValue(root,out current)||!ReferenceEquals(current,state))continue;
+    if(error==null){
+     foreach(var path in batch.Children)Enqueue(saved,path,batch.WatchArrivals.Contains(path,StringComparer.OrdinalIgnoreCase));
+     state.Verified=batch.WatchGap?0:completed;state.Failed=batch.WatchGap;
+     state.Detail=batch.WatchGap?"Privileged watcher lost events; reconciliation requested":"Privileged recursive watcher active";state.Next=completed+2;
+     if(batch.WatchStarted)Interlocked.Exchange(ref privilegedWatcherReconcile,1);if(batch.WatchGap)Interlocked.Exchange(ref overflow,1);
+    }else{
+     if(state.Verified>0||!state.Failed)Interlocked.Exchange(ref privilegedWatcherReconcile,1);
+     state.Verified=0;state.Failed=true;state.Detail=error;state.Next=completed+10;
+    }
+   }
+  }}
+  Dictionary<string,PrivilegedWatcherState> PrivilegedWatcherSnapshot(){lock(privilegedWatcherGate){return privilegedWatcherStates.ToDictionary(x=>x.Key,x=>new PrivilegedWatcherState{Verified=x.Value.Verified,Next=x.Value.Next,Created=x.Value.Created,Failed=x.Value.Failed,Detail=x.Value.Detail},StringComparer.OrdinalIgnoreCase);}}
+  void CloseWatchers(){ResetPrivilegedWatchers();lock(watchGate){watchPolicy=null;watchQueue.Clear();faultedWatchers.Clear();}foreach(var w in watchers)w.Dispose();watchers.Clear();localWatchers.Clear();failedWatchers.Clear();watcherFailures=0;}
+  // Failed watcher roots are retried independently; do not reset successful watchers or queued arrivals.
+  bool TryStartWatcher(EndpointSettings c,string p){FileSystemWatcher w=null;try{
+   SafePath(p);bool dir=(File.GetAttributes(p)&FileAttributes.Directory)!=0;
+   w=new FileSystemWatcher(dir?p:Path.GetDirectoryName(p),dir?"*":Path.GetFileName(p));w.IncludeSubdirectories=dir;w.InternalBufferSize=32768;w.NotifyFilter=NotifyFilters.FileName|NotifyFilters.DirectoryName|NotifyFilters.LastWrite|NotifyFilters.Size;
+   w.Changed+=(s,e)=>Enqueue(c,e.FullPath);w.Created+=(s,e)=>Enqueue(c,e.FullPath,true);w.Deleted+=(s,e)=>Enqueue(c,e.FullPath);w.Renamed+=(s,e)=>{Enqueue(c,e.OldFullPath);Enqueue(c,e.FullPath,true);};var instance=w;w.Error+=(sender,e)=>{lock(watchGate){if(ReferenceEquals(watchPolicy,c))faultedWatchers[p]=instance;}Interlocked.Exchange(ref overflow,1);};
+   w.EnableRaisingEvents=true;watchers.Add(w);localWatchers[p]=w;failedWatchers.Remove(p);return true;
+  }catch(Exception ex){if(w!=null)w.Dispose();failedWatchers[p]=ex.GetType().Name+": "+ex.Message;return false;}}
+  void ConsumeWatcherFaults(){
+   KeyValuePair<string,FileSystemWatcher>[] faults;lock(watchGate){faults=faultedWatchers.ToArray();faultedWatchers.Clear();}
+   foreach(var fault in faults){FileSystemWatcher current;if(!localWatchers.TryGetValue(fault.Key,out current)||!ReferenceEquals(current,fault.Value))continue;
+    localWatchers.Remove(fault.Key);watchers.Remove(current);current.Dispose();failedWatchers[fault.Key]="Local watcher reported an error; registration must be renewed";nextWatcherRetry=0;}
+   watcherFailures=failedWatchers.Count;
+  }
+  void RetryFailedWatchers(long now){
+   // Use the original watcher policy object, not the freshly deserialized equivalent.
+   var c=watchPolicy;if(c==null||failedWatchers.Count==0||now<nextWatcherRetry)return;
+   nextWatcherRetry=now+60;bool recovered=false;foreach(var p in failedWatchers.Keys.ToArray())if(TryStartWatcher(c,p))recovered=true;
+   watcherFailures=failedWatchers.Count;SyncPrivilegedWatchers(c);
+   if(recovered){nextScan=0;if(running)rescan=true;AppJournal.Event(LogLevel.Info,"Endpoint","watcher-recovery","Previously unavailable watcher restored; reconciliation scheduled.");}
+  }
+  void Configure(EndpointSettings c){baselineRestorePending=true;baselineResumed=false;cachedChecks=metadataCachedChecks=0;baselineCached=0;CloseWatchers();ResetDownloads();changes.Clear();highEntropy.Clear();extendedEntropy.Clear();extendedEntropyPeak=0;pending.Clear();visited.Clear();running=false;complete=false;rescan=false;journalGapDuringScan=false;reconcilePending=true;scopeReconcilePending=true;scanId=lastScan=0;nextScan=0;lastEngine=0;engineFailures=0;engineNeedsScanProbe=false;nextEngineProbe=0;lastCanary=0;lastResponseCheck=0;responseVerifiedEpoch=0;responseEngineStatus="Not checked";responseEngineDetail="Waiting for response verification";responsePathsReadiness=new object[0];watcherFailures=0;nextWatcherRetry=0;realTimeChecked=lastFileScan=lastRealTimeScan=privilegedFileChecks=0;cleanChecks=infectedChecks=heuristicChecks=excludedChecks=failedChecks=deferredChecks=quarantinedChecks=0;lastScannedPath="";auditStatus=c.ProcessCorrelation?"Awaiting matching audit evidence":"Disabled";scope=Id(Config.Json().Serialize(new {c.Paths,c.ExcludedPaths,c.ExcludedPatterns}));usn.Configure(c,scope);if(!c.Enabled||!c.RealTime)return;lock(watchGate)watchPolicy=c;foreach(var p in c.Paths)TryStartWatcher(c,p);watcherFailures=failedWatchers.Count;SyncPrivilegedWatchers(c);nextWatcherRetry=History.Now()+60;}
+  Sqlite Open(){Directory.CreateDirectory(store);SafePath(store);var db=new Sqlite(dbPath,false);try{db.Exec("PRAGMA journal_mode=WAL");db.Exec("PRAGMA synchronous=FULL");db.Exec("CREATE TABLE IF NOT EXISTS files(scope TEXT,path TEXT COLLATE NOCASE,hash TEXT,entropy REAL,seen INTEGER,PRIMARY KEY(scope,path))");db.Exec("CREATE TABLE IF NOT EXISTS clean_verdict_cache(policy TEXT NOT NULL,path TEXT COLLATE NOCASE NOT NULL,hash TEXT NOT NULL,generation TEXT NOT NULL,verified INTEGER NOT NULL,PRIMARY KEY(policy,path))");if(!db.Rows("PRAGMA table_info(clean_verdict_cache)").Any(x=>Equals(x[1],"stamp")))db.Exec("ALTER TABLE clean_verdict_cache ADD COLUMN stamp TEXT");db.Exec("CREATE INDEX IF NOT EXISTS ep_cache_verified ON clean_verdict_cache(verified)");db.Exec("CREATE INDEX IF NOT EXISTS ep_cache_path ON clean_verdict_cache(path)");db.Exec("CREATE TABLE IF NOT EXISTS canaries(path TEXT COLLATE NOCASE PRIMARY KEY,hash TEXT NOT NULL)");db.Exec("CREATE TABLE IF NOT EXISTS findings(id TEXT PRIMARY KEY,path TEXT,change TEXT,severity TEXT,detail TEXT,hash TEXT,first INTEGER,last INTEGER,active INTEGER)");db.Exec("CREATE INDEX IF NOT EXISTS ep_findings_active_severity ON findings(active,severity,last)");db.Exec("CREATE INDEX IF NOT EXISTS ep_findings_path_active ON findings(path COLLATE NOCASE,active)");db.Exec("CREATE TABLE IF NOT EXISTS baseline_state(id INTEGER PRIMARY KEY CHECK(id=1),policy TEXT NOT NULL,scan INTEGER NOT NULL,scanned INTEGER NOT NULL,excluded INTEGER NOT NULL,limited INTEGER NOT NULL,errors INTEGER NOT NULL,cached INTEGER NOT NULL,capped INTEGER NOT NULL)");db.Exec("CREATE TABLE IF NOT EXISTS baseline_frontier(seq INTEGER PRIMARY KEY AUTOINCREMENT,path TEXT NOT NULL)");db.Exec("CREATE TABLE IF NOT EXISTS baseline_visited(path TEXT COLLATE NOCASE PRIMARY KEY)");db.Exec("CREATE TABLE IF NOT EXISTS incidents(seq INTEGER PRIMARY KEY AUTOINCREMENT,utc INTEGER,id TEXT,path TEXT,change TEXT,severity TEXT,detail TEXT,hash TEXT)");db.Exec("CREATE INDEX IF NOT EXISTS ep_incidents_utc ON incidents(utc)");db.Exec("CREATE TABLE IF NOT EXISTS quarantine_deletions(id TEXT PRIMARY KEY,path TEXT NOT NULL,hash TEXT NOT NULL,actor TEXT NOT NULL,requested INTEGER NOT NULL,completed INTEGER)");db.Exec("CREATE TABLE IF NOT EXISTS scan_activity(seq INTEGER PRIMARY KEY AUTOINCREMENT,utc INTEGER,path TEXT,source TEXT,result TEXT,durationMs INTEGER,detail TEXT)");db.Exec("CREATE TABLE IF NOT EXISTS endpoint_metadata(name TEXT PRIMARY KEY,value TEXT NOT NULL)");db.Exec("CREATE TABLE IF NOT EXISTS endpoint_stream(id TEXT NOT NULL)");db.Exec("INSERT INTO endpoint_stream SELECT ? WHERE NOT EXISTS (SELECT 1 FROM endpoint_stream)",Guid.NewGuid().ToString("N"));db.Exec("CREATE TABLE IF NOT EXISTS endpoint_outbox(seq INTEGER PRIMARY KEY AUTOINCREMENT,utc INTEGER,id TEXT,path TEXT,change TEXT,severity TEXT,detail TEXT,hash TEXT,active INTEGER)");UsnJournalMonitor.Schema(db);ProbeSchema(db);return db;}catch{db.Dispose();throw;}}
   // Installer supplies a known original hash, never a first-observed potentially altered file.
   internal void SeedSetupCanaries(string folder){using(var db=Open()){
    db.Exec("BEGIN IMMEDIATE");try{foreach(string name in CanaryTemplates.Names){string path=Path.Combine(folder,name),expected=CanaryTemplates.ExpectedHash(name);var existing=db.Rows("SELECT hash FROM canaries WHERE path=?",path).FirstOrDefault();if(existing!=null&&!Equals(existing[0],expected))throw new IOException("Existing canary baseline differs; no replacement permitted.");db.Exec("INSERT OR IGNORE INTO canaries(path,hash) VALUES(?,?)",path,expected);}db.Exec("COMMIT");}catch{db.Exec("ROLLBACK");throw;}
@@ -91,26 +368,220 @@ namespace LinkScope {
    SafePath(folder);foreach(var p in paths){SafePath(folder);using(var file=new FileStream(p,FileMode.CreateNew,FileAccess.Write,FileShare.None)){EndpointResponse.VerifyHandle(file.SafeFileHandle,p);var b=CanaryTemplates.Bytes(Path.GetFileName(p));file.Write(b,0,b.Length);file.Flush(true);}}
    CanaryTemplates.Verify(folder);
   }
+  // Administrator-only, exact-file service probe. Never bypasses scope/exclusions,
+  // never authorizes quarantine/containment, and never grants filesystem rights.
+  static void ProbeSchema(Sqlite db){db.Exec("CREATE TABLE IF NOT EXISTS endpoint_probe(id TEXT PRIMARY KEY,path TEXT NOT NULL,created INTEGER NOT NULL,finished INTEGER,result TEXT,detail TEXT)");}
+  internal static int RequestFileProbe(string input){
+   if(string.IsNullOrWhiteSpace(input)||input.Length>1024||input.Any(char.IsControl)||input.Length<3||input[1]!=':'||input[2]!='\\'||input.Substring(2).Contains(":"))throw new IOException("Specify an absolute local file path.");
+   string path=Path.GetFullPath(input);var c=Config.Load().Endpoint;
+   if(!c.Enabled||!c.Paths.Any(x=>Under(path,x))||Excluded(c,path))throw new IOException("File outside enabled scan scope or excluded by policy.");
+   if(Directory.Exists(path))throw new IOException("Select a file, not a directory.");
+   string fileDb=Path.Combine(Config.Data,"endpoint","endpoint.sqlite");if(!File.Exists(fileDb))throw new IOException("Endpoint database not found. Start LinkScope and enable Endpoint Protection.");
+   string id=Guid.NewGuid().ToString("N");long now=History.Now();
+   using(var db=new Sqlite(fileDb,false)){
+    ProbeSchema(db);db.Exec("BEGIN IMMEDIATE");try{
+     db.Exec("DELETE FROM endpoint_probe WHERE created<?",now-86400);
+     if(Convert.ToInt64(db.Rows("SELECT COUNT(*) FROM endpoint_probe WHERE finished IS NULL")[0][0])>=64)throw new IOException("Diagnostic queue full.");
+     db.Exec("INSERT INTO endpoint_probe(id,path,created) VALUES(?,?,?)",id,path,now);db.Exec("COMMIT");
+    }catch{db.Exec("ROLLBACK");throw;}
+   }
+   Console.WriteLine("Service scan requested: "+id+" | "+path);Console.WriteLine("Waiting for the actual LinkScope service account; no automatic response is authorized by this request.");
+   var timer=Stopwatch.StartNew();while(timer.ElapsedMilliseconds<90000){
+    using(var db=new Sqlite(fileDb,true)){var row=db.Rows("SELECT finished,result,detail FROM endpoint_probe WHERE id=?",id).FirstOrDefault();if(row!=null&&row[0]!=null){Console.WriteLine("Service result: "+row[1]);Console.WriteLine("Detail: "+row[2]);return Equals(row[1],"Clean")||Equals(row[1],"Infected")||Equals(row[1],"Heuristic")?0:1;}}
+    Thread.Sleep(500);
+   }
+   Console.WriteLine("No service result within 90 seconds; request remains queued until processed or expired. Check service status and endpoint logs.");return 2;
+  }
+  void ProcessFileProbe(Sqlite db,EndpointSettings c,WaitHandle stop,Func<bool> authorized){
+   if(stop.WaitOne(0)||!authorized())return;
+   db.Exec("DELETE FROM endpoint_probe WHERE created<?",History.Now()-86400);
+   var request=db.Rows("SELECT id,path FROM endpoint_probe WHERE finished IS NULL ORDER BY created,rowid LIMIT 1").FirstOrDefault();if(request==null)return;
+   string id=(string)request[0],path=(string)request[1],result="Unavailable",detail="No signature verdict";
+   try{
+    if(!c.Enabled||!c.Paths.Any(x=>Under(path,x))||Excluded(c,path)){result="Excluded";detail="Current monitoring policy does not include this file.";}
+    else if(Directory.Exists(path)){result="Failed";detail="Request must identify a file, not a directory.";}
+    else if(!online){result="Unavailable";detail="ClamAV is offline; no file scan performed.";}
+    else {
+     long before=Convert.ToInt64(db.Rows("SELECT COALESCE(MAX(seq),0) FROM scan_activity")[0][0]);
+     // The normal service scanner records findings and activity; prohibit automatic response for this diagnostic.
+     CheckFile(db,c,path,stop,()=>false,false,MaxLockedRetries);
+     var row=db.Rows("SELECT result,detail FROM scan_activity WHERE seq>? AND path=? COLLATE NOCASE ORDER BY seq DESC LIMIT 1",before,path).FirstOrDefault();
+     if(row!=null){result=(string)row[0];detail=(string)row[1];}
+    }
+   }catch(OperationCanceledException){throw;}catch(Exception ex){result="Failed";detail=ex.GetType().Name+": "+ex.Message;}
+   db.Exec("UPDATE endpoint_probe SET finished=?,result=?,detail=? WHERE id=?",History.Now(),result,detail,id);
+   AppJournal.Event(LogLevel.Info,"Endpoint","exact-file-probe",result+" | "+path+" | "+detail);
+  }
+  internal static int TestEngineSignature(){
+   var c=Config.Load().Endpoint;
+   // Standard harmless EICAR test string, assembled in memory; no test file is written.
+   byte[] test=Encoding.ASCII.GetBytes(@"X5O!P%@AP[4\PZX54(P^)7CC)7}"+"$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*");
+   using(var stop=new ManualResetEvent(false))using(var stream=new MemoryStream(test,false)){
+    string reply=Command(c.Port,"INSTREAM",stream,stop);Console.WriteLine("ClamAV EICAR memory probe: "+reply);
+    bool found=Malware(reply)&&reply.IndexOf("Eicar",StringComparison.OrdinalIgnoreCase)>=0;
+    Console.WriteLine(found?"PASS: ClamAV recognizes EICAR.":"FAIL: expected an EICAR signature verdict; check signature database and engine configuration.");return found?0:1;
+   }
+  }
+  internal static void DiagnoseFile(string input){
+   if(string.IsNullOrWhiteSpace(input)||input.Length>1024||input.Any(char.IsControl)||input.Length<3||input[1]!=':'||input[2]!='\\'||input.Substring(2).Contains(":"))throw new IOException("Specify an absolute local file path.");
+   string path=Path.GetFullPath(input);var c=Config.Load().Endpoint;
+   Console.WriteLine("Path: "+path);Console.WriteLine("Enabled: "+c.Enabled+"; real-time: "+c.RealTime+"; mode: "+c.Mode);
+   bool inScope=c.Paths.Any(x=>Under(path,x)), excluded=Excluded(c,path);
+   Console.WriteLine("In configured scope: "+inScope+"; excluded: "+excluded);
+   string fileDb=Path.Combine(Config.Data,"endpoint","endpoint.sqlite");
+   if(File.Exists(fileDb))using(var db=new Sqlite(fileDb,true)){
+    var rows=db.Rows("SELECT utc,source,result,detail FROM scan_activity WHERE path=? COLLATE NOCASE ORDER BY seq DESC LIMIT 20",path);
+    Console.WriteLine("Service scan activity (latest 20 retained matches): "+rows.Count);
+    foreach(var row in rows)Console.WriteLine(Telemetry.Utc(Convert.ToInt64(row[0]))+" | "+row[1]+" | "+row[2]+" | "+row[3]);
+    foreach(var row in db.Rows("SELECT change,severity,detail,active FROM findings WHERE path=? COLLATE NOCASE ORDER BY last DESC LIMIT 20",path))Console.WriteLine("Finding: "+row[0]+" | "+row[1]+" | active="+row[3]+" | "+row[2]);
+    string key=Id(Config.Json().Serialize(new {c.Paths,c.ExcludedPaths,c.ExcludedPatterns}));
+    Console.WriteLine("Durable journal pending: "+(db.Rows("SELECT 1 FROM usn_pending WHERE scope=? AND path=?",key,path).Count>0));
+   }else Console.WriteLine("Service endpoint database not found.");
+   Console.WriteLine("Direct engine probe uses the invoking account, NOT the LinkScope service identity; it does not create an alert or change the file.");
+   if(!c.Enabled||!inScope||excluded){Console.WriteLine("Probe skipped: path outside enabled scan policy.");return;}
+   try{SafePath(path);using(var file=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.Read))using(var stop=new ManualResetEvent(false)){
+    if(file.Length>c.MaxFileMiB*1048576L){Console.WriteLine("Probe skipped: file exceeds configured size cap.");return;}
+    Console.WriteLine("Direct ClamAV result: "+Command(c.Port,"INSTREAM",file,stop));
+   }}catch(Exception ex){Console.WriteLine("Direct probe failed: "+ex.GetType().Name+": "+ex.Message);}
+  }
   void Activity(Sqlite db,string path,bool full,string result,Stopwatch timer,string detail=""){
-   if(result=="Clean")cleanChecks++;else if(result=="Infected")infectedChecks++;else if(result=="Heuristic")heuristicChecks++;else if(result=="Excluded")excludedChecks++;else if(result=="Quarantined"){infectedChecks++;quarantinedChecks++;}else failedChecks++;
+   if(result=="Cached clean")cachedChecks++;else if(result=="Clean")cleanChecks++;else if(result=="Infected")infectedChecks++;else if(result=="Heuristic")heuristicChecks++;else if(result=="Excluded")excludedChecks++;else if(result=="Quarantined"){infectedChecks++;quarantinedChecks++;}else if(result=="Deferred")deferredChecks++;else failedChecks++;
    // Fixed-size persistent activity ring; threat incidents and alert outbox are independent.
-   db.Exec("INSERT INTO scan_activity(utc,path,source,result,durationMs,detail) VALUES(?,?,?,?,?,?)",History.Now(),path,full?"Scheduled / manual":"Real-time / canary",result,timer.ElapsedMilliseconds,detail.Length>1024?detail.Substring(0,1024):detail);
+   db.Exec("INSERT INTO scan_activity(utc,path,source,result,durationMs,detail) VALUES(?,?,?,?,?,?)",History.Now(),path,downloadSource??(full?"Scheduled / manual":"Real-time / canary"),result,timer.ElapsedMilliseconds,detail.Length>1024?detail.Substring(0,1024):detail);
    db.Exec("DELETE FROM scan_activity WHERE seq<=(SELECT MAX(seq)-1000 FROM scan_activity)");
   }
   void Issue(Sqlite db,string path,string change,string severity,string detail,string hash=""){string id=Id(path+"|"+change);long now=History.Now();var prior=db.Rows("SELECT active,hash,detail,severity FROM findings WHERE id=?",id).FirstOrDefault();bool fresh=prior==null||Convert.ToInt64(prior[0])==0||!Equals(prior[1],hash)||!Equals(prior[3],severity);db.Exec("BEGIN IMMEDIATE");try{if(fresh){db.Exec("INSERT INTO incidents(utc,id,path,change,severity,detail,hash) VALUES(?,?,?,?,?,?,?)",now,id,path,change,severity,detail,hash);db.Exec("INSERT OR REPLACE INTO findings VALUES(?,?,?,?,?,?,?,?,1)",id,path,change,severity,detail,hash,now,now);db.Exec("INSERT INTO endpoint_outbox(utc,id,path,change,severity,detail,hash,active) VALUES(?,?,?,?,?,?,?,1)",now,id,path,change,severity,detail,hash);}else db.Exec("UPDATE findings SET last=?,detail=? WHERE id=?",now,detail,id);db.Exec("COMMIT");}catch{db.Exec("ROLLBACK");throw;}}
-  void Resolve(Sqlite db,string path,string change){string id=Id(path+"|"+change);if(db.Rows("SELECT id FROM findings WHERE id=? AND active=1",id).Count==0)return;db.Exec("BEGIN IMMEDIATE");try{db.Exec("INSERT INTO endpoint_outbox(utc,id,path,change,severity,detail,hash,active) SELECT ?,id,path,change,severity,detail,hash,0 FROM findings WHERE id=? AND active=1",History.Now(),id);db.Exec("UPDATE findings SET active=0 WHERE id=?",id);db.Exec("COMMIT");}catch{db.Exec("ROLLBACK");throw;}}
+  void Resolve(Sqlite db,string path,string change){string id=Id(path+"|"+change);var current=db.Rows("SELECT severity FROM findings WHERE id=? AND active=1",id).FirstOrDefault();if(current==null)return;if(Equals(current[0],"coverage")){db.Exec("UPDATE findings SET active=0 WHERE id=?",id);return;}db.Exec("BEGIN IMMEDIATE");try{db.Exec("INSERT INTO endpoint_outbox(utc,id,path,change,severity,detail,hash,active) SELECT ?,id,path,change,severity,detail,hash,0 FROM findings WHERE id=? AND active=1",History.Now(),id);db.Exec("UPDATE findings SET active=0 WHERE id=?",id);db.Exec("COMMIT");}catch{db.Exec("ROLLBACK");throw;}}
+  // Ordinary scan failures are coverage diagnostics, not threat incidents. Keep
+  // the latest per-path state durable, but publish only one aggregate warning.
+  internal const string CoverageConsolidated="Superseded by consolidated scan coverage warning";
+  internal static bool RoutineCoverage(EndpointSettings c,string path,string change){
+   // A shared scanner outage is always one engine incident, including canary and explicit file roots.
+   return change=="Engine scan incomplete"||(change=="File scan error"||change=="File scan limited")&&!c.Paths.Contains(path,StringComparer.OrdinalIgnoreCase)&&!c.CanaryPaths.Contains(path,StringComparer.OrdinalIgnoreCase);
+  }
+  internal static void RecordCoverage(Sqlite db,string path,string change,string detail){
+   string id=Id(path+"|"+change);long now=History.Now();
+   db.Exec("INSERT OR IGNORE INTO findings VALUES(?,?,?,?,?,?,?,?,1)",id,path,change,"coverage",detail,"",now,now);
+   db.Exec("UPDATE findings SET severity='coverage',detail=?,last=?,active=1 WHERE id=?",detail,now,id);
+  }
+  void ScanIssue(Sqlite db,EndpointSettings c,string path,string change,string detail){
+   if(RoutineCoverage(c,path,change))RecordCoverage(db,path,change,detail);
+   else Issue(db,path,change,"warning",detail);
+  }
+  // Convert old per-file alerts transactionally. A special close transition
+  // retires obsolete notifications without claiming the file became readable.
+  internal static int ConsolidateCoverage(Sqlite db,EndpointSettings c){
+   int count=0;db.Exec("BEGIN IMMEDIATE");try{
+    foreach(var row in db.Rows("SELECT id,path,change,severity,active FROM findings WHERE change IN ('File scan error','File scan limited','Engine scan incomplete')")){
+     string id=(string)row[0],path=(string)row[1],change=(string)row[2];
+     bool routine=RoutineCoverage(c,path,change),wasCoverage=Equals(row[3],"coverage");
+     if(!routine){if(wasCoverage)db.Exec("UPDATE findings SET active=0 WHERE id=?",id);continue;}
+     if(wasCoverage)continue;
+     // No malware, heuristic, canary violation or other security row is touched.
+     bool live=Convert.ToInt64(row[4])!=0&&!ObsoleteCoverageFinding(c,path,change);
+     db.Exec("DELETE FROM endpoint_outbox WHERE id=?",id);
+     db.Exec("INSERT INTO endpoint_outbox(utc,id,path,change,severity,detail,hash,active) VALUES(?,?,?,?,?,?,?,0)",History.Now(),id,path,change,"warning",CoverageConsolidated,"");
+     db.Exec("UPDATE findings SET severity='coverage',active=? WHERE id=?",live?1:0,id);count++;
+    }
+    db.Exec("COMMIT");return count;
+   }catch{db.Exec("ROLLBACK");throw;}
+  }
+  internal static string CoverageKind(string change,string detail){
+   if(change=="File scan limited")return "Size limit";
+   if(change=="Engine scan incomplete")return "Engine incomplete";
+   if(detail.StartsWith("Deferred: file in use",StringComparison.Ordinal))return "Deferred — file in use";
+   if(detail.StartsWith("Reparse boundary:",StringComparison.Ordinal))return "Reparse boundary — target unverified";
+   return change;
+  }
+  void CoverageSummary(Sqlite db,long count){
+   if(count>0)Issue(db,"Protected paths","File scan coverage incomplete","warning",count+" outstanding file/path checks. See Scan coverage details for deferred, inaccessible, reparse-boundary, size-limited or engine-incomplete checks. No malware verdict is implied.");
+   else Resolve(db,"Protected paths","File scan coverage incomplete");
+  }
+  // Policy changes retire obsolete operational coverage warnings, not security evidence.
+  // Use the same path boundary and exclusion rules as the actual scanner.
+  internal static bool ObsoleteCoverageFinding(EndpointSettings c,string path,string change){
+   if(change=="USN journal unavailable"||change=="USN journal coverage gap")
+    return !c.RealTime||!c.Paths.Select(Path.GetPathRoot).Any(root=>string.Equals(root,path,StringComparison.OrdinalIgnoreCase));
+   if(change=="Protected path unavailable")return !c.Paths.Contains(path,StringComparer.OrdinalIgnoreCase)||Excluded(c,path);
+   if(change!="File scan error"&&change!="File scan limited"&&change!="Engine scan incomplete")return false;
+   return !c.Paths.Any(root=>Under(path,root))||Excluded(c,path);
+  }
+  internal static int ReconcileCoverageScope(Sqlite db,EndpointSettings c){
+   // Run before scanning or reporting, including on the first tick after upgrade.
+   // Each retirement and its central-alert transition are committed together.
+   int count=0;db.Exec("BEGIN IMMEDIATE");try{
+    foreach(var row in db.Rows("SELECT id,path,change FROM findings WHERE active=1 AND change IN ('File scan error','File scan limited','Engine scan incomplete','Protected path unavailable','USN journal unavailable','USN journal coverage gap')")){
+     if(!ObsoleteCoverageFinding(c,(string)row[1],(string)row[2]))continue;
+     string id=(string)row[0];
+     db.Exec("INSERT INTO endpoint_outbox(utc,id,path,change,severity,detail,hash,active) SELECT ?,id,path,change,severity,detail,hash,0 FROM findings WHERE id=? AND active=1 AND severity<>'coverage'",History.Now(),id);
+     db.Exec("UPDATE findings SET active=0 WHERE id=?",id);count++;
+    }
+    db.Exec("COMMIT");return count;
+   }catch{db.Exec("ROLLBACK");throw;}
+  }
   internal void Publish(Alerts alerts,Config cfg,bool successfulTick){if(!File.Exists(dbPath))return;using(var db=Open()){
-   var batch=db.Rows("SELECT seq,utc,id,path,change,severity,detail,hash,active FROM endpoint_outbox ORDER BY seq LIMIT 64");
+   var batch=db.Rows("SELECT seq,utc,id,path,change,severity,detail,hash,active FROM endpoint_outbox ORDER BY seq LIMIT 256");
    if(batch.Count>0){alerts.EndpointTransitions((string)db.Rows("SELECT id FROM endpoint_stream LIMIT 1")[0][0],batch,cfg);db.Exec("DELETE FROM endpoint_outbox WHERE seq<=?",batch.Last()[0]);}
+   // Refresh the one operational watcher alert from its authoritative finding even if
+   // the full scan is incomplete. Do not create a new incident or email on detail changes.
+   if(successfulTick&&cfg.Endpoint.Enabled&&db.Rows("SELECT 1 FROM endpoint_outbox LIMIT 1").Count==0){
+    string watcherId=Id("Protected paths|Watcher coverage incomplete");
+    var watcher=db.Rows("SELECT detail FROM findings WHERE id=? AND active=1",watcherId).FirstOrDefault();
+    alerts.RefreshEndpointWatcherFinding(watcherId,watcher==null?null:"Protected paths · "+(string)watcher[0]);
+   }
    // Reconcile legacy/orphaned central incident keys only after a complete successful scan
    // and delivery of ALL pending transitions. Never infer recovery from the 200-row UI cap.
    if(reconcilePending&&successfulTick&&cfg.Endpoint.Enabled&&complete&&online&&!running&&db.Rows("SELECT 1 FROM endpoint_outbox LIMIT 1").Count==0){
-    var ids=new HashSet<string>(db.Rows("SELECT id FROM findings WHERE active=1").Select(r=>(string)r[0]),StringComparer.Ordinal);
+    var ids=new HashSet<string>(db.Rows("SELECT id FROM findings WHERE active=1 AND severity<>'coverage'").Select(r=>(string)r[0]),StringComparer.Ordinal);
     alerts.ReconcileEndpointFindings(ids);reconcilePending=false;
    }
   }}
-  void StartScan(EndpointSettings c){running=true;complete=false;reconcilePending=true;scanId=DateTime.UtcNow.Ticks;pending.Clear();visited.Clear();foreach(var p in c.Paths)pending.Push(p);scanned=excluded=limited=errors=0;}
-  void Observe(string p,bool entropy){DateTime now=DateTime.UtcNow;if(changes.Count<MaxEntries)changes[p]=now;if(entropy&&highEntropy.Count<MaxEntries)highEntropy[p]=now;latestChanged=p;}
+  void ClearBaselineRows(Sqlite db){db.Exec("DELETE FROM baseline_state");db.Exec("DELETE FROM baseline_frontier");db.Exec("DELETE FROM baseline_visited");}
+  void ClearBaseline(Sqlite db){db.Exec("BEGIN IMMEDIATE");try{ClearBaselineRows(db);db.Exec("COMMIT");}catch{db.Exec("ROLLBACK");throw;}}
+  void StartScan(Sqlite db,EndpointSettings c){
+   long id=DateTime.UtcNow.Ticks;
+   db.Exec("BEGIN IMMEDIATE");try{
+    ClearBaselineRows(db);db.Exec("INSERT INTO baseline_state VALUES(1,?,?,0,0,0,0,0,0)",CachePolicy(c),id);
+    foreach(var p in c.Paths)db.Exec("INSERT INTO baseline_frontier(path) VALUES(?)",p);
+    db.Exec("COMMIT");
+   }catch{db.Exec("ROLLBACK");baselineRestorePending=true;throw;}
+   baselineCached=0;baselineResumed=false;running=true;traversalLimitReached=false;journalGapDuringScan=false;complete=false;reconcilePending=true;scanId=id;pending.Clear();visited.Clear();foreach(var p in c.Paths)pending.Push(p);scanned=excluded=limited=errors=0;
+  }
+  void RestoreBaseline(Sqlite db,EndpointSettings c){
+   if(!baselineRestorePending)return;
+   var state=db.Rows("SELECT policy,scan,scanned,excluded,limited,errors,cached,capped FROM baseline_state WHERE id=1").FirstOrDefault();
+   if(state!=null&&Equals(state[0],CachePolicy(c))){
+    var frontier=db.Rows("SELECT path FROM baseline_frontier ORDER BY seq LIMIT 100001");var seen=db.Rows("SELECT path FROM baseline_visited LIMIT 100002");
+    if(frontier.Count<=MaxEntries&&seen.Count<=MaxEntries+1&&frontier.Concat(seen).All(x=>x[0] is string&&c.Paths.Any(root=>Under((string)x[0],root)))){
+     scanId=Convert.ToInt64(state[1]);scanned=Convert.ToInt32(state[2]);excluded=Convert.ToInt32(state[3]);limited=Convert.ToInt32(state[4]);errors=Convert.ToInt32(state[5]);baselineCached=Convert.ToInt32(state[6]);traversalLimitReached=Convert.ToInt32(state[7])!=0;
+     pending.Clear();visited.Clear();foreach(var row in frontier)pending.Push((string)row[0]);foreach(var row in seen)visited.Add((string)row[0]);
+     // Resume work, but never declare a pre-restart traversal authoritative. A new
+     // content-verified reconciliation follows it, even if journal replay succeeds.
+     running=true;complete=false;baselineResumed=true;rescan=true;journalGapDuringScan=true;reconcilePending=true;
+     AppJournal.Event(LogLevel.Info,"Endpoint","baseline-resume","Resuming "+pending.Count+" saved paths; follow-up reconciliation required.");
+    }else ClearBaseline(db);
+   }else if(state!=null)ClearBaseline(db);
+   baselineRestorePending=false;
+  }
+  void PushBaselineChild(string child){pending.Push(child);if(baselineChildren!=null)baselineChildren.Add(child);}
+  void CheckpointBaselineStep(Sqlite db,long seq,string path,bool added){
+   db.Exec("BEGIN IMMEDIATE");try{
+    db.Exec("DELETE FROM baseline_frontier WHERE seq=?",seq);
+    if(added)db.Exec("INSERT OR IGNORE INTO baseline_visited(path) VALUES(?)",path);
+    if(traversalLimitReached)db.Exec("DELETE FROM baseline_frontier");else foreach(string child in baselineChildren)db.Exec("INSERT INTO baseline_frontier(path) VALUES(?)",child);
+    db.Exec("UPDATE baseline_state SET scanned=?,excluded=?,limited=?,errors=?,cached=?,capped=? WHERE id=1",scanned,excluded,limited,errors,baselineCached,traversalLimitReached?1:0);
+    db.Exec("COMMIT");
+   }catch{db.Exec("ROLLBACK");throw;}
+  }
+  // Coalesce routine directory notifications at the normal interval. A confirmed
+  // journal/watcher gap must schedule a fresh reconciliation immediately.
+  void RequestReconciliation(EndpointSettings c,bool journalGap){
+   if(journalGap){if(running){journalGapDuringScan=true;rescan=true;}else nextScan=0;return;}
+   if(running)return;
+   long earliest=lastScan==0?History.Now():Math.Max(History.Now(),lastScan+Math.Min(c.IntervalSeconds,300));
+   nextScan=Math.Min(nextScan,earliest);
+  }
+  void Observe(string p,bool entropy){DateTime now=DateTime.UtcNow;if(changes.Count<MaxEntries)changes[p]=now;if(entropy){if(highEntropy.Count<MaxEntries||highEntropy.ContainsKey(p))highEntropy[p]=now;if(extendedEntropy.Count<MaxEntries||extendedEntropy.ContainsKey(p))extendedEntropy[p]=now;}latestChanged=p;}
   void CanaryIssue(Sqlite db,EndpointSettings c,string path,string detail,string hash,WaitHandle stop,Func<bool> authorized){
    string id=Id(path+"|Canary integrity violation");var existing=db.Rows("SELECT hash FROM findings WHERE id=? AND active=1",id).FirstOrDefault();bool fresh=existing==null||!Equals(existing[0],hash);
    Issue(db,path,"Canary integrity violation","critical",detail+(fresh?" "+Correlate(c,path):""),hash);
@@ -141,27 +612,149 @@ namespace LinkScope {
    }
    responsePathsReadiness=EndpointResponse.CheckResponsePaths(c);
   }
-  void CheckFile(Sqlite db,EndpointSettings c,string p,WaitHandle stop,Func<bool> authorized,bool full){
-   var activityTimer=Stopwatch.StartNew();
-   if(!c.Paths.Any(x=>Under(p,x)))return;if(Excluded(c,p)){if(full)excluded++;Activity(db,p,full,"Excluded",activityTimer,"Excluded by policy");return;}bool canary=c.CanaryPaths.Contains(p,StringComparer.OrdinalIgnoreCase);
+  void ScanNext(Sqlite db,EndpointSettings c,WaitHandle stop,Func<bool> authorized){
+   if(stop.WaitOne(0))throw new OperationCanceledException();if(!authorized())return;
+   baselineChildren=new List<string>();try{
+    var top=db.Rows("SELECT seq,path FROM baseline_frontier ORDER BY seq DESC LIMIT 1").FirstOrDefault();
+    if(top==null||!Equals(top[1],pending.Peek()))throw new IOException("Baseline checkpoint and in-memory frontier differ");
+    string path=pending.Pop();bool added=visited.Add(path);
+    if(added){
+     if(visited.Count>MaxEntries){errors++;traversalLimitReached=true;Issue(db,"Protected paths","Scan traversal limit reached","warning","Baseline exceeded "+MaxEntries+" paths; unvisited entries remain unverified. Narrow or split the configured scope only after review.");pending.Clear();}
+     else if(!CheckFile(db,c,path,stop,authorized,true)&&c.RealTime&&!c.CanaryPaths.Contains(path,StringComparer.OrdinalIgnoreCase)){if(usn.RetainWatcher(db,path,DownloadPriority(path)))usn.Defer(db,path);else Interlocked.Exchange(ref overflow,1);}
+    }
+    // File inspection and its findings commit before the frontier advances. If
+    // interrupted between them the same path is safely reprocessed on restart.
+    if(!authorized())throw new IOException("Endpoint policy changed during baseline step");
+    CheckpointBaselineStep(db,Convert.ToInt64(top[0]),path,added);
+   }catch{running=false;complete=false;baselineRestorePending=true;throw;}finally{baselineChildren=null;}
+  }
+  string CachePolicy(EndpointSettings c){return Id("clean-verdict-v1|"+Config.Json().Serialize(c));}
+  bool CacheEligible(EndpointSettings c,bool full,bool canary){return full&&!canary&&Program.ServiceMode&&c.Port==3310&&online;}
+  CacheCandidate CachedCandidate(Sqlite db,EndpointSettings c,string path,bool full,bool canary){
+   if(!CacheEligible(c,full,canary))return null;
+   if(db.Rows("SELECT 1 FROM findings WHERE path=? COLLATE NOCASE AND active=1 LIMIT 1",path).Count!=0)return null;
+   long now=History.Now();var row=db.Rows("SELECT hash,generation,stamp FROM clean_verdict_cache WHERE policy=? AND path=? AND verified>? AND verified<=?",CachePolicy(c),path,now-VerdictCacheMaxAge,now).FirstOrDefault();
+   return row==null?null:new CacheCandidate{Hash=(string)row[0],Generation=(string)row[1],Stamp=row[2] as string};
+  }
+  void ForgetCached(Sqlite db,string p){db.Exec("DELETE FROM clean_verdict_cache WHERE path=? COLLATE NOCASE",p);}
+  void SaveCached(Sqlite db,EndpointSettings c,string p,string hash,string generation,string stamp=null){
+   if(string.IsNullOrEmpty(generation))return;
+   db.Exec("INSERT OR REPLACE INTO clean_verdict_cache(policy,path,hash,generation,verified,stamp) VALUES(?,?,?,?,?,?)",CachePolicy(c),p,hash,generation,History.Now(),stamp??"");
+  }
+  bool RecordCached(Sqlite db,string p,Stopwatch timer,bool metadata=false){
+   // This is a verified content match, not a new antivirus scan. Do not refresh
+   // the cache age, last engine check, or clear any active security findings.
+   baselineCached++;scanned++;if(metadata){metadataCachedChecks++;db.Exec("UPDATE files SET seen=? WHERE scope=? AND path=?",scanId,scope,p);}
+   Activity(db,p,true,"Cached clean",timer,metadata?"NTFS identity, change stamp and live ClamAV generation match; no file content read":"SHA-256 and live ClamAV generation match prior clean verdict; no new signature inspection");return true;
+  }
+  bool MetadataEligible(Sqlite db,EndpointSettings c,string p,CacheCandidate candidate){
+   return c.MetadataFastCache&&candidate!=null&&!string.IsNullOrEmpty(candidate.Stamp)&&!journalGapDuringScan&&!baselineResumed&&!rescan&&usn.Covers(p)&&
+    db.Rows("SELECT 1 FROM files WHERE scope=? AND path=? AND hash=?",scope,p,candidate.Hash).Count==1&&
+    db.Rows("SELECT 1 FROM findings WHERE active=1 AND change IN ('USN journal coverage gap','USN journal unavailable','Real-time queue overflow') LIMIT 1").Count==0;
+  }
+  bool CheckFile(Sqlite db,EndpointSettings c,string p,WaitHandle stop,Func<bool> authorized,bool full,int retries=0){
+   var activityTimer=Stopwatch.StartNew();string stage="path metadata";
+   if(!c.Paths.Any(x=>Under(p,x)))return true;if(Excluded(c,p)){if(full)excluded++;Activity(db,p,full,"Excluded",activityTimer,"Excluded by policy");return true;}bool canary=c.CanaryPaths.Contains(p,StringComparer.OrdinalIgnoreCase);
+   if(full&&BackgroundExcluded(c,p)){excluded++;Activity(db,p,true,"Excluded",activityTimer,"Background-only exclusion; real-time inspection remains enabled");return true;}
+   if(full&&!canary&&usn.RetryWaiting(db,p)){errors++;return false;}
    try{bool fixedCanary=canary&&CanaryTemplates.ExpectedForPath(p)!=null;
     if(!fixedCanary)SafePath(p);var attr=File.GetAttributes(p);
-    if(fixedCanary&&(attr&(FileAttributes.Directory|FileAttributes.ReparsePoint))!=0)throw new IOException("Invalid fixed canary file type.");if((attr&FileAttributes.Directory)!=0){if(full)foreach(var child in Directory.EnumerateFileSystemEntries(p)){if(pending.Count>=MaxEntries)throw new IOException("Traversal limit");pending.Push(child);}else {nextScan=0;if(running)rescan=true;}return;}
-    using(var file=new FileStream(p,FileMode.Open,FileAccess.Read,FileShare.Read)){if(fixedCanary)EndpointResponse.VerifyHandle(file.SafeFileHandle,p);if(file.Length>c.MaxFileMiB*1048576L){
-     if(canary&&CanaryTemplates.ExpectedForPath(p)!=null)CanaryIssue(db,c,p,"Canary size exceeds scan limit and differs from the fixed original.","",stop,authorized);if(full)limited++;Issue(db,p,"File scan limited","warning","File exceeds configured size cap; not verified.");Activity(db,p,full,"Limited",activityTimer,"Size cap exceeded");return;}
-     byte[] b=new byte[65536];int n=0,r;while(n<b.Length&&(r=file.Read(b,n,b.Length-n))>0)n+=r;double entropy=Entropy(b,n);file.Position=0;string hash=FileHash(file);file.Position=0;
-     var old=db.Rows("SELECT hash,entropy FROM files WHERE scope=? AND path=?",scope,p).FirstOrDefault();if(old!=null&&!Equals(old[0],hash))Observe(p,n>=4096&&entropy>=7.5&&entropy-Convert.ToDouble(old[1])>=1.0);else if(old==null&&!full)Observe(p,false);
+    if(fixedCanary&&(attr&(FileAttributes.Directory|FileAttributes.ReparsePoint))!=0)throw new IOException("Invalid fixed canary file type.");if((attr&FileAttributes.Directory)!=0){if(full){foreach(var child in Directory.EnumerateFileSystemEntries(p)){if(pending.Count>=MaxEntries)throw new IOException("Traversal limit");PushBaselineChild(child);}Resolve(db,p,"File scan error");Resolve(db,p,"Protected path unavailable");}else RequestReconciliation(c,false);return true;}
+    stage="open file for reading";using(var file=new FileStream(p,FileMode.Open,FileAccess.Read,FileShare.Read)){if(fixedCanary)EndpointResponse.VerifyHandle(file.SafeFileHandle,p);else UsnJournalService.VerifyScanPath(file.SafeFileHandle,p);if(file.Length>c.MaxFileMiB*1048576L){
+     if(canary&&CanaryTemplates.ExpectedForPath(p)!=null)CanaryIssue(db,c,p,"Canary size exceeds scan limit and differs from the fixed original.","",stop,authorized);if(full)limited++;string sizeDetail=SizeLimitDetail(file.Length,c.MaxFileMiB);ScanIssue(db,c,p,"File scan limited",sizeDetail);Activity(db,p,full,"Limited",activityTimer,sizeDetail);return true;}
+     var candidate=CachedCandidate(db,c,p,full,canary);
+     string stamp=c.MetadataFastCache&&CacheEligible(c,full,canary)?UsnJournalService.FileChangeStamp(file.SafeFileHandle,p):null;
+     string generation=CacheEligible(c,full,canary)?ClamUpdateWorker.CacheGeneration(stop,false):null;
+     if(MetadataEligible(db,c,p,candidate)&&stamp!=null&&stamp==candidate.Stamp&&generation!=null&&generation==candidate.Generation&&authorized()&&stamp==UsnJournalService.FileChangeStamp(file.SafeFileHandle,p))return RecordCached(db,p,activityTimer,true);
+     var budget=full&&!canary?new EndpointReadBudget(c.BackgroundReadMiB,stop):null;
+     stage="read and hash file";byte[] b=new byte[65536];int n=0,r;while(n<b.Length&&(r=budget==null?file.Read(b,n,b.Length-n):budget.Read(file,b,n,b.Length-n))>0)n+=r;double entropy=Entropy(b,n);file.Position=0;string hash=FileHash(file,budget);file.Position=0;
+     RecordFileIdentity(db,c,p,hash,entropy,n,canary,full,stop,authorized);
+     Resolve(db,p,"Protected path unavailable");if(!online){if(full)errors++;ScanIssue(db,c,p,"Engine scan incomplete","ClamAV offline; no signature verdict");Activity(db,p,full,"Unavailable",activityTimer,"ClamAV offline; no signature verdict");return false;}stage="ClamAV INSTREAM";
+     if(CacheEligible(c,full,canary))generation=ClamUpdateWorker.CacheGeneration(stop,false);
+     if(candidate!=null&&candidate.Hash==hash&&generation!=null&&candidate.Generation==generation&&authorized())return RecordCached(db,p,activityTimer);
+     ForgetCached(db,p);
+     string reply=Command(c.Port,"INSTREAM",file,stop,Program.ServiceMode&&c.Port==3310?(Action<TcpClient>)ClamUpdateWorker.VerifyScanServiceOwner:null,budget);
+     string verifiedGeneration=CleanVerdict(reply)&&generation!=null&&generation==ClamUpdateWorker.CacheGeneration(stop,false)?generation:null;
+     string verifiedStamp=verifiedGeneration!=null&&stamp!=null&&stamp==UsnJournalService.FileChangeStamp(file.SafeFileHandle,p)?stamp:null;
+     stage="record scan verdict";bool recorded=RecordVerdict(db,c,p,hash,reply,full,canary,retries,activityTimer,stop,authorized,()=>file.Dispose());
+     if(recorded&&CleanVerdict(reply)&&authorized())SaveCached(db,c,p,hash,verifiedGeneration,verifiedStamp);return recorded;
+    }
+   }catch(ScanReparseException ex){return RecordReparseBoundary(db,c,p,full,activityTimer,ex.Message);}catch(FileNotFoundException ex){if(Program.ServiceMode&&c.Port==3310)return CheckPrivileged(db,c,p,stop,authorized,full,canary,retries,activityTimer,ex.Message);Missing(db,c,p,canary,full,stop,authorized);Activity(db,p,full,"Missing",activityTimer,"File no longer present");}catch(DirectoryNotFoundException ex){if(Program.ServiceMode&&c.Port==3310)return CheckPrivileged(db,c,p,stop,authorized,full,canary,retries,activityTimer,ex.Message);Missing(db,c,p,canary,full,stop,authorized);Activity(db,p,full,"Missing",activityTimer,"Directory no longer present");}catch(OperationCanceledException){throw;}catch(Exception ex){if(ex is UnauthorizedAccessException&&(stage=="path metadata"||stage=="open file for reading"||stage=="read and hash file"))return CheckPrivileged(db,c,p,stop,authorized,full,canary,retries,activityTimer,ex.Message);if(stage=="open file for reading"&&LockedFile(ex)){RecordLocked(db,c,p,full,canary,retries,activityTimer,ex.Message);return false;}if(full)errors++;if(stage=="ClamAV INSTREAM"){MarkEngineTransportFailed(db,ex.Message);bool scheduled=!full&&!canary&&RetryLocked(c,p,retries);string transport=ex.Message+(scheduled?"; retry scheduled":"");ScanIssue(db,c,p,"Engine scan incomplete",transport);Activity(db,p,full,"Unavailable",activityTimer,transport);return false;}bool retry=!full&&!canary&&(LockedFile(ex)||ex is UnauthorizedAccessException||stage=="ClamAV INSTREAM")&&RetryLocked(c,p,retries);string detail=stage+": "+ex.GetType().Name+": "+ex.Message+(retry?"; retry scheduled":"");ScanIssue(db,c,p,"File scan error",detail);Activity(db,p,full,"Failed",activityTimer,detail);return false;}
+   return true;
+  }
+  internal static string SizeLimitDetail(long size,int cap){return "Configured file-size cap: "+cap+" MiB; file size: "+(size>0?size.ToString()+" bytes":"not reported by helper")+"; no signature verdict.";}
+  internal static int EngineBackoffSeconds(int failures){return 15 << Math.Min(3,Math.Max(0,failures-1));}
+  void MarkEngineTransportFailed(Sqlite db,string detail){
+   online=false;lastEngine=History.Now();signatureFreshness="Unknown";engineNeedsScanProbe=true;
+   engineFailures=Math.Min(4,engineFailures+1);nextEngineProbe=lastEngine+EngineBackoffSeconds(engineFailures);
+   Issue(db,"ClamAV","Engine unavailable","warning","Signature transport failure; scans paused until a verified scan succeeds. "+detail);
+   if(running)rescan=true;else nextScan=0;
+  }
+  // A verified reparse boundary is not a transient access error. Do not retry it
+  // continuously, or report its target as clean. Future filesystem events or a
+  // scheduled reconciliation inspect it again; explicit roots/canaries stay visible.
+  bool RecordReparseBoundary(Sqlite db,EndpointSettings c,string path,bool full,Stopwatch timer,string detail){
+   if(full)errors++;
+   // No containment action based solely on a path type; the explicit canary scan warning remains active.
+   string text="Reparse boundary: target not followed; no signature verdict. "+(detail??"");
+   ScanIssue(db,c,path,"File scan error",text);
+   Activity(db,path,full,"Reparse boundary",timer,text);
+   return true; // terminal for this event only; coverage finding remains active
+  }
+  void RecordLocked(Sqlite db,EndpointSettings c,string path,bool full,bool canary,int retries,Stopwatch timer,string detail){
+   // Do not weaken file sharing or claim a verdict on a changing file. Persist retry work even for baseline files.
+   if(full)errors++;
+   if(c.RealTime&&!canary){if(!usn.RetainWatcher(db,path,DownloadPriority(path)))Interlocked.Exchange(ref overflow,1);else usn.Defer(db,path);}
+   ScanIssue(db,c,path,"File scan error","Deferred: file in use (sharing/lock violation); no signature verdict. "+detail);
+   Activity(db,path,full,"Deferred",timer,"File in use; retry pending under scan policy");
+  }
+  void RecordFileIdentity(Sqlite db,EndpointSettings c,string p,string hash,double entropy,int n,bool canary,bool full,WaitHandle stop,Func<bool> authorized){
+   var old=db.Rows("SELECT hash,entropy FROM files WHERE scope=? AND path=?",scope,p).FirstOrDefault();if(old!=null&&!Equals(old[0],hash))Observe(p,EntropyTransition(n,entropy,Convert.ToDouble(old[1])));else if(old==null&&!full)Observe(p,false);
      db.Exec("INSERT OR REPLACE INTO files VALUES(?,?,?,?,?)",scope,p,hash,entropy,running?scanId:0);
      Resolve(db,p,"File scan limited");Resolve(db,p,"File scan error");
      if(canary){var baseline=db.Rows("SELECT hash FROM canaries WHERE path=?",p).FirstOrDefault();string expected=CanaryTemplates.ExpectedForPath(p);
       if(baseline==null){db.Exec("INSERT INTO canaries VALUES(?,?)",p,expected??hash);AppJournal.Event(LogLevel.Info,"Endpoint","canary-enroll","Recorded canary baseline: "+p);}
       else if(expected==null)expected=(string)baseline[0];
       if(expected!=null&&!Equals(expected,hash))CanaryIssue(db,c,p,"Canary content changed.",hash,stop,authorized);else if(expected!=null&&baseline!=null&&!Equals(baseline[0],expected))Issue(db,p,"Canary integrity violation","critical","Stored setup canary baseline differs from the original template.",hash);else {Resolve(db,p,"Canary integrity violation");Resolve(db,p,"Containment withheld");}}
-     Resolve(db,p,"Protected path unavailable");if(!online){Activity(db,p,full,"Unavailable",activityTimer,"ClamAV offline; no signature verdict");return;}string reply=Command(c.Port,"INSTREAM",file,stop);if(Malware(reply)||reply.EndsWith(": OK",StringComparison.Ordinal)){lastFileScan=History.Now();lastScannedPath=p;if(!full){realTimeChecked++;lastRealTimeScan=lastFileScan;}}if(Malware(reply)){bool quarantined=false;bool heuristic=reply.IndexOf("Heuristics.",StringComparison.OrdinalIgnoreCase)>=0;Issue(db,p,heuristic?"Heuristic signature finding":"Malware signature detected",heuristic?"warning":"critical",reply,hash);file.Dispose();if(!heuristic&&c.Mode!="monitor"&&authorized()&&ResponseRetryAllowed(db,p,hash)&&c.ResponsePaths.Any(x=>Under(p,x))&&EndpointResponse.SafeScope(p)){try{string detail;lock(vaultGate)detail=EndpointResponse.Quarantine(store,c,p,hash,stop,authorized);Issue(db,p,"Malware quarantined","info",detail,hash);Resolve(db,p,"Malware quarantined");Resolve(db,p,"Quarantine withheld or failed");quarantined=true;ResolveQuarantinedOriginal(db,p,hash);}catch(Exception ex){Issue(db,p,"Quarantine withheld or failed","warning",ex.GetType().Name+": "+ex.Message,hash);}}Activity(db,p,full,quarantined?"Quarantined":heuristic?"Heuristic":"Infected",activityTimer,reply);}else if(reply.EndsWith(": OK",StringComparison.Ordinal)){Activity(db,p,full,"Clean",activityTimer,reply);Resolve(db,p,"Malware signature detected");Resolve(db,p,"Heuristic signature finding");Resolve(db,p,"Quarantine withheld or failed");Resolve(db,p,"Engine scan incomplete");}else {if(full)errors++;Issue(db,p,"Engine scan incomplete","warning",reply);Activity(db,p,full,"Failed",activityTimer,reply);}if(full)scanned++;
-    }
-   }catch(FileNotFoundException){Missing(db,c,p,canary,full,stop,authorized);Activity(db,p,full,"Missing",activityTimer,"File no longer present");}catch(DirectoryNotFoundException){Missing(db,c,p,canary,full,stop,authorized);Activity(db,p,full,"Missing",activityTimer,"Directory no longer present");}catch(OperationCanceledException){throw;}catch(Exception ex){if(full)errors++;Issue(db,p,"File scan error","warning",ex.GetType().Name+": "+ex.Message);Activity(db,p,full,"Failed",activityTimer,ex.GetType().Name);}
   }
-  void Missing(Sqlite db,EndpointSettings c,string p,bool canary,bool full,WaitHandle stop,Func<bool> authorized){if(canary)CanaryIssue(db,c,p,"Canary missing.","",stop,authorized);if(full&&c.Paths.Contains(p,StringComparer.OrdinalIgnoreCase)){errors++;Issue(db,p,"Protected path unavailable","warning","Configured path missing; scan incomplete.");}else if(db.Rows("SELECT path FROM files WHERE scope=? AND path=?",scope,p).Count>0){Observe(p,false);db.Exec("DELETE FROM files WHERE scope=? AND path=?",scope,p);Resolve(db,p,"File scan limited");Resolve(db,p,"File scan error");Resolve(db,p,"Engine scan incomplete");Resolve(db,p,"Malware signature detected");Resolve(db,p,"Heuristic signature finding");Resolve(db,p,"Quarantine withheld or failed");}}
+  bool RecordVerdict(Sqlite db,EndpointSettings c,string p,string hash,string reply,bool full,bool canary,int retries,Stopwatch activityTimer,WaitHandle stop,Func<bool> authorized,Action release){
+   if(Malware(reply)||CleanVerdict(reply)){Resolve(db,p,"Engine scan incomplete");lastFileScan=History.Now();lastScannedPath=p;if(!full){realTimeChecked++;lastRealTimeScan=lastFileScan;}}if(Malware(reply)){bool quarantined=false;bool heuristic=reply.IndexOf("Heuristics.",StringComparison.OrdinalIgnoreCase)>=0;Issue(db,p,heuristic?"Heuristic signature finding":"Malware signature detected",heuristic?"warning":"critical",reply,hash);release();if(!heuristic&&c.Mode!="monitor"&&authorized()&&ResponseRetryAllowed(db,p,hash)&&c.ResponsePaths.Any(x=>Under(p,x))&&EndpointResponse.SafeScope(p)){try{string detail;lock(vaultGate)detail=EndpointResponse.Quarantine(store,c,p,hash,stop,authorized);Issue(db,p,"Malware quarantined","info",detail,hash);Resolve(db,p,"Malware quarantined");Resolve(db,p,"Quarantine withheld or failed");quarantined=true;ResolveQuarantinedOriginal(db,p,hash);}catch(Exception ex){Issue(db,p,"Quarantine withheld or failed","warning",ex.GetType().Name+": "+ex.Message,hash);}}Activity(db,p,full,quarantined?"Quarantined":heuristic?"Heuristic":"Infected",activityTimer,reply);}else if(CleanVerdict(reply)){Activity(db,p,full,"Clean",activityTimer,reply);Resolve(db,p,"Malware signature detected");Resolve(db,p,"Heuristic signature finding");Resolve(db,p,"Quarantine withheld or failed");Resolve(db,p,"Engine scan incomplete");}else {if(full)errors++;ScanIssue(db,c,p,"Engine scan incomplete",reply);Activity(db,p,full,"Failed",activityTimer,reply);if(!full&&!canary)RetryLocked(c,p,retries);return false;}if(full&&(Malware(reply)||CleanVerdict(reply)))scanned++;
+   return true;
+  }
+  bool CheckPrivileged(Sqlite db,EndpointSettings c,string p,WaitHandle stop,Func<bool> authorized,bool full,bool canary,int retries,Stopwatch timer,string originalError){
+   try{
+    if(stop.WaitOne(0))throw new OperationCanceledException();
+    if(!Program.ServiceMode||c.Port!=3310)throw new IOException("Restricted SYSTEM reader requires Windows service mode and standard ClamD port 3310");
+    if(!online){if(full)errors++;ScanIssue(db,c,p,"Engine scan incomplete","ClamAV offline; restricted scan deferred");Activity(db,p,full,"Unavailable",timer,"ClamAV offline; restricted scan deferred");return false;}
+    var candidate=CachedCandidate(db,c,p,full,canary);
+    bool cacheEligible=CacheEligible(c,full,canary);
+    var result=cacheEligible?UsnJournalService.FetchBaselineScan(p,candidate==null?"":candidate.Hash,candidate==null?"":candidate.Generation,MetadataEligible(db,c,p,candidate)?candidate.Stamp:""):UsnJournalService.FetchScan(p,full);
+    if(result.Kind=="Missing"){Missing(db,c,p,canary,full,stop,authorized);Activity(db,p,full,"Missing",timer,"Privileged reader: path no longer present");return true;}
+    if(result.Kind=="Directory"){
+     if(canary)throw new IOException("Expected canary file, found directory");
+     if(full){foreach(var child in result.Children){if(pending.Count>=MaxEntries)throw new IOException("Traversal limit");PushBaselineChild(child);}if(!string.IsNullOrEmpty(result.Detail))throw new IOException(result.Detail);Resolve(db,p,"File scan error");Resolve(db,p,"Protected path unavailable");}
+     else RequestReconciliation(c,false);return true;
+    }
+    if(result.Kind=="Limited"){if(canary&&CanaryTemplates.ExpectedForPath(p)!=null)CanaryIssue(db,c,p,"Canary size exceeds scan limit and differs from the fixed original.","",stop,authorized);if(full)limited++;string sizeDetail=SizeLimitDetail(result.Size,c.MaxFileMiB);ScanIssue(db,c,p,"File scan limited",sizeDetail);Activity(db,p,full,"Limited",timer,sizeDetail);return true;}
+    if(result.Kind=="Reparse"){return RecordReparseBoundary(db,c,p,full,timer,result.Detail);}
+    if(result.Kind=="Locked"){RecordLocked(db,c,p,full,canary,retries,timer,result.Detail??"Restricted reader sharing violation");return false;}
+    if(result.Kind!="File")throw new IOException(result.Detail??"Privileged reader failed");
+    if(result.Cached){
+     if(candidate==null||!authorized()||result.Hash!=candidate.Hash||result.Generation!=candidate.Generation)throw new IOException("Unverified privileged cached verdict");
+     if(result.MetadataCached){if(!MetadataEligible(db,c,p,candidate)||candidate.Stamp!=result.Stamp)throw new IOException("Unverified NTFS cached verdict");return RecordCached(db,p,timer,true);}
+     RecordFileIdentity(db,c,p,result.Hash,result.Entropy,result.Sample,canary,full,stop,authorized);
+     Resolve(db,p,"Protected path unavailable");return RecordCached(db,p,timer);
+    }
+    ForgetCached(db,p);
+    RecordFileIdentity(db,c,p,result.Hash,result.Entropy,result.Sample,canary,full,stop,authorized);
+    Resolve(db,p,"Protected path unavailable");
+    if(Malware(result.Verdict)||CleanVerdict(result.Verdict))privilegedFileChecks++;
+    if(result.Verdict.StartsWith("Privileged ClamAV scan error:",StringComparison.Ordinal))MarkEngineTransportFailed(db,result.Verdict);
+    bool recorded=RecordVerdict(db,c,p,result.Hash,result.Verdict,full,canary,retries,timer,stop,authorized,()=>{});
+    if(cacheEligible&&recorded&&CleanVerdict(result.Verdict)&&authorized())SaveCached(db,c,p,result.Hash,result.Generation,result.Stamp);return recorded;
+   }catch(OperationCanceledException){throw;}catch(Exception ex){if(full)errors++;bool retry=!full&&!canary&&RetryLocked(c,p,retries);string detail="Restricted SYSTEM scan: "+ex.GetType().Name+": "+ex.Message+"; original access: "+originalError+(retry?"; retry scheduled":"");ScanIssue(db,c,p,"File scan error",detail);Activity(db,p,full,"Failed",timer,detail);return false;}
+  }
+  void Missing(Sqlite db,EndpointSettings c,string p,bool canary,bool full,WaitHandle stop,Func<bool> authorized){ForgetCached(db,p);if(canary)CanaryIssue(db,c,p,"Canary missing.","",stop,authorized);if(RoutineCoverage(c,p,"File scan error")){Resolve(db,p,"File scan limited");Resolve(db,p,"File scan error");Resolve(db,p,"Engine scan incomplete");}if(full&&c.Paths.Contains(p,StringComparer.OrdinalIgnoreCase)){errors++;Issue(db,p,"Protected path unavailable","warning","Configured path missing; scan incomplete.");}else if(db.Rows("SELECT path FROM files WHERE scope=? AND path=?",scope,p).Count>0){Observe(p,false);db.Exec("DELETE FROM files WHERE scope=? AND path=?",scope,p);Resolve(db,p,"File scan limited");Resolve(db,p,"File scan error");Resolve(db,p,"Engine scan incomplete");Resolve(db,p,"Malware signature detected");Resolve(db,p,"Heuristic signature finding");Resolve(db,p,"Quarantine withheld or failed");}}
   // Only verified absence of the original closes its malware finding. A vault purge
   // never clears an unrelated, recurrent, inaccessible or still-present threat.
   static bool ConfirmAbsent(string path){try{File.GetAttributes(path);return false;}catch(FileNotFoundException){return true;}catch(DirectoryNotFoundException){return true;}catch(Exception){return false;}}
@@ -247,7 +840,26 @@ namespace LinkScope {
    }}finally{Monitor.Exit(vaultGate);}
   }
   string Correlate(EndpointSettings c,string p){if(!c.ProcessCorrelation)return "Process attribution disabled.";try{var a=EndpointResponse.FindWriter(p);auditStatus=a==null?"No matching audit evidence":"Matching Windows audit event";return a==null?"No matching write audit event.":"Windows 4663: "+a.Image+" PID "+a.Pid+" record "+a.Record+" (correlation, not proof).";}catch(Exception){auditStatus="Unavailable: check Security log permissions and SACL";return auditStatus;}}
-  void Behavior(Sqlite db,EndpointSettings c,WaitHandle stop,Func<bool> authorized){DateTime cutoff=DateTime.UtcNow.AddSeconds(-c.BehaviorWindowSeconds);foreach(var p in changes.Where(x=>x.Value<cutoff).Select(x=>x.Key).ToArray())changes.Remove(p);foreach(var p in highEntropy.Where(x=>x.Value<cutoff).Select(x=>x.Key).ToArray())highEntropy.Remove(p);bool suspect=changes.Count>=c.ChangeThreshold;bool critical=suspect&&highEntropy.Count>=Math.Max(3,c.ChangeThreshold/5);if(suspect){bool newIncident=db.Rows("SELECT active FROM findings WHERE id=? AND active=1",Id("Protected paths|Possible ransomware activity")).Count==0;string detail=changes.Count+" distinct changed files; "+highEntropy.Count+" entropy increases in "+c.BehaviorWindowSeconds+" seconds. "+(newIncident?Correlate(c,latestChanged):"Investigate legitimate bulk activity.");Issue(db,"Protected paths","Possible ransomware activity",critical?"critical":"warning",detail);if(critical&&newIncident&&c.Mode=="contain"&&authorized())try{var a=EndpointResponse.FindWriter(latestChanged);if(a==null)throw new IOException("No matching write audit record");string result=EndpointResponse.Contain(c,a,stop,authorized);Issue(db,a.Image,"Containment action","info",result);Resolve(db,a.Image,"Containment action");}catch(Exception ex){Issue(db,"Protected paths","Containment withheld","warning",ex.Message);}}else{Resolve(db,"Protected paths","Possible ransomware activity");Resolve(db,"Protected paths","Containment withheld");}}
+  internal static bool RansomwareCorroborated(int changed,int entropyIncreases,int threshold){return changed>=threshold&&entropyIncreases>=3;}
+  internal static bool EntropyTransition(int sample,double current,double previous){return sample>=4096&&current>=7.5&&current-previous>=1.0;}
+  // Extended evidence is grouped by immediate directory and counted once per path.
+  // Observation time is scan time, not an asserted write timestamp or process identity.
+  internal static KeyValuePair<string,int> ExtendedEntropyPeak(IDictionary<string,DateTime> evidence,DateTime now){
+   DateTime cutoff=now.AddSeconds(-ExtendedEntropyWindowSeconds);
+   return evidence.Where(x=>x.Value>=cutoff&&x.Value<=now).GroupBy(x=>Path.GetDirectoryName(x.Key)??"",StringComparer.OrdinalIgnoreCase)
+    .Select(g=>new KeyValuePair<string,int>(g.Key,g.Count())).OrderByDescending(x=>x.Value).ThenBy(x=>x.Key,StringComparer.OrdinalIgnoreCase).FirstOrDefault();
+  }
+  void ExtendedBehavior(Sqlite db,bool rapidSuspect){
+   DateTime now=DateTime.UtcNow,cutoff=now.AddSeconds(-ExtendedEntropyWindowSeconds);
+   foreach(var p in extendedEntropy.Where(x=>x.Value<cutoff||x.Value>now).Select(x=>x.Key).ToArray())extendedEntropy.Remove(p);
+   var peak=ExtendedEntropyPeak(extendedEntropy,now);extendedEntropyPeak=peak.Value;
+   // This warning is detection-only even in contain mode. Never attribute all changes to a process.
+   if(!rapidSuspect&&peak.Value>=ExtendedEntropyThreshold){
+    Issue(db,"Protected paths","Possible ransomware activity (extended observation)","warning",peak.Value+" distinct files in "+peak.Key+" with verified content changes and significant entropy increases observed within "+ExtendedEntropyWindowSeconds+" seconds. Scan observation times; legitimate encryption or compression may also cause this pattern. No automatic containment from this signal.");
+   }else Resolve(db,"Protected paths","Possible ransomware activity (extended observation)");
+  }
+
+  void Behavior(Sqlite db,EndpointSettings c,WaitHandle stop,Func<bool> authorized){DateTime cutoff=DateTime.UtcNow.AddSeconds(-c.BehaviorWindowSeconds);foreach(var p in changes.Where(x=>x.Value<cutoff).Select(x=>x.Key).ToArray())changes.Remove(p);foreach(var p in highEntropy.Where(x=>x.Value<cutoff).Select(x=>x.Key).ToArray())highEntropy.Remove(p);bool suspect=RansomwareCorroborated(changes.Count,highEntropy.Count,c.ChangeThreshold);bool critical=suspect&&highEntropy.Count>=Math.Max(3,c.ChangeThreshold/5);ExtendedBehavior(db,suspect);if(suspect){bool newIncident=db.Rows("SELECT active FROM findings WHERE id=? AND active=1",Id("Protected paths|Possible ransomware activity")).Count==0;string detail=changes.Count+" distinct changed files; "+highEntropy.Count+" entropy increases in "+c.BehaviorWindowSeconds+" seconds. "+(newIncident?Correlate(c,latestChanged):"Investigate legitimate bulk activity.");Issue(db,"Protected paths","Possible ransomware activity",critical?"critical":"warning",detail);if(critical&&newIncident&&c.Mode=="contain"&&authorized())try{var a=EndpointResponse.FindWriter(latestChanged);if(a==null)throw new IOException("No matching write audit record");string result=EndpointResponse.Contain(c,a,stop,authorized);Issue(db,a.Image,"Containment action","info",result);Resolve(db,a.Image,"Containment action");}catch(Exception ex){Issue(db,"Protected paths","Containment withheld","warning",ex.Message);}}else{Resolve(db,"Protected paths","Possible ransomware activity");Resolve(db,"Protected paths","Containment withheld");}}
   // The service owns the schedule; the elevated task remains demand-only and accepts no arguments.
   const string SignatureScheduleRecord="signature_schedule_v1";
   sealed class ScheduleRecord {
@@ -288,11 +900,35 @@ namespace LinkScope {
    }
    return new {enabled=c.SignatureScheduleEnabled,frequency=c.SignatureScheduleFrequency,localTime=c.SignatureScheduleTime,weekday=c.SignatureScheduleWeekday,monthDay=c.SignatureScheduleMonthDay,timeZone=TimeZoneInfo.Local.Id,status=view,nextRunUtc=c.SignatureScheduleEnabled&&Program.ServiceMode&&c.Port==3310&&r.Next>0?Telemetry.Utc(r.Next):null,lastScheduledRequestUtc=r.LastRequest>0?Telemetry.Utc(r.LastRequest):null};
   }
+  bool ScanWatcher(Sqlite db,EndpointSettings c,WaitHandle stop,Func<bool> authorized,int lane){
+   if(stop.WaitOne(0))throw new OperationCanceledException();if(!authorized())return false;
+   var work=TakeWatcher(lane);if(work==null)return false;
+   // Durable cooldown owns retries; a new watcher notification must not create a parallel retry loop.
+   if(!c.CanaryPaths.Contains(work.Path,StringComparer.OrdinalIgnoreCase)&&usn.RetryWaiting(db,work.Path))return true;
+   if(!usn.RetainWatcher(db,work.Path,work.Priority))Interlocked.Exchange(ref overflow,1);
+   bool finished=CheckFile(db,c,work.Path,stop,authorized,false,work.Retries);if(finished&&!HasWatcher(work.Path))usn.Ack(db,work.Path);else if(!finished)usn.Defer(db,work.Path);
+   return true;
+  }
   internal object Tick(EndpointSettings c,WaitHandle stop,bool force,Func<bool> authorized){string next=Config.Json().Serialize(c);if(policy!=next){Configure(c);policy=next;}if(!c.Enabled)return new {status="disabled",items=new object[0]};using(var db=Open()){
+   if(Interlocked.Exchange(ref resetRequested,0)!=0){
+    // Retire only old scan-coverage warnings. Security findings and immutable evidence are retained.
+    db.Exec("UPDATE findings SET active=0 WHERE active=1 AND severity='coverage'");
+    foreach(var row in db.Rows("SELECT path,change FROM findings WHERE active=1 AND severity='warning' AND change IN ('File scan error','File scan limited','Engine scan incomplete','Protected path unavailable','Scan incomplete','File scan coverage incomplete','Watcher coverage incomplete','Real-time queue overflow','USN journal unavailable','USN journal coverage gap')"))Resolve(db,(string)row[0],(string)row[1]);
+    db.Exec("DELETE FROM clean_verdict_cache");ClearBaseline(db);baselineRestorePending=false;baselineResumed=false;cachedChecks=metadataCachedChecks=0;baselineCached=0;
+    cleanChecks=infectedChecks=heuristicChecks=excludedChecks=failedChecks=quarantinedChecks=deferredChecks=realTimeChecked=0;
+    lastFileScan=lastRealTimeScan=0;privilegedFileChecks=0;ResetDownloads();lastScannedPath="";running=false;complete=false;rescan=false;nextScan=0;force=true;lastCanary=0;
+    AppJournal.Event(LogLevel.Info,"Endpoint","reset-rescan","Scan counters reset; operational findings will be re-evaluated. Security evidence and journal queue retained.");
+   }
+   if(scopeReconcilePending)ConsolidateCoverage(db,c);
+   if(scopeReconcilePending){db.Exec("DELETE FROM clean_verdict_cache WHERE policy<>? OR verified<=?",CachePolicy(c),History.Now()-VerdictCacheMaxAge);int retired=ReconcileCoverageScope(db,c);scopeReconcilePending=false;if(retired>0)AppJournal.Event(LogLevel.Info,"Endpoint","scope-change","Retired "+retired+" operational warnings outside the current monitoring policy; historical incidents and security findings retained.");}
+   RestoreBaseline(db,c);
    var maintenance=ClamUpdateState.Read();string maintenanceKey=(maintenance.attemptUtc??"")+"/"+maintenance.status;
    if(maintenanceKey!=signatureMaintenanceSeen){
     if(maintenance.status=="Failed"||maintenance.status=="Warning"||maintenance.status=="Interrupted")Issue(db,"ClamAV","Signature update needs review","warning",(maintenance.detail??"Signature update did not complete.")+" · Attempt UTC: "+(maintenance.attemptUtc??"Unknown"));
-    else if(maintenance.status=="Updated"||maintenance.status=="Checked"){Resolve(db,"ClamAV","Signature update needs review");AppJournal.Event(LogLevel.Info,"Endpoint","signatures",maintenance.detail);lastEngine=0;if(maintenance.status=="Updated"){nextScan=0;if(running)rescan=true;}}
+    else if(maintenance.status=="Updated"||maintenance.status=="Checked"){Resolve(db,"ClamAV","Signature update needs review");AppJournal.Event(LogLevel.Info,"Endpoint","signatures",maintenance.detail);lastEngine=0;if(maintenance.status=="Updated"){
+      var marker=db.Rows("SELECT value FROM endpoint_metadata WHERE name='cache-signature-maintenance'").FirstOrDefault();
+      if(marker==null||!Equals(marker[0],maintenanceKey)){db.Exec("BEGIN IMMEDIATE");try{db.Exec("DELETE FROM clean_verdict_cache");db.Exec("INSERT OR REPLACE INTO endpoint_metadata(name,value) VALUES('cache-signature-maintenance',?)",maintenanceKey);db.Exec("COMMIT");}catch{db.Exec("ROLLBACK");throw;}nextScan=0;if(running)rescan=true;}
+     }}
     signatureMaintenanceSeen=maintenanceKey;
    }
    long now=History.Now();object signatureSchedule;
@@ -301,17 +937,48 @@ namespace LinkScope {
    if(lastSignatureLogCheck==0||now-lastSignatureLogCheck>=60){lastSignatureLogCheck=now;
     var prior=db.Rows("SELECT value FROM endpoint_metadata WHERE name='reported_signature_update'").FirstOrDefault();reportedUpdateUtc=prior==null?null:(string)prior[0];
     try{string reported=ClamUpdateWorker.ReadReportedUpdate();signatureLogReadable=reported!=null;
-     if(reported!=null&&(reportedUpdateUtc==null||string.CompareOrdinal(reported,reportedUpdateUtc)>0)){reportedUpdateUtc=reported;db.Exec("INSERT OR REPLACE INTO endpoint_metadata(name,value) VALUES('reported_signature_update',?)",reported);}
+     if(reported!=null&&(reportedUpdateUtc==null||string.CompareOrdinal(reported,reportedUpdateUtc)>0)){
+      db.Exec("BEGIN IMMEDIATE");try{db.Exec("DELETE FROM clean_verdict_cache");db.Exec("INSERT OR REPLACE INTO endpoint_metadata(name,value) VALUES('reported_signature_update',?)",reported);db.Exec("COMMIT");}catch{db.Exec("ROLLBACK");throw;}
+      reportedUpdateUtc=reported;nextScan=0;if(running)rescan=true;
+     }
     }catch(Exception){signatureLogReadable=false;}
    }
-   if(force||lastEngine==0||now-lastEngine>=60){lastEngine=now;bool previouslyOnline=online;try{version=Command(c.Port,"VERSION",null,stop);online=version.StartsWith("ClamAV",StringComparison.OrdinalIgnoreCase);if(!online)throw new IOException("Unexpected engine version");lastSignatureCheck=History.Now();signatureFreshness="Unknown";Resolve(db,"ClamAV","Engine unavailable");if(!previouslyOnline){nextScan=0;reconcilePending=true;if(running)rescan=true;}var parts=version.Split('/');signatureVersion=parts.Length>=2?parts[1]:"Unknown";signatureTimestamp=parts.Length>=3?parts[2]:"Unknown";DateTime stamp;if(DateTime.TryParseExact(Regex.Replace(signatureTimestamp,@"\s+"," "),"ddd MMM d HH:mm:ss yyyy",System.Globalization.CultureInfo.InvariantCulture,System.Globalization.DateTimeStyles.None,out stamp)&&stamp<DateTime.Now.AddDays(1)){if((DateTime.Now-stamp).TotalDays>=3){signatureFreshness="Stale";Issue(db,"ClamAV","Signature database may be stale","warning","Engine-reported definition date is more than three days old: "+signatureTimestamp);}else{signatureFreshness="Current";Resolve(db,"ClamAV","Signature database may be stale");}}}catch(OperationCanceledException){throw;}catch(Exception ex){online=false;version="Unavailable";signatureVersion=signatureTimestamp=signatureFreshness="Unknown";Issue(db,"ClamAV","Engine unavailable","warning",ex.GetType().Name);}}
+   if((force||lastEngine==0||now-lastEngine>=(online?60:15))&&now>=nextEngineProbe){lastEngine=now;bool previouslyOnline=online;string previousVersion=version;try{version=Command(c.Port,"VERSION",null,stop,Program.ServiceMode&&c.Port==3310?(Action<TcpClient>)ClamUpdateWorker.VerifyScanServiceOwner:null);online=version.StartsWith("ClamAV",StringComparison.OrdinalIgnoreCase);if(!online)throw new IOException("Unexpected engine version");
+     if(engineNeedsScanProbe){using(var probe=new MemoryStream(Encoding.ASCII.GetBytes("LinkScope benign engine readiness probe"))){string verdict=Command(c.Port,"INSTREAM",probe,stop,Program.ServiceMode&&c.Port==3310?(Action<TcpClient>)ClamUpdateWorker.VerifyScanServiceOwner:null);if(!CleanVerdict(verdict))throw new IOException("Engine readiness scan did not return a clean verdict: "+verdict);}}
+     if(previouslyOnline&&!string.Equals(previousVersion,version,StringComparison.Ordinal)){db.Exec("DELETE FROM clean_verdict_cache");nextScan=0;if(running)rescan=true;}engineNeedsScanProbe=false;engineFailures=0;nextEngineProbe=0;lastSignatureCheck=History.Now();signatureFreshness="Unknown";Resolve(db,"ClamAV","Engine unavailable");if(!previouslyOnline){nextScan=0;reconcilePending=true;if(running)rescan=true;}var parts=version.Split('/');signatureVersion=parts.Length>=2?parts[1]:"Unknown";signatureTimestamp=parts.Length>=3?parts[2]:"Unknown";DateTime stamp;if(DateTime.TryParseExact(Regex.Replace(signatureTimestamp,@"\s+"," "),"ddd MMM d HH:mm:ss yyyy",System.Globalization.CultureInfo.InvariantCulture,System.Globalization.DateTimeStyles.None,out stamp)&&stamp<DateTime.Now.AddDays(1)){if((DateTime.Now-stamp).TotalDays>=3){signatureFreshness="Stale";Issue(db,"ClamAV","Signature database may be stale","warning","Engine-reported definition date is more than three days old: "+signatureTimestamp);}else{signatureFreshness="Current";Resolve(db,"ClamAV","Signature database may be stale");}}}catch(OperationCanceledException){throw;}catch(Exception ex){online=false;version="Unavailable";signatureVersion=signatureTimestamp=signatureFreshness="Unknown";MarkEngineTransportFailed(db,ex.GetType().Name+": "+ex.Message);}}
    CheckResponseReadiness(db,c,stop,now,force);
-   if(Interlocked.Exchange(ref overflow,0)!=0){seenOverflow++;nextScan=0;rescan=true;Issue(db,"Protected paths","Real-time queue overflow","warning","Events may have been missed; full reconciliation requested.");}if(watcherFailures>0)Issue(db,"Protected paths","Watcher coverage incomplete","warning",watcherFailures+" configured watchers unavailable; periodic scanning continues.");else Resolve(db,"Protected paths","Watcher coverage incomplete");
-   string p;int drain=0;while(drain++<2048&&queue.TryDequeue(out p)){Interlocked.Decrement(ref queued);if(!deferred.ContainsKey(p)){if(deferred.Count<MaxQueue)deferred[p]=DateTime.UtcNow;else Interlocked.Exchange(ref overflow,1);}}
-   if(force){nextScan=0;if(running)rescan=true;}if(!running&&now>=nextScan){rescan=false;StartScan(c);}
-   var timer=Stopwatch.StartNew();if(now-lastCanary>=10){lastCanary=now;foreach(string canary in c.CanaryPaths.Take(100)){if(stop.WaitOne(0))throw new OperationCanceledException();if(deferred.Count<MaxQueue&&!deferred.ContainsKey(canary))deferred[canary]=DateTime.UtcNow.AddSeconds(-2);}}foreach(var item in deferred.Where(x=>(DateTime.UtcNow-x.Value).TotalMilliseconds>=750).Take(8).ToArray()){if(stop.WaitOne(0))throw new OperationCanceledException();deferred.Remove(item.Key);CheckFile(db,c,item.Key,stop,authorized,false);if(timer.ElapsedMilliseconds>1200)break;}
-   int count=0;while(running&&pending.Count>0&&count++<16&&timer.ElapsedMilliseconds<1500){if(stop.WaitOne(0))throw new OperationCanceledException();p=pending.Pop();if(!visited.Add(p))continue;if(visited.Count>MaxEntries){errors++;pending.Clear();break;}CheckFile(db,c,p,stop,authorized,true);}
-   if(running&&pending.Count==0){running=false;lastScan=History.Now();nextScan=rescan?lastScan:lastScan+c.IntervalSeconds;complete=errors==0&&limited==0&&online;if(complete){foreach(var missing in db.Rows("SELECT path FROM files WHERE scope=? AND seen<>? LIMIT 100001",scope,scanId)){string path=(string)missing[0];if(!Excluded(c,path)){Observe(path,false);if(c.CanaryPaths.Contains(path,StringComparer.OrdinalIgnoreCase))CanaryIssue(db,c,path,"Canary missing during reconciliation.","",stop,authorized);}db.Exec("DELETE FROM files WHERE scope=? AND path=?",scope,path);Resolve(db,path,"Malware signature detected");Resolve(db,path,"Heuristic signature finding");Resolve(db,path,"File scan error");Resolve(db,path,"File scan limited");Resolve(db,path,"Engine scan incomplete");Resolve(db,path,"Quarantine withheld or failed");}if(!rescan)Resolve(db,"Protected paths","Real-time queue overflow");Resolve(db,"Protected paths","Scan incomplete");}else Issue(db,"Protected paths","Scan incomplete","warning",errors+" errors; "+limited+" size-limited files; engine online: "+online);AppJournal.Event(LogLevel.Info,"Endpoint","scan","Scanned "+scanned+"; excluded "+excluded+"; errors "+errors+"; limited "+limited);}
+   ConsumeWatcherFaults();RetryFailedWatchers(now);
+   if(Interlocked.Exchange(ref overflow,0)!=0){seenOverflow++;nextScan=0;rescan=true;Issue(db,"Protected paths","Real-time queue overflow","warning","Events may have been missed; full reconciliation requested.");}
+   usn.Poll(db,c,(root,detail)=>Issue(db,root,"USN journal unavailable","warning",detail),root=>Resolve(db,root,"USN journal unavailable"),(root,detail)=>Issue(db,root,"USN journal coverage gap","warning",detail),()=>RequestReconciliation(c,true));
+   now=History.Now();
+   SyncPrivilegedWatchers(c);
+   if(Interlocked.Exchange(ref privilegedWatcherReconcile,0)!=0)RequestReconciliation(c,true);
+   if(!running&&c.RealTime&&lastScan>0){var providers=PrivilegedWatcherSnapshot();if(c.Paths.Any(root=>!Excluded(c,root)&&!localWatchers.ContainsKey(root)&&!usn.Covers(root)&&(!providers.ContainsKey(root)||!PrivilegedWatcherCovers(providers[root],History.Now()))))nextScan=Math.Min(nextScan,lastScan+Math.Min(c.IntervalSeconds,300));}
+   if(force){nextScan=0;if(running)rescan=true;}if(!running&&now>=nextScan){db.Exec("DELETE FROM clean_verdict_cache WHERE verified<=? OR verified>?",now-VerdictCacheMaxAge,now);db.Exec("DELETE FROM clean_verdict_cache WHERE rowid IN (SELECT rowid FROM clean_verdict_cache ORDER BY verified DESC LIMIT -1 OFFSET 100000)");rescan=false;StartScan(db,c);}
+   // Canaries have a dedicated lane; ordinary queue pressure must not prevent integrity checks.
+   var timer=Stopwatch.StartNew();if(now-lastCanary>=10){lastCanary=now;foreach(string canary in c.CanaryPaths.Take(100)){if(stop.WaitOne(0))throw new OperationCanceledException();if(!authorized())break;if(CheckFile(db,c,canary,stop,authorized,false)&&c.RealTime&&online&&!HasWatcher(canary))usn.Ack(db,canary);}}
+   ProcessFileProbe(db,c,stop,authorized);
+   if(c.RealTime&&authorized()){PollDownloads(c,now);ScanDownload(db,c,stop,authorized,now);}
+   // New downloads and copied/renamed files precede scheduled and replay work.
+   if(c.RealTime&&online){ScanWatcher(db,c,stop,authorized,0);if(online&&timer.ElapsedMilliseconds<800)ScanWatcher(db,c,stop,authorized,2);}
+   // Journal arrivals may be the only events for protected user directories. Give
+   // them a chance before a slow background file scan, even if the watcher is busy.
+   if(c.RealTime&&online){
+    foreach(string path in usn.Pending(db,4)){if(stop.WaitOne(0))throw new OperationCanceledException();if(!authorized())break;
+     // Let the watcher debounce and retry a file that is still being written.
+     if(HasWatcher(path))continue;
+     if(CheckFile(db,c,path,stop,authorized,false))usn.Ack(db,path);else usn.Defer(db,path);if(!online||timer.ElapsedMilliseconds>1200)break;
+    }
+    if(online)ScanWatcher(db,c,stop,authorized,1);
+    for(int count=0;online&&count<6&&timer.ElapsedMilliseconds<1200;count++)if(!ScanWatcher(db,c,stop,authorized,count%2==0?0:1)&&!ScanWatcher(db,c,stop,authorized,1))break;
+   }
+   // Guarantee one background step even under sustained arrivals.
+   baselineThrottleReason=running?diskPressure.PauseReason(c):"";
+   if(online&&running&&pending.Count>0&&string.IsNullOrEmpty(baselineThrottleReason)){using(var priority=new EndpointBackgroundPriority(true)){
+    ScanNext(db,c,stop,authorized);
+    int countFull=1;while(online&&running&&pending.Count>0&&countFull++<4&&timer.ElapsedMilliseconds<500&&WatchCounts()[0]==0&&usn.ReadyDepth(db)==0)ScanNext(db,c,stop,authorized);
+   }}
+   if(running&&pending.Count==0){running=false;lastScan=History.Now();nextScan=rescan?lastScan:lastScan+c.IntervalSeconds;complete=errors==0&&limited==0&&online&&!baselineResumed&&!rescan;if(!traversalLimitReached)Resolve(db,"Protected paths","Scan traversal limit reached");if(complete){/* A complete scan reconciles old coverage gaps, but not newer real-time failures. */foreach(var oldCoverage in db.Rows("SELECT id,path FROM findings WHERE active=1 AND severity='coverage' AND last<?",new DateTimeOffset(new DateTime(scanId,DateTimeKind.Utc)).ToUnixTimeSeconds()))if(!BackgroundExcluded(c,(string)oldCoverage[1]))db.Exec("UPDATE findings SET active=0 WHERE id=?",oldCoverage[0]);foreach(var missing in db.Rows("SELECT path FROM files WHERE scope=? AND seen<>? LIMIT 100001",scope,scanId)){string path=(string)missing[0];if(BackgroundExcluded(c,path))continue;if(!Excluded(c,path)){Observe(path,false);if(c.CanaryPaths.Contains(path,StringComparer.OrdinalIgnoreCase))CanaryIssue(db,c,path,"Canary missing during reconciliation.","",stop,authorized);}ForgetCached(db,path);db.Exec("DELETE FROM files WHERE scope=? AND path=?",scope,path);Resolve(db,path,"Malware signature detected");Resolve(db,path,"Heuristic signature finding");Resolve(db,path,"File scan error");Resolve(db,path,"File scan limited");Resolve(db,path,"Engine scan incomplete");Resolve(db,path,"Quarantine withheld or failed");}if(!rescan)Resolve(db,"Protected paths","Real-time queue overflow");Resolve(db,"Protected paths","Scan incomplete");if(!rescan&&!journalGapDuringScan)foreach(var root in c.Paths.Select(Path.GetPathRoot).Distinct(StringComparer.OrdinalIgnoreCase))Resolve(db,root,"USN journal coverage gap");}else Issue(db,"Protected paths","Scan incomplete","warning",baselineResumed?"Resumed baseline finished; fresh reconciliation required after interruption.":rescan?"Follow-up reconciliation pending due to a new scan or coverage request.":errors+" errors; "+limited+" size-limited files; engine online: "+online);ClearBaseline(db);AppJournal.Event(LogLevel.Info,"Endpoint","scan","Scanned "+scanned+"; excluded "+excluded+"; errors "+errors+"; limited "+limited);}
    Behavior(db,c,stop,authorized);object[] vaultItems;bool vaultAvailable=true;try{vaultItems=QuarantineInventory(db);Resolve(db,"Quarantine vault","Quarantine inventory unavailable");}catch(Exception ex){vaultAvailable=false;vaultItems=new object[0];Issue(db,"Quarantine vault","Quarantine inventory unavailable","warning",ex.GetType().Name);}
    // Reconcile completed quarantine and deletion evidence only when the original
    // path is verifiably absent and the finding has the identical recorded hash.
@@ -321,7 +988,20 @@ namespace LinkScope {
     foreach(var receipt in db.Rows("SELECT q.path,q.hash FROM quarantine_deletions q JOIN findings f ON f.path=q.path COLLATE NOCASE AND f.hash=q.hash WHERE q.completed IS NOT NULL AND f.active=1 AND f.change IN ('Malware signature detected','Quarantine withheld or failed') LIMIT 200"))
      ResolveQuarantinedOriginal(db,(string)receipt[0],(string)receipt[1]);
    }
-   var active=db.Rows("SELECT id,path,change,severity,detail,hash,first,last FROM findings WHERE active=1 ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,last DESC LIMIT 201");var history=db.Rows("SELECT utc,path,change,severity,detail,hash FROM incidents ORDER BY seq DESC LIMIT 100");return new {status=!online?"unavailable":active.Count>200||watcherFailures>0||(!running&&!complete)?"partial":running?"scanning":"ok",engineVersion=version,engineOnline=online,signatureDatabaseVersion=signatureVersion,signatureDatabaseTimestamp=signatureTimestamp,signatureFreshness=signatureFreshness,signatureMaintenance=maintenance,signatureSchedule=signatureSchedule,lastSuccessfulSignatureUpdateUtc=maintenance.updatedUtc,lastSuccessfulSignatureRefreshUtc=maintenance.checkedUtc,lastReportedSignatureUpdateUtc=reportedUpdateUtc,signatureUpdateLogRecognized=signatureLogReadable,lastSignatureCheckUtc=lastSignatureCheck==0?null:Telemetry.Utc(lastSignatureCheck),cleanChecks=cleanChecks,infectedChecks=infectedChecks,heuristicChecks=heuristicChecks,excludedChecks=excludedChecks,failedChecks=failedChecks,quarantinedChecks=quarantinedChecks,scanActivityLimit=100,scanActivity=db.Rows("SELECT utc,path,source,result,durationMs,detail FROM scan_activity ORDER BY seq DESC LIMIT 100").Select(x=>new {utc=Telemetry.Utc(Convert.ToInt64(x[0])),path=x[1],source=x[2],result=x[3],durationMs=x[4],detail=x[5]}).ToArray(),canaries=c.CanaryPaths.Select(path=>{var baseline=db.Rows("SELECT hash FROM canaries WHERE path=?",path).FirstOrDefault();var issue=db.Rows("SELECT change,severity,last FROM findings WHERE path=? COLLATE NOCASE AND active=1 AND change IN ('Canary integrity violation','File scan error','File scan limited') ORDER BY CASE severity WHEN 'critical' THEN 0 ELSE 1 END LIMIT 1",path).FirstOrDefault();return new {path=path,expectedHash=CanaryTemplates.ExpectedForPath(path)??(baseline==null?null:(string)baseline[0]),status=issue!=null?(string)issue[1]:baseline==null?"Pending baseline":"Enrolled",detail=issue==null?"No active canary finding recorded":(string)issue[0]};}).ToArray(),mode=c.Mode,responseEngineStatus=responseEngineStatus,responseEngineDetail=responseEngineDetail,responseCheckedUtc=lastResponseCheck==0?null:Telemetry.Utc(lastResponseCheck),responsePathsReadiness=responsePathsReadiness,realTime=c.RealTime,watcherCount=watchers.Count,queueDepth=queued+deferred.Count,overflowCount=seenOverflow,scanRunning=running,scanStartedUtc=scanId==0?null:new DateTime(scanId,DateTimeKind.Utc).ToString("o"),realTimeChecked=realTimeChecked,lastFileScanUtc=lastFileScan==0?null:Telemetry.Utc(lastFileScan),lastRealTimeScanUtc=lastRealTimeScan==0?null:Telemetry.Utc(lastRealTimeScan),lastScannedPath=lastScannedPath,lastScanUtc=lastScan==0?null:Telemetry.Utc(lastScan),nextScanUtc=running?null:Telemetry.Utc(nextScan),scannedFiles=scanned,excludedEntries=excluded,sizeLimitedFiles=limited,changedFiles=changes.Count,entropyChanges=highEntropy.Count,canaryCount=c.CanaryPaths.Length,processCorrelation=auditStatus,violations=Convert.ToInt64(db.Rows("SELECT COUNT(*) FROM findings WHERE active=1 AND severity IN ('critical','warning')")[0][0]),protectedPaths=c.Paths,truncated=active.Count>200,historyLimit=100,activeMalware=Convert.ToInt64(db.Rows("SELECT COUNT(*) FROM findings WHERE active=1 AND change='Malware signature detected'")[0][0]),activeHeuristic=Convert.ToInt64(db.Rows("SELECT COUNT(*) FROM findings WHERE active=1 AND change='Heuristic signature finding'")[0][0]),activeScanIssues=Convert.ToInt64(db.Rows("SELECT COUNT(*) FROM findings WHERE active=1 AND change IN ('File scan error','File scan limited','Engine scan incomplete','Scan incomplete','Protected path unavailable','Engine unavailable','Watcher coverage incomplete','Real-time queue overflow')")[0][0]),quarantineCount=vaultAvailable?(long?)vaultItems.Length:null,quarantineDeletedCount=Convert.ToInt64(db.Rows("SELECT COUNT(*) FROM quarantine_deletions WHERE completed IS NOT NULL")[0][0]),quarantineItems=vaultItems.Take(100).ToArray(),quarantineDeletions=DeletionHistory(db),pendingAlertDelivery=Convert.ToInt64(db.Rows("SELECT COUNT(*) FROM endpoint_outbox")[0][0]),items=active.Take(200).Select(x=>new {id=x[0],path=x[1],change=x[2],severity=x[3],status=x[3],detail=x[4],actualHash=x[5],firstUtc=Telemetry.Utc(Convert.ToInt64(x[6])),lastUtc=Telemetry.Utc(Convert.ToInt64(x[7]))}).ToArray(),recentIncidents=history.Select(x=>new {utc=Telemetry.Utc(Convert.ToInt64(x[0])),path=x[1],change=x[2],severity=x[3],detail=x[4],hash=x[5]}).ToArray()};}}
-  public void Dispose(){CloseWatchers();}
+   // Evaluate fresh coverage at publication time, not before a potentially slow scan.
+   now=History.Now();ConsumeWatcherFaults();SyncPrivilegedWatchers(c);var privilegedSnapshot=PrivilegedWatcherSnapshot();
+   Func<string,PrivilegedWatcherState> watcherState=root=>{PrivilegedWatcherState state;return privilegedSnapshot.TryGetValue(root,out state)?state:null;};
+   var uncoveredWatchers=failedWatchers.Where(x=>!usn.Covers(x.Key)&&!PrivilegedWatcherCovers(watcherState(x.Key),now)).ToArray();
+   var confirmedUncovered=uncoveredWatchers.Where(x=>!PrivilegedWatcherInitializing(watcherState(x.Key),now)).ToArray();
+   // A bounded initial handshake is not a verified watcher. Keep partial telemetry,
+   // but avoid creating a transient alert unless the helper fails or exceeds grace.
+   if(confirmedUncovered.Length>0)Issue(db,"Protected paths","Watcher coverage incomplete","warning",confirmedUncovered.Length+" configured roots lack verified local watcher, journal or privileged watcher coverage. "+string.Join("; ",confirmedUncovered.Take(3).Select(x=>x.Key+" ("+x.Value+(watcherState(x.Key)!=null?"; helper: "+watcherState(x.Key).Detail:Program.ServiceMode?"; helper: no eligible privileged watcher":"; helper: Windows service mode required")+")")));else if(uncoveredWatchers.Length==0)Resolve(db,"Protected paths","Watcher coverage incomplete");
+   var coverageCount=Convert.ToInt64(db.Rows("SELECT COUNT(*) FROM findings WHERE active=1 AND severity='coverage'")[0][0]);CoverageSummary(db,coverageCount);
+   var coverageRows=db.Rows("SELECT path,change,detail,last FROM findings WHERE active=1 AND severity='coverage' ORDER BY last DESC,path LIMIT 100");
+   var coverageBreakdown=db.Rows("SELECT CASE WHEN change='File scan limited' THEN 'Size limit' WHEN change='Engine scan incomplete' THEN 'Engine incomplete' WHEN detail LIKE 'Deferred: file in use%' THEN 'Deferred — file in use' WHEN detail LIKE 'Reparse boundary:%' THEN 'Reparse boundary — target unverified' ELSE change END AS category, COUNT(*) FROM findings WHERE active=1 AND severity='coverage' GROUP BY category ORDER BY category").Select(x=>new {category=x[0],count=x[1]}).ToArray();
+   var watchCounts=WatchCounts();int journalDepth=usn.Depth(db);
+   var rootCoverage=c.Paths.Select(root=>{var helper=watcherState(root);bool local=localWatchers.ContainsKey(root);bool journal=usn.Covers(root);bool privileged=PrivilegedWatcherCovers(helper,now);string error;failedWatchers.TryGetValue(root,out error);return new {path=root,localWatcher=local,journal=journal,privilegedWatcher=privileged,state=Excluded(c,root)?"Excluded":!c.RealTime?"Scheduled only":local||privileged?"Watching":journal?"Journal only":PrivilegedWatcherInitializing(helper,now)?"Initializing":"Uncovered",localWatcherDiagnostic=error,privilegedWatcherDiagnostic=helper==null?null:helper.Verified>0&&!privileged?"Awaiting fresh privileged watcher response":helper.Detail,detail=(error??"")+(helper==null?"":"; helper: "+helper.Detail)};}).ToArray();
+   var active=db.Rows("SELECT id,path,change,severity,detail,hash,first,last FROM findings WHERE active=1 AND severity<>'coverage' ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,last DESC LIMIT 201");var history=db.Rows("SELECT utc,path,change,severity,detail,hash FROM incidents ORDER BY seq DESC LIMIT 100");return new {status=!online?"unavailable":active.Count>200||uncoveredWatchers.Length>0||coverageCount>0||signatureFreshness!="Current"||rootCoverage.Any(x=>x.state=="Excluded")||(!running&&(!complete||watchCounts[0]+journalDepth>0))?"partial":running?"scanning":"ok",engineVersion=version,engineOnline=online,engineRetryUtc=nextEngineProbe>0?Telemetry.Utc(nextEngineProbe):null,engineRecoveryPending=engineNeedsScanProbe,signatureDatabaseVersion=signatureVersion,signatureDatabaseTimestamp=signatureTimestamp,signatureFreshness=signatureFreshness,signatureMaintenance=maintenance,signatureSchedule=signatureSchedule,lastSuccessfulSignatureUpdateUtc=maintenance.updatedUtc,lastSuccessfulSignatureRefreshUtc=maintenance.checkedUtc,lastReportedSignatureUpdateUtc=reportedUpdateUtc,signatureUpdateLogRecognized=signatureLogReadable,lastSignatureCheckUtc=lastSignatureCheck==0?null:Telemetry.Utc(lastSignatureCheck),cleanChecks=cleanChecks,cachedChecks=cachedChecks,metadataCachedChecks=metadataCachedChecks,backgroundReadMiB=c.BackgroundReadMiB,baselineThrottleReason=baselineThrottleReason,diskPressureStatus=diskPressure.Status,baselineCached=baselineCached,baselineResumed=baselineResumed,verdictCacheMaxAgeSeconds=VerdictCacheMaxAge,infectedChecks=infectedChecks,heuristicChecks=heuristicChecks,excludedChecks=excludedChecks,failedChecks=failedChecks,deferredChecks=deferredChecks,quarantinedChecks=quarantinedChecks,scanActivityLimit=100,scanActivity=db.Rows("SELECT utc,path,source,result,durationMs,detail FROM scan_activity ORDER BY seq DESC LIMIT 100").Select(x=>new {utc=Telemetry.Utc(Convert.ToInt64(x[0])),path=x[1],source=x[2],result=x[3],durationMs=x[4],detail=x[5]}).ToArray(),canaries=c.CanaryPaths.Select(path=>{var baseline=db.Rows("SELECT hash FROM canaries WHERE path=?",path).FirstOrDefault();var issue=db.Rows("SELECT change,severity,last FROM findings WHERE path=? COLLATE NOCASE AND active=1 AND change IN ('Canary integrity violation','File scan error','File scan limited','Engine scan incomplete') ORDER BY CASE severity WHEN 'critical' THEN 0 ELSE 1 END LIMIT 1",path).FirstOrDefault();return new {path=path,expectedHash=CanaryTemplates.ExpectedForPath(path)??(baseline==null?null:(string)baseline[0]),status=issue!=null?(string)issue[1]:baseline==null?"Pending baseline":"Enrolled",detail=issue==null?"No active canary finding recorded":(string)issue[0]};}).ToArray(),mode=c.Mode,responseEngineStatus=responseEngineStatus,responseEngineDetail=responseEngineDetail,responseCheckedUtc=lastResponseCheck==0?null:Telemetry.Utc(lastResponseCheck),responsePathsReadiness=responsePathsReadiness,realTime=c.RealTime,watcherCount=watchers.Count,watcherFailures=watcherFailures,watcherRootsCoveredByJournal=failedWatchers.Count(x=>usn.Covers(x.Key)),watcherRootsCoveredByPrivileged=failedWatchers.Count(x=>PrivilegedWatcherCovers(watcherState(x.Key),now)),watcherCoverageInitializing=uncoveredWatchers.Length>0&&confirmedUncovered.Length==0&&online&&active.Count<=200&&(running||(complete&&coverageCount==0)),privilegedWatcherDetails=privilegedSnapshot.Select(x=>new {path=x.Key,active=PrivilegedWatcherCovers(x.Value,now),detail=x.Value.Verified>0&&!PrivilegedWatcherCovers(x.Value,now)?"Awaiting fresh privileged watcher response":x.Value.Detail}).ToArray(),usnVolumes=usn.Status(),usnQueueDepth=journalDepth,deferredQueueDepth=usn.DeferredDepth(db),durableReadyDepth=usn.ReadyDepth(db),watcherQueueDepth=watchCounts[0],priorityQueueDepth=watchCounts[1]+usn.PriorityDepth(db),queueDepth=watchCounts[0]+journalDepth,overflowCount=seenOverflow,scanRunning=running,scanStartedUtc=scanId==0?null:new DateTime(scanId,DateTimeKind.Utc).ToString("o"),realTimeChecked=realTimeChecked,privilegedFileChecks=privilegedFileChecks,downloadRoots=downloadRoots,downloadStatus=downloadStatus,downloadChecks=downloadChecks,downloadPending=downloadWork.Values.Count(x=>!x.Done),downloadLastPath=downloadLastPath,downloadLastResult=downloadLastResult,lastFileScanUtc=lastFileScan==0?null:Telemetry.Utc(lastFileScan),lastRealTimeScanUtc=lastRealTimeScan==0?null:Telemetry.Utc(lastRealTimeScan),lastScannedPath=lastScannedPath,lastScanUtc=lastScan==0?null:Telemetry.Utc(lastScan),nextScanUtc=running?null:Telemetry.Utc(nextScan),scannedFiles=scanned,baselineVisited=visited.Count,baselineDiscoveredPending=pending.Count,baselineErrors=errors,baselineEntryLimit=MaxEntries,configuredMaxFileMiB=c.MaxFileMiB,excludedEntries=excluded,sizeLimitedFiles=limited,changedFiles=changes.Count,entropyChanges=highEntropy.Count,behaviorWindowSeconds=c.BehaviorWindowSeconds,behaviorChangeThreshold=c.ChangeThreshold,extendedEntropyPeak=extendedEntropyPeak,extendedEntropyWindowSeconds=ExtendedEntropyWindowSeconds,extendedEntropyThreshold=ExtendedEntropyThreshold,canaryCount=c.CanaryPaths.Length,processCorrelation=auditStatus,violations=Convert.ToInt64(db.Rows("SELECT COUNT(*) FROM findings WHERE active=1 AND severity IN ('critical','warning')")[0][0]),protectedPaths=c.Paths,rootCoverage=rootCoverage,fullScanComplete=complete,truncated=active.Count>200,historyLimit=100,activeMalware=Convert.ToInt64(db.Rows("SELECT COUNT(*) FROM findings WHERE active=1 AND change='Malware signature detected'")[0][0]),activeHeuristic=Convert.ToInt64(db.Rows("SELECT COUNT(*) FROM findings WHERE active=1 AND change='Heuristic signature finding'")[0][0]),coverageIssueCount=coverageCount,coverageBreakdown=coverageBreakdown,coverageDetails=coverageRows.Select(x=>new {path=x[0],issue=CoverageKind((string)x[1],(string)x[2]),detail=x[2],lastUtc=Telemetry.Utc(Convert.ToInt64(x[3]))}).ToArray(),activeScanIssues=Convert.ToInt64(db.Rows("SELECT COUNT(*) FROM findings WHERE active=1 AND change IN ('File scan error','File scan limited','Engine scan incomplete','Scan incomplete','Protected path unavailable','Engine unavailable','Watcher coverage incomplete','Real-time queue overflow','USN journal unavailable','USN journal coverage gap','Scan traversal limit reached')")[0][0]),quarantineCount=vaultAvailable?(long?)vaultItems.Length:null,quarantineDeletedCount=Convert.ToInt64(db.Rows("SELECT COUNT(*) FROM quarantine_deletions WHERE completed IS NOT NULL")[0][0]),quarantineItems=vaultItems.Take(100).ToArray(),quarantineDeletions=DeletionHistory(db),pendingAlertDelivery=Convert.ToInt64(db.Rows("SELECT COUNT(*) FROM endpoint_outbox")[0][0]),items=active.Take(200).Select(x=>new {id=x[0],path=x[1],change=x[2],severity=x[3],status=x[3],detail=x[4],actualHash=x[5],firstUtc=Telemetry.Utc(Convert.ToInt64(x[6])),lastUtc=Telemetry.Utc(Convert.ToInt64(x[7]))}).ToArray(),recentIncidents=history.Select(x=>new {utc=Telemetry.Utc(Convert.ToInt64(x[0])),path=x[1],change=x[2],severity=x[3],detail=x[4],hash=x[5]}).ToArray()};}}
+  public void Dispose(){CloseWatchers();Thread thread;lock(privilegedWatcherGate){privilegedWatcherStopping=true;thread=privilegedWatcherThread;}if(thread!=null)thread.Join(2000);}
  }
 }

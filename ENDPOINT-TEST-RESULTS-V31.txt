@@ -1,0 +1,48 @@
+=== tests/validate_endpoint_protection_v29.py
+PASS: root faults, recovery scheduling, strict verdict, scan pause, per-folder evidence, and durable deduplicated SQLite retries; Windows runtime pending.
+Exit: 0
+=== tests/validate_endpoint_protection_v30.py
+PASS: V30 source contracts (not native runtime tests)
+Exit: 0
+=== tests/validate_endpoint_protection_v31.py
+PASS: durable backoff SQLite, duplicate deferral, restart persistence, FIFO eligibility, acknowledgement cleanup, and source wiring; Windows runtime not executed.
+Exit: 0
+=== tests/validate_coverage_aggregation.py
+PASS: 1,000 unique paths, repeated failures, migration and acknowledgement SQL, preserved malware/canary alerts; source checks for aggregation and UI.
+Exit: 0
+=== tests/validate_priority_arrivals.py
+PASS: watcher creation/rename priority wiring, debounce/retry guards, actual SQLite ordering with 3,000 old items, recent copied files and Downloads, bounded retry reference model.
+NOT RUN: Windows copy/download events, EICAR detection, ACL access, native C# build or actual latency.
+Exit: 0
+=== tests/validate_privileged_arrivals.py
+PASS: restricted privileged scan source wiring, shared verdict path, priority arrival persistence/rollback/dedup/ack, reset scope and independent metric source checks. Native Windows compilation and EICAR testing NOT RUN.
+Exit: 0
+=== tests/validate_download_reconciliation.py
+PASS: Downloads scope discovery, independent scheduling, privileged metadata protocol, bounded retry and activity telemetry source checks. Native behavior NOT tested.
+Exit: 0
+=== tests/validate_endpoint_summary.py
+PASS: actual renderer preserves severity, moves raw messages, filters unrelated/resolved alerts, retains open state and clears summary when healthy
+Exit: 0
+=== tests/validate_scan_scheduling.py
+PASS: source wiring, queue dedup and scope guards, canary priority, scheduled scan fairness, coverage gap preservation, queue metrics, scheduling reference fixtures. Windows runtime not executed.
+Exit: 0
+=== tests/validate_endpoint_scope.py
+PASS: portable SQLite scope retirement, idempotency, boundary/exclusion model, preserved threats and historical incidents; native self-test added (not run).
+Exit: 0
+=== tests/validate_usn_journal.py
+PASS: USN source, privilege separation, service lifecycle, dashboard, parser guard wiring, transactional rollback, durable checkpoint/queue across reopen, deduplication and acknowledgement SQL.
+NOT RUN: Windows C# compilation, native IOCTLs, SCM, named pipe permissions, parser executable fixtures and end-to-end throughput.
+Exit: 0
+=== tests/validate_usn_transport.py
+PASS: transport lifecycle source checks, timeout wiring, native regression fixture wiring, active scope UI, actual JS path-boundary/canary selection test.
+NOT RUN: Windows named-pipe test, service integration, native NTFS I/O.
+Exit: 0
+=== tests/validate_endpoint_layout_updater.py
+PASS: actual renderHealth places 8 summary and 6 scan statistic cards above stable activity controls; evidence below; repeat/disabled refresh
+Traceback (most recent call last):
+  File "/mnt/data/v31/tests/validate_endpoint_layout_updater.py", line 57, in <module>
+    assert '15px/1.3' in css and 'font-size:16px;min-height:44px' in css
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+Exit: 1
+JS syntax exit: 0
