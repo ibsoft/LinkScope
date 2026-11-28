@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "vendored": [
+    {
+      "file": "src/pdf-lib.min.js",
+      "package": "pdf-lib",
+      "ecosystem": "npm",
+      "version": "1.17.1",
+      "sha256": "0f63f526b3f78f6c940e7e32f3a98c0940aacb02b43cea5974568373a084cebc",
+      "versionEvidence": "embedded license banner",
+      "provenance": "upstream artifact equivalence has not been independently verified"
+    }
+  ],
+  "bundledVersionUnverified": [
+    "@pdf-lib/standard-fonts",
+    "@pdf-lib/upng",
+    "pako",
+    "tslib"
+  ],
+  "platformAndExternal": [
+    "Windows and .NET Framework 4.8 (including winsqlite3.dll and Schannel)",
+    "Installed ClamAV engine and FreshClam (not vendored)",
+    "Windows PowerShell and system utilities",
+    "Browser/PWA runtime",
+    "Cisco Talos public verification key and separately approved third-party signature feeds"
+  ]
+}

@@ -47,7 +47,7 @@ async function request(url,data){
     if(controller)options.signal=controller.signal;
     const timeout=controller?setTimeout(()=>controller.abort(),url==='/ui/endpoint-external-probe'?25000:url==='/ui/endpoint-audit-probe'||['/ui/endpoint-alert-read','/ui/endpoint-alert-retry'].includes(url)?20000:12000):null;
     if(data!==undefined){
-        options.method='POST';options.headers={'Content-Type':'application/json','X-CSRF-Token':csrf};options.body=JSON.stringify(data);
+        options.method='POST';options.headers={'Content-Type':'application/json','X-CSRF-Token':csrf,'X-Request-Nonce':Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('')};options.body=JSON.stringify(data);
     }
     let response,result;try{response=await fetch(url,options);try{result=await response.json();}catch(e){if(response.ok)throw e;result={error:'Request failed (HTTP '+response.status+').'};}}finally{if(timeout)clearTimeout(timeout);}
     if(!response.ok){

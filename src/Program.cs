@@ -19,12 +19,16 @@ namespace LinkScope {
         AlertDelivery outputs;
         AppJournal journal;
         internal void Start() {
-            System.Net.ServicePointManager.SecurityProtocol=System.Net.SecurityProtocolType.SystemDefault;
+            // .NET Framework 4.8 service: require TLS 1.2 for managed HTTPS clients.
+            System.Net.ServicePointManager.SecurityProtocol=System.Net.SecurityProtocolType.Tls12;
+            System.Net.ServicePointManager.CheckCertificateRevocationList=true;
             var c=Config.Load();
+            ProductionTransportPolicy.Initialize(c);
             instance=new FileStream(Path.Combine(Config.Data,"collector.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
             try {
                 journal=new AppJournal(AppJournal.Filename,c.Logging,true,c.Siem,c.DatabaseMaintenance);journal.Start();AppJournal.Current=journal;
                 AppJournal.Event(LogLevel.Info,"Service","start","Starting monitor.");
+                AppJournal.Event(LogLevel.Info,"Security","transport-policy",ProductionTransportPolicy.Active?"Production TLS/egress policy enforced.":"Compatibility transport policy; local HTTP and explicitly configured legacy outputs may be plaintext.");
                 AppJournal.Event(LogLevel.Debug,"Settings","load","Configuration loaded.");
                 var alerts=new Alerts();
                 outputs=new AlertDelivery(alerts,Config.Db,c.Delivery);
@@ -453,6 +457,7 @@ namespace LinkScope {
                         Console.WriteLine("Admin MFA disabled. Restart LinkScope and enroll again.");break;
                     case "--prepare-certificate": PrepareCertificate(); break;
                     case "--check-config": Config.Load(); Console.WriteLine("Configuration is valid."); break;
+                    case "--check-production-policy": RequireAdmin(); ProductionTransportPolicy.Initialize(Config.Load()); Console.WriteLine(ProductionTransportPolicy.Active?"Production transport policy configuration is valid. Live certificates and egress must still be tested.":"Production transport policy is not configured."); return ProductionTransportPolicy.Active?0:3;
                     case "--restart-installed": RestartInstalledService();break;
                     case "--signature-update-installed": return UpdateInstalledSignatures();
                     case "--clam-peer-access-installed": return RefreshInstalledClamPeerAccess();
@@ -469,7 +474,7 @@ namespace LinkScope {
                         }
                         break;
                     default:
-                        Console.WriteLine("LinkScope.exe --install | --upgrade | --upgrade-pwa | --desktop-app | --register-pwa | --uninstall | --init-config | --check-config | --set-admin | --reset-admin-mfa | --prepare-certificate | --console");
+                        Console.WriteLine("LinkScope.exe --install | --upgrade | --upgrade-pwa | --desktop-app | --register-pwa | --uninstall | --init-config | --check-config | --check-production-policy | --set-admin | --reset-admin-mfa | --prepare-certificate | --console");
                         return verb=="--help" || args.Length==0 ? 0 : 2;
                 }
                 MaintenanceEvents.Command(verb,true);return 0;

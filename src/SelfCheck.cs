@@ -342,6 +342,24 @@ namespace LinkScope {
             Check(rejected,"remote cleartext rejection");c.BindAddress="127.0.0.1";
             var req=Request.Read(new MemoryStream(Encoding.ASCII.GetBytes("GET /api/v1/system HTTP/1.1\r\nHost: localhost:9876\r\n\r\n")));
             Check(req.Path=="/api/v1/system"&&req.Method=="GET","HTTP parsing");
+            var rate=new RequestRateGate();for(int i=0;i<100;i++)Check(rate.AllowAt("peer",0),"request burst allowance");
+            Check(!rate.AllowAt("peer",0)&&rate.AllowAt("peer",1)&&rate.AllowAt("other",1),"rate limit recovery and peer isolation");
+            var nonceSession=new Session();string nonce=new string('a',32);nonceSession.ConsumeMutation(nonce);
+            bool replay=false;try{nonceSession.ConsumeMutation(nonce);}catch(HttpError ex){replay=ex.Status==409;}
+            Check(replay,"duplicate mutation rejected");
+            bool invalidNonce=false;try{nonceSession.ConsumeMutation(null);}catch(HttpError ex){invalidNonce=ex.Status==400;}
+            Check(invalidNonce,"missing mutation nonce rejected");
+            foreach(string address in new[]{"169.254.169.254","::ffff:169.254.169.254","fd00:ec2::254","fe80::1","224.0.0.1","0.0.0.0","168.63.129.16","100.100.100.200"})
+                Check(!OutboundGuard.AllowedAddress(System.Net.IPAddress.Parse(address)),"special-use outbound destination blocked");
+            Check(OutboundGuard.AllowedAddress(System.Net.IPAddress.Parse("192.168.10.1")),"private approved integration remains possible");
+            bool blockedLoopback=false;try{OutboundGuard.ValidateAddresses("unexpected.example",new[]{System.Net.IPAddress.Loopback});}catch(InvalidDataException){blockedLoopback=true;}
+            Check(blockedLoopback,"unexpected DNS loopback blocked");
+            var strictPolicy=new ProductionTransportPolicy{AllowedDestinations=new[]{"api.example.com:443","192.168.10.1:6514","[::1]:443"}};
+            strictPolicy.Validate();strictPolicy.Require("api.example.com",443,true);strictPolicy.Require("::1",443,true);
+            bool unlisted=false;try{strictPolicy.Require("api.example.com",444,true);}catch(InvalidDataException){unlisted=true;}
+            bool unencrypted=false;try{strictPolicy.Require("api.example.com",443,false);}catch(InvalidDataException){unencrypted=true;}
+            bool insecureListener=false;try{strictPolicy.ValidateConfig(c);}catch(InvalidDataException){insecureListener=true;}
+            Check(unlisted&&unencrypted&&insecureListener,"production policy rejects unlisted or unencrypted transport");
             var ata=new byte[512];var limits=new byte[512];ata[2]=limits[2]=177;ata[5]=ata[6]=93;ata[7]=156;
             var attr=AsMap(SmartDisk.Attributes(ata,limits,true).Single());
             Check((string)attr["name"]=="Wear Leveling Count"&&(string)attr["rawHex"]=="00000000-009C"&&(string)attr["state"]=="OK","ATA attribute decoding");

@@ -3,7 +3,7 @@
 const $=id=>document.getElementById(id), el=(tag,text)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;return n;};
 let session,profile,users=[];
 function toast(level,message){$('user-notice').textContent=message;window.LinkScopeToast?.message(level,'Accounts',message);}
-async function api(path,body){const opts={credentials:'same-origin',cache:'no-store',redirect:'error'};if(body!==undefined){opts.method='POST';opts.headers={'Content-Type':'application/json','X-CSRF-Token':session.csrf};opts.body=JSON.stringify(body);}const res=await fetch(path,opts);const data=await res.json();if(res.status===401){location.assign('/login');throw Error('Sign in again.');}if(!res.ok)throw Error(data.error||'Request failed.');return data;}
+async function api(path,body){const opts={credentials:'same-origin',cache:'no-store',redirect:'error'};if(body!==undefined){opts.method='POST';opts.headers={'Content-Type':'application/json','X-CSRF-Token':session.csrf,'X-Request-Nonce':Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('')};opts.body=JSON.stringify(body);}const res=await fetch(path,opts);const data=await res.json();if(res.status===401){location.assign('/login');throw Error('Sign in again.');}if(!res.ok)throw Error(data.error||'Request failed.');return data;}
 function badge(text,kind){const b=el('span',text);b.className='health-badge '+kind;return b;}
 function local(s){return s&&Number.isFinite(Date.parse(s))?new Date(s).toLocaleString():'—';}
 function button(text,fn){const b=el('button',text);b.type='button';b.className='secondary';b.addEventListener('click',fn);return b;}

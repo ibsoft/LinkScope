@@ -81,7 +81,8 @@ namespace LinkScope {
             }else{
                 bool seq=kind=="Seq";var receiver=seq?cfg.Seq:cfg.Elastic;
                 string url=receiver.BaseUrl+(seq?"/ingest/clef":"/"+receiver.Index+"/_bulk");
-                var req=(HttpWebRequest)WebRequest.Create(url);
+                var destination=new Uri(url);bool strict=OutboundGuard.ValidateHttp(destination);
+                var req=(HttpWebRequest)WebRequest.Create(destination);if(strict)req.Proxy=null;req.UseDefaultCredentials=false;req.PreAuthenticate=false;
                 req.Method="POST";req.AllowAutoRedirect=false;req.Timeout=12000;req.ReadWriteTimeout=12000;
                 req.ContentType=seq?"application/vnd.serilog.clef":"application/x-ndjson";
                 var key=receiver.Key();

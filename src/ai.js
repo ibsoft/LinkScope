@@ -23,7 +23,7 @@
     }
     async function call(path,body){
         const opt={cache:'no-store',credentials:'same-origin'};
-        if(body!==undefined){opt.method='POST';opt.headers={'Content-Type':'application/json','X-CSRF-Token':csrf};opt.body=JSON.stringify(body);}
+        if(body!==undefined){opt.method='POST';opt.headers={'Content-Type':'application/json','X-CSRF-Token':csrf,'X-Request-Nonce':Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('')};opt.body=JSON.stringify(body);}
         const res=await fetch(path,opt);
         if(!res.ok){
             const problem=await res.json().catch(()=>({}));

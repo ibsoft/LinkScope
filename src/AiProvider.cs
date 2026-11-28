@@ -33,7 +33,8 @@ namespace LinkScope {
         internal static string Call(AiSettings cfg,string system,string prompt,CancellationToken cancel){
             string id=cfg.Provider,model=cfg.Profile(id).Model;
             string path=id=="bedrock"?"/model/"+Uri.EscapeDataString(model)+"/converse":id=="cohere"?"/chat":id=="anthropic"?"/messages":id=="gemini"?"/models/"+Uri.EscapeDataString(model)+":generateContent":"/chat/completions";
-            var req=(HttpWebRequest)WebRequest.Create(cfg.Base(id)+path);req.Method="POST";req.ContentType="application/json";req.Accept="application/json";req.AllowAutoRedirect=false;
+            var destination=new Uri(cfg.Base(id)+path);bool strict=OutboundGuard.ValidateHttp(destination);
+            var req=(HttpWebRequest)WebRequest.Create(destination);if(strict)req.Proxy=null;req.Method="POST";req.ContentType="application/json";req.Accept="application/json";req.AllowAutoRedirect=false;
             req.Timeout=90000;req.ReadWriteTimeout=90000;req.UseDefaultCredentials=false;req.PreAuthenticate=false;
             string key=cfg.Key();
             if(id=="anthropic"){req.Headers["x-api-key"]=key;req.Headers["anthropic-version"]="2023-06-01";}

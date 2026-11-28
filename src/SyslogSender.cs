@@ -29,10 +29,11 @@ namespace LinkScope {
             SendTo(settings.SyslogHost,settings.SyslogPort,settings.SyslogTransport,rows,r=>Packet(r,settings.SyslogFacility),false,stop);
         }
         internal static void SendTo(string hostname,int port,string transport,List<object[]> rows,Func<object[],byte[]> packet,bool newline,CancellationToken stop){
+            ProductionTransportPolicy.Check(hostname,port,transport=="tls");
             using(var deadline=CancellationTokenSource.CreateLinkedTokenSource(stop)){
                 deadline.CancelAfter(8000);
                 var ct=deadline.Token;string host=hostname.Trim('[',']');
-                var dns=Dns.GetHostAddressesAsync(host);dns.Wait(ct);
+                var dns=Dns.GetHostAddressesAsync(host);dns.Wait(ct);OutboundGuard.ValidateAddresses(host,dns.Result);
                 Exception last=null;
                 foreach(var ip in dns.Result){
                     if(ip.AddressFamily==AddressFamily.InterNetworkV6&&!Socket.OSSupportsIPv6)continue;
@@ -52,7 +53,7 @@ namespace LinkScope {
                                     Stream stream=raw;
                                     if(transport=="tls"){
                                         tls=new SslStream(raw,true);
-                                        tls.AuthenticateAsClient(host,null,SslProtocols.None,true);stream=tls;
+                                        tls.AuthenticateAsClient(host,null,SslProtocols.Tls12,true);stream=tls;
                                     }
                                     foreach(var row in rows){
                                         ct.ThrowIfCancellationRequested();

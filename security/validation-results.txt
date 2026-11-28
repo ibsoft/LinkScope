@@ -1,0 +1,13 @@
+V85 portable validation (this environment)
+PASS validate_security_v85.py — source assertions, actual Chromium 20 unique browser mutation nonces, JS parsing, dependency byte hash.
+PASS validate_users.py — source and QR checks.
+PASS validate_web_response_v84.py — simulated quarantine UI and source safeguards.
+PASS validate_endpoint_alert_review_v77.py — simulated HTTP responses and responsive controls.
+PASS validate_usn_journal.py — source contracts and SQLite persistence simulation.
+PASS validate_web_protection_v78.py — source and simulated Chromium dashboard.
+PASS validate_reporting_v80.py — actual PDF export with synthetic telemetry and source checks.
+PASS validate_web_audit_setup_v81.py — installer source contracts.
+PASS validate_web_audit_recovery_v82.py — source and SQLite simulations.
+PASS validate_visualstudio_config.py — project configuration source checks.
+PASS validate_quarantine_cidr.py — SQL simulation and source checks.
+NOT RUN Windows native C# compile, native --self-test, TLS/certificate integration, live HTTP API and strict transport tests, native malware/containment, external OSV lookup, penetration test.

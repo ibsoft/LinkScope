@@ -27,6 +27,7 @@ namespace LinkScope {
         static TcpClient Connect(string host,int port,CancellationToken cancel){
             var lookup=Dns.GetHostAddressesAsync(host.Trim('[',']'));
             lookup.Wait(cancel);
+            OutboundGuard.ValidateAddresses(host.Trim('[',']'),lookup.Result);
             Exception last=null;
             foreach(var address in lookup.Result){
                 cancel.ThrowIfCancellationRequested();
@@ -47,6 +48,7 @@ namespace LinkScope {
             throw new IOException(last==null?"No usable IP address for this relay.":last.Message);
         }
         string Submit(AlertMail message,CancellationToken cancel){
+            ProductionTransportPolicy.Check(options.SmtpHost,options.SmtpPort,options.Encryption!="plain");
             var clock=Stopwatch.StartNew();
             using(var deadline=CancellationTokenSource.CreateLinkedTokenSource(cancel)){
                 deadline.CancelAfter(options.TimeoutSeconds*1000);
@@ -86,7 +88,7 @@ namespace LinkScope {
             phase="TLS handshake";
             if(reader!=null){reader.Dispose();reader=null;}
             var tls=new SslStream(stream,false);stream=tls;
-            tls.AuthenticateAsClient(options.SmtpHost.Trim('[',']'),null,SslProtocols.None,true);
+            tls.AuthenticateAsClient(options.SmtpHost.Trim('[',']'),null,SslProtocols.Tls12,true);
             transport=tls.SslProtocol.ToString();SetReader();
         }
         void Write(string text){byte[] bytes=Encoding.ASCII.GetBytes(text+"\r\n");stream.Write(bytes,0,bytes.Length);stream.Flush();}

@@ -39,7 +39,7 @@
     function feedback(e){if(onHistory)id('history-status').textContent=e.message;show('feedback','error','Action failed',e.message);}
     async function json(path,body){
         const options={credentials:'same-origin',cache:'no-store'};
-        if(body!==undefined){options.method='POST';options.headers={'Content-Type':'application/json','X-CSRF-Token':csrf};options.body=JSON.stringify(body);}
+        if(body!==undefined){options.method='POST';options.headers={'Content-Type':'application/json','X-CSRF-Token':csrf,'X-Request-Nonce':Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('')};options.body=JSON.stringify(body);}
         const res=await fetch(path,options);if(!res.ok){if(res.status===401)throw Error('Sign in to continue.');const problem=await res.json().catch(()=>({}));throw Error(problem.error||'Request failed (HTTP '+res.status+').');}return res.json();
     }
     function brand(label){

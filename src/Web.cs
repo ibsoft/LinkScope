@@ -59,6 +59,8 @@ namespace LinkScope {
         readonly TcpListener listener;
         readonly Dictionary<string,Reply> assets=new Dictionary<string,Reply>();
         readonly HashSet<TcpClient> active=new HashSet<TcpClient>();
+        readonly Dictionary<string,int> activePeers=new Dictionary<string,int>(StringComparer.Ordinal);
+        readonly RequestRateGate requestRate=new RequestRateGate();
         readonly SemaphoreSlim passwordWorkers=new SemaphoreSlim(2), historyWorkers=new SemaphoreSlim(4);
         X509Certificate2 cert;
         Thread thread;volatile bool stopping;
@@ -121,9 +123,12 @@ namespace LinkScope {
             monitor.Start();telemetryExport.Start();databaseMaintenance.Start();thread=new Thread(Accept){IsBackground=true,Name="LinkScope web"};thread.Start();}
         void Accept(){
             while(!stopping)try{var client=listener.AcceptTcpClient();
-                lock(active){if(stopping||active.Count>=24){client.Close();continue;}active.Add(client);}
+                string peer=((IPEndPoint)client.Client.RemoteEndPoint).Address.ToString();
+                lock(active){int n;activePeers.TryGetValue(peer,out n);
+                    if(stopping||active.Count>=24||n>=12){client.Close();continue;}
+                    active.Add(client);activePeers[peer]=n+1;}
                 ThreadPool.QueueUserWorkItem(delegate{try{Serve(client);}catch(IOException){}catch(SocketException){}catch(AuthenticationException){}catch(ObjectDisposedException){}catch(Exception ex){Program.Log(ex);}
-                    finally{client.Close();lock(active){active.Remove(client);Monitor.PulseAll(active);}}});
+                    finally{client.Close();lock(active){active.Remove(client);int n=activePeers[peer]-1;if(n==0)activePeers.Remove(peer);else activePeers[peer]=n;Monitor.PulseAll(active);}}});
             }catch(SocketException){if(!stopping)Thread.Sleep(50);}catch(ObjectDisposedException){break;}
         }
         void Serve(TcpClient client){
@@ -141,6 +146,7 @@ namespace LinkScope {
                             throw new HttpError(403,"Access denied by IP firewall.");
                         }
                         if(!HostAllowed(req.Header("Host")))throw new HttpError(400,"Unexpected host.");
+                        if(!requestRate.Allow(ip))throw new HttpError(429,"Request rate exceeded. Try again later.");
                         if(req.Method=="POST"||req.Path=="/audit"||req.Path=="/ui/audit"||req.Path=="/users"||req.Path=="/ui/users"){var actor=access.Find(req.Cookie(CookieName()));req.AuditActor=actor==null?"Unauthenticated":actor.Username;}
                         reply=Route(req,ip);
                     }catch(HttpError ex){reply=Reply.Error(ex.Status,ex.Message);}
@@ -207,6 +213,7 @@ namespace LinkScope {
                     if(mfaRequired){r.AuditResult="MFA required";return Reply.Json(new {mfaRequired=true});}
                     if(changeRequired){r.AuditResult="Password change required";return Reply.Json(new {changeRequired=true});}
                     if(value==null)throw new HttpError(401,"Sign-in failed. Check username, password and authenticator code if enabled. Previously used codes are rejected.");
+                    access.Logout(r.Cookie(CookieName())); // Invalidate the previous browser session only after successful login.
                     r.AuditActor=loginName;var response=Reply.Json(new {ok=true});response.Cookie=Cookie(value,false);return response;
                 }finally{passwordWorkers.Release();}
             }
@@ -220,6 +227,7 @@ namespace LinkScope {
                 if(post&&(session==null||!Access.Equal(session.Csrf,r.Header("X-CSRF-Token"))))Deny();
                 if(session==null){if(post)Deny();if(assets.ContainsKey(r.Path))return SignIn();throw new HttpError(401,"Sign in required.");}
                 if(!session.IsAdmin&&!ViewerAllowed(r.Path,post))Deny();
+                if(post&&r.Path!="/auth/logout")session.ConsumeMutation(r.Header("X-Request-Nonce"));
                 if(!post&&(r.Path=="/users"||r.Path=="/account"))return PageAsset(r.Path,session);
                 if(r.Path=="/ui/users"){
                     if(!session.IsAdmin)Deny();
@@ -403,7 +411,7 @@ namespace LinkScope {
                     next.Logging=Decode<LogSettingsInput>(r).Logging??settings.Logging;
                     next.Siem=SiemSettings.Merge(settings.Siem,Decode<SiemEdit>(r));
                     if(next.Endpoint!=null)next.Endpoint.ProfileDefaultsApplied=settings.Endpoint.ProfileDefaultsApplied;
-                    Config.Validate(next);
+                    Config.Validate(next);ProductionTransportPolicy.ValidateConfiguration(next);
                     if(!ClientFirewall.Allows(ip,next.AllowedClientIPs))throw new HttpError(400,"The firewall allowlist must retain your current client IP. Edit it from an allowed local connection or the configuration file.");
                     if(next.UseHttps)using(Certificate(next)){}
                     bool endpointChanged=Config.Json().Serialize(settings.Endpoint)!=Config.Json().Serialize(next.Endpoint);

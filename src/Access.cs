@@ -14,7 +14,17 @@ namespace LinkScope {
     }
     internal sealed class Session {
         internal string Csrf, Revision, Username, Role; internal long Created, Seen; internal bool MfaEnabled;
+        readonly HashSet<string> mutations=new HashSet<string>(StringComparer.Ordinal);
         internal bool IsAdmin {get{return Role=="Admin";}}
+        internal void ConsumeMutation(string nonce){
+            if(nonce==null||nonce.Length!=32||nonce.Any(c=>!(c>='0'&&c<='9'||c>='a'&&c<='f')))
+                throw new HttpError(400,"Missing or invalid request nonce. Reload LinkScope and retry.");
+            lock(mutations){
+                if(mutations.Contains(nonce))throw new HttpError(409,"Duplicate request refused. Review the current state before retrying.");
+                if(mutations.Count>=4096)throw new HttpError(409,"Session request limit reached. Sign out and sign in again.");
+                mutations.Add(nonce);
+            }
+        }
     }
     internal sealed class Access {
         internal readonly UserAccounts Users;

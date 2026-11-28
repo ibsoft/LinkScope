@@ -1,0 +1,7 @@
+{
+  "AllowedDestinations": [
+    "api.openai.com:443",
+    "smtp.example.com:587",
+    "siem.example.com:6514"
+  ]
+}
