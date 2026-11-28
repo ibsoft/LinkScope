@@ -21,8 +21,8 @@ assert 'existing.Priority|=priority' in enqueue and 'existing.Last=now' in enque
 assert 'MaxQueue-PriorityReserve' in enqueue and 'ReferenceEquals(watchPolicy,c)' in enqueue
 assert 'watchQueue.Remove(best.Path)' in s and 'watchPolicy=null;watchQueue.Clear()' in s
 assert 'RequestReconciliation(c,false)' in s and '()=>RequestReconciliation(c,true)' in s
-assert 'if(running){if(journalGap)journalGapDuringScan=true;return;}' in s
-assert 'lastScan+c.IntervalSeconds' in s
+assert 'if(journalGap){if(running){journalGapDuringScan=true;rescan=true;}else nextScan=0;return;}' in s
+assert 'lastScan+Math.Min(c.IntervalSeconds,300)' in s
 assert 'if(!rescan&&!journalGapDuringScan)' in s
 assert u.index('gap(v.Root,detail);reconcile();')<u.index('db.Exec("BEGIN IMMEDIATE")')
 tick=s.split('// Canaries have a dedicated lane',1)[1]
@@ -31,14 +31,15 @@ assert 'ScanWatcher(db,c,stop,authorized,1)' in tick
 assert 'if(CheckFile(db,c,path,stop,authorized,false))usn.Ack(db,path)' in tick
 assert 'if(finished&&!HasWatcher(work.Path))usn.Ack(db,work.Path)' in s
 assert 'watcherQueueDepth=watchCounts[0]' in s and 'USN pending:' in js and 'Watcher pending:' in js
-assert 'priorityQueueDepth=watchCounts[1]' in s and 'Priority arrivals:' in js
+assert 'priorityQueueDepth=watchCounts[1]' in s and 'Priority entries:' in js
 # Reference-model fixtures verify expected scheduling invariants, not C# runtime.
 def schedule(running, gap, last, now, interval, next_scan, flag=False):
-    if running: return next_scan, flag or gap
+    if gap: return (next_scan, True) if running else (0, flag)
+    if running: return next_scan, flag
     return min(next_scan, now if last==0 else max(now,last+interval)), flag
 assert schedule(True,False,100,200,300,0)==(0,False)
 assert schedule(True,True,100,200,300,0)==(0,True)
-assert schedule(False,True,100,200,300,400)==(400,False)
-assert schedule(False,True,100,450,300,900)==(450,False)
+assert schedule(False,True,100,200,300,400)==(0,False)
+assert schedule(False,True,100,450,300,900)==(0,False)
 assert schedule(False,False,0,100,300,900)==(100,False)
 print('PASS: source wiring, queue dedup and scope guards, canary priority, scheduled scan fairness, coverage gap preservation, queue metrics, scheduling reference fixtures. Windows runtime not executed.')

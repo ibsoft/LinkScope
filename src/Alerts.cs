@@ -120,6 +120,21 @@ namespace LinkScope {
                 Changed();return EndpointAckState(db);
             }
         }
+        // Only Endpoint Protection history is affected; keep the global monotonic sequence.
+        internal long ResetEndpointHistory(){
+            lock(this)using(var db=Open()){
+                db.Exec("BEGIN IMMEDIATE");long cutoff;
+                try{
+                    cutoff=Head(db);
+                    db.Exec("DELETE FROM alert_mail_queue WHERE alert_id IN (SELECT id FROM alert_events WHERE category='endpoint_protection')");
+                    db.Exec("DELETE FROM alert_search_index WHERE seq IN (SELECT seq FROM alert_events WHERE category='endpoint_protection')");
+                    db.Exec("DELETE FROM alert_events WHERE category='endpoint_protection'");
+                    db.Exec("COMMIT");
+                }catch{db.Exec("ROLLBACK");throw;}
+                foreach(var key in current.Values.Where(a=>a.Category=="endpoint_protection").Select(a=>a.Key).ToArray())current.Remove(key);
+                Changed();return cutoff;
+            }
+        }
         internal void Trim(string[] categories){
             lock(this)foreach(string cat in current.Values.Select(a=>a.Category).Except(categories).ToArray())Update(cat,new List<HealthAlert>());
         }
@@ -234,7 +249,7 @@ namespace LinkScope {
                 status=="unavailable"?"Collection unavailable.":status=="partial"?"Partial collection.":"Collection completed.");
             AppJournal.Event(LogLevel.Debug,"Alerts","evaluate","Evaluated "+cat+" alert rules.");
             if(status=="warming_up")return;
-            if(status=="unavailable"||status=="partial")list.Add(Signal(cat,"coverage","warning",cat+" coverage is "+status,"Check the Windows provider, driver or access permissions."));
+            if(status=="unavailable"||status=="partial")list.Add(Signal(cat,"coverage","warning",cat+" coverage is "+status,cat=="endpoint_protection"?"See Endpoint Protection: scan completion, queue, engine and protected-folder coverage diagnostics.":"Check the Windows provider, driver or access permissions."));
             if(S(value,"truncated")=="True")list.Add(Signal(cat,"limit","info",cat+" inventory limit reached",cat=="endpoint_protection"?"Dashboard snapshot is limited; durable incidents continue through the alert queue.":"The response contains the first 256 records."));
             if(cat=="endpoint_protection"){
                 // The endpoint worker publishes every durable finding transition, including ones
@@ -242,7 +257,7 @@ namespace LinkScope {
                 lock(this){list.AddRange(current.Values.Where(x=>x.Category==cat&&x.Key!=cat+"/coverage"&&x.Key!=cat+"/limit"));
                     // A specific watcher warning already explains partial coverage. Keep the
                     // collection status and specific finding, not a second generic notification.
-                    if(status=="partial"&&(list.Any(x=>x.Title=="Watcher coverage incomplete"&&x.Severity=="warning")||S(value,"watcherCoverageInitializing")=="True"))list.RemoveAll(x=>x.Key==cat+"/coverage");
+                    if((status=="partial"||status=="unavailable")&&(list.Any(x=>x.Severity=="warning"&&new[]{"Watcher coverage incomplete","File scan coverage incomplete","Scan incomplete","Engine unavailable","USN journal unavailable","USN journal coverage gap","Protected path unavailable","Real-time queue overflow","Signature database may be stale"}.Contains(x.Title))||status=="partial"&&S(value,"watcherCoverageInitializing")=="True"))list.RemoveAll(x=>x.Key==cat+"/coverage");
                     Update(cat,list);}return;
             }
             if(cat=="data_integrity"){

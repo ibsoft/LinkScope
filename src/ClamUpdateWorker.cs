@@ -16,6 +16,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Win32;
+using Microsoft.Win32.SafeHandles;
 
 using System.Security.Cryptography;
 namespace LinkScope {
@@ -75,7 +76,7 @@ namespace LinkScope {
         }
         internal static bool ValidSet(IEnumerable<string> feeds){var names=new HashSet<string>(StringComparer.OrdinalIgnoreCase);int n=0;foreach(string feed in feeds){Uri uri;if(++n>100||!TryParse(feed,out uri)||!names.Add(Name(uri)))return false;}return true;}
     }
-    internal static class ClamUpdateWorker {
+    internal static partial class ClamUpdateWorker {
         static readonly string ProgramFiles=Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
     const int ClamPort = 3310;
     const int ClamMissing = 3, ClamUnconfigured = 4, ClamNotReady = 5,
@@ -239,6 +240,11 @@ namespace LinkScope {
 
     // Privileged scanner sends file bytes only to the actual registered standard
     // ClamD service, never to an arbitrary configured listener or client-supplied port.
+    // Unprivileged service-side scanner: verify the connected TCP owner against
+    // SCM before sending any bytes, without requesting process-memory access.
+    internal static void VerifyScanServiceOwner(TcpClient client){
+        uint pid=ClamdPid();if(pid<=4||!OwnsConnection(client,pid)||ClamdPid()!=pid)throw new IOException("ClamD connection is not owned by the running registered clamd service.");
+    }
     internal static void VerifyPrivilegedScanPeer(TcpClient client){
         if(ServiceImage("clamd")==null||!NativeService("clamd",ClamdExe)||!LoopbackOnly())throw new IOException("Standard loopback ClamD service required for privileged scanning.");
         VerifyClamPath(ProgramFiles);VerifyClamPath(ClamRoot);VerifyClamPath(ClamdExe);

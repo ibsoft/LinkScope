@@ -11,6 +11,7 @@ Alerts.cs
 AppJournal.cs
 CanaryTemplates.cs
 ClamUpdateWorker.cs
+ClamScanCacheGeneration.cs
 ClientFirewall.cs
 Collector.cs
 Config.cs
@@ -19,6 +20,7 @@ DeliveryChecks.cs
 DeliverySettings.cs
 DesktopApp.cs
 EndpointProtection.cs
+EndpointDiskBudget.cs
 UsnJournal.cs
 EndpointResponse.cs
 FileIntegrity.cs

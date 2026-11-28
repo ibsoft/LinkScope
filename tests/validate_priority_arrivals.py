@@ -9,7 +9,7 @@ assert 'w.Changed+=(s,e)=>Enqueue(c,e.FullPath)' in s
 assert 'priority=priority||DownloadPriority(path)' in s
 assert 'now-item.Last).TotalMilliseconds<750' in s and 'now-item.First).TotalSeconds<5' in s
 assert 'MaxLockedRetries=3' in s and 'now.AddSeconds(2<<retries)' in s
-assert '(LockedFile(ex)||ex is UnauthorizedAccessException||stage=="ClamAV INSTREAM")&&RetryLocked(c,p,retries)' in s and 'if(retry)return false' in s
+assert '(LockedFile(ex)||ex is UnauthorizedAccessException||stage=="ClamAV INSTREAM")&&RetryLocked(c,p,retries)' in s and 'Activity(db,p,full,"Failed",activityTimer,detail);return false;' in s
 assert 'if(HasWatcher(path))continue;' in s
 assert 'FileShare.Read' in s and '"INSTREAM",file,stop' in s
 assert 'preferRecent=!preferRecent' in u

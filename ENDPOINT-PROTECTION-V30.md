@@ -1,0 +1,19 @@
+# LinkScope Endpoint Protection V30 — release candidate
+
+Based on V29 source and the 27 November 2026 endpoint snapshot. Scope limited to Endpoint Protection. Existing profile enrollment, explicit custom folders, configured exclusions, monitor mode, malware and canary integrity evidence remain unchanged.
+
+## Changes
+* File count alone does not raise ransomware warning. At least three observed entropy increases and the configured file-count threshold must be met. Existing critical threshold remains unchanged. This is a conservative heuristic, not comprehensive ransomware detection; low-entropy or unobserved encryption can evade it. Canary integrity and signature findings remain separate.
+* ClamAV transport failures enter a bounded 15/30/60/120-second retry sequence. After failure, a version query plus benign INSTREAM readiness scan must succeed before resuming the workload. Engine peer verification remains enabled where previously required. Existing 30-second scan deadline is unchanged. Readiness is not a malware detection test.
+* Per-file engine-incomplete notices, including canary notices, are retained as coverage diagnostics; the existing transactional consolidation retires old individual notifications and preserves historical incidents. Specific endpoint warnings supersede the generic provider/driver warning.
+* Native sharing/lock violation codes 32/33 are explicitly distinguished by the local scanner and privileged helper. Deferred file checks are counted separately and retain unresolved coverage. Real-time policies retain/defer work in the existing bounded SQLite queue; no write-sharing change or automatic exclusion is introduced. Existing root/canary access warnings remain specific.
+* The background scan batch is reduced from 16 to 4 entries and its soft scheduling budget from 1500 to 500 ms. A single scan may still exceed this budget. This is not a CPU or RAM hard limit.
+* Existing pending canary watcher work is no longer discarded before a direct check. Existing actual malware and integrity violations remain independent.
+
+## Install and verify
+Extract the complete source to a clean directory, build Release with Rebuild-VisualStudio.cmd Release, and deploy the newly built installer. Upgrade both the main service and privileged helper together. Do not copy just the main executable. Preserve the existing configuration and endpoint databases. Review existing explicit and background-only exclusions and signature size limits. No additional exclusions are seeded in V30.
+
+Windows acceptance tests: confirm correct profile and custom roots, SYSTEM watcher coverage, clean and authorized EICAR test files in both scopes (coordinate with primary AV), locked file held open and subsequently released, repeated ordinary file changes without entropy increases, canary integrity alert, restart during queued work, actual ClamD outage and recovery, oversize file coverage, journal gaps and reconciliation, and CPU/RAM and queue latency during representative workloads. Verify audit policy and SACLs before expecting process correlation. Never disable primary antivirus for routine validation. Test deployment and rollback on a nonproduction host first.
+
+## Limitations
+Native .NET Framework Windows build, service, privileged pipe, ClamD integration, ransomware simulation, and resource benchmarks were not run in this Linux environment. Portable checks are partial; a pre-existing endpoint CSS assertion fails. This is a source release candidate, not a production-certified product. Post-event scanning is not a kernel minifilter and cannot block every file before execution. No guarantee of complete coverage or ransomware detection. Logs do not establish that LinkScope caused the CPU/RAM peaks or why ClamD timed out. Historical warnings and malware evidence are not erased.

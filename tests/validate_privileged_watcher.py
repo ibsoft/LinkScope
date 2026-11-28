@@ -4,7 +4,8 @@ r=Path(__file__).resolve().parents[1]
 u=(r/'src/UsnJournal.cs').read_text(); e=(r/'src/EndpointProtection.cs').read_text(); j=(r/'src/app.js').read_text()
 assert 'WatchPipeName="LinkScope.ScopedWatch.v1"' in u
 assert 'watchOnly?WatchPipeName:ScanPipeName' in u and 'mode==3?WatchPipeName:ScanPipeName' in u
-assert 'if(watchOnly?request[0]!=3:request[0]>2)' in u
+assert 'if(watchOnly?request[0]!=3:(request[0]>4||request[0]==3))' in u
+assert 'if(request[0]==4)' in u and 'Invalid baseline cache request' in u
 assert 'Program.ServiceSid()' in u and 'IsReader(pipe.SafePipeHandle)' in u
 assert 'if(!c.RealTime||!LocalScanPath(path,c)||!c.Paths.Any' in u
 assert 'EndpointProtection.SafePath(path);if((File.GetAttributes(path)&FileAttributes.Directory)==0)' in u

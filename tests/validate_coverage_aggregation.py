@@ -46,7 +46,7 @@ for i in range(1000):
         db.execute(sql(record,"UPDATE findings SET severity='coverage'"),('denied',3,str(i)))
 assert db.execute("SELECT COUNT(*) FROM findings WHERE active=1 AND severity='coverage'").fetchone()==(1001,)
 assert db.execute('SELECT COUNT(*) FROM endpoint_outbox').fetchone()==(5,)
-assert '&&!c.Paths.Contains(path,StringComparer.OrdinalIgnoreCase)&&!c.CanaryPaths.Contains(path,StringComparer.OrdinalIgnoreCase)' in s
+assert 'return change=="Engine scan incomplete"||' in s and '!c.Paths.Contains(path,StringComparer.OrdinalIgnoreCase)&&!c.CanaryPaths.Contains(path,StringComparer.OrdinalIgnoreCase)' in s
 assert 'if(wasCoverage)continue;' in migrate
 assert 'CoverageSummary(db,coverageCount)' in s and 'severity<>\'coverage\' ORDER BY' in s
 assert 'coverageDetails' in (root/'src/app.js').read_text()

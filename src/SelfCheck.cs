@@ -181,11 +181,25 @@ namespace LinkScope {
             CheckSignatureSchedule();CheckEndpointScope(dir);CheckProfileDefaults(dir);
             var settings=new EndpointSettings{Enabled=true,Paths=new[]{dir},ExcludedPatterns=new[]{"*.tmp"}};settings.Validate();
             Check(settings.Mode=="monitor"&&settings.RealTime,"endpoint safe defaults");
+            Check(settings.BackgroundReadMiB==10&&settings.MetadataFastCache&&settings.BackgroundPauseOnBusyDisk&&!settings.BackgroundPauseOnBattery,"endpoint background resource defaults");
+            using(var cancel=new System.Threading.ManualResetEvent(false))using(var paced=new MemoryStream(new byte[]{1,2,3,4,5}))using(var direct=new MemoryStream(new byte[]{1,2,3,4,5})){Check(EndpointProtection.FileHash(paced,new EndpointReadBudget(10,cancel))==EndpointProtection.FileHash(direct),"paced hashing preserves SHA-256");}
+
             Check(EndpointProtection.Excluded(settings,Path.Combine(dir,"TRACE.TMP")),"case-insensitive endpoint exclusion");
             Check(!EndpointProtection.Excluded(settings,Path.Combine(dir,"trace.txt")),"endpoint exclusion boundary");
             var flat=new byte[4096];var uniform=Enumerable.Range(0,4096).Select(n=>(byte)(n%256)).ToArray();
+            Check(!EndpointProtection.RansomwareCorroborated(54,0,50)&&!EndpointProtection.RansomwareCorroborated(50,2,50)&&EndpointProtection.RansomwareCorroborated(50,3,50),"file activity alone is not ransomware evidence");
+            Check(EndpointProtection.EntropyTransition(65536,7.99,4.0)&&!EndpointProtection.EntropyTransition(65536,7.99,7.9)&&!EndpointProtection.EntropyTransition(100,7.99,0),"entropy transition requires established lower entropy and substantial sample");
+            var observedAt=DateTime.UtcNow;var entropyEvidence=new Dictionary<string,DateTime>(StringComparer.OrdinalIgnoreCase);
+            for(int i=0;i<5;i++)entropyEvidence[Path.Combine(dir,"test-"+i+".txt")]=observedAt.AddSeconds(-i*50);
+            entropyEvidence[Path.Combine(dir,"expired.txt")]=observedAt.AddSeconds(-301);
+            entropyEvidence[Path.Combine(dir,"future.txt")]=observedAt.AddSeconds(1);
+            entropyEvidence[Path.Combine(dir,"other","separate.txt")]=observedAt;
+            Check(EndpointProtection.ExtendedEntropyPeak(entropyEvidence,observedAt).Value==5,"extended entropy evidence is distinct, directory scoped, and expires");
+            Check(EndpointProtection.ExtendedEntropyPeak(entropyEvidence,observedAt.AddSeconds(302)).Value==0,"extended evidence ages out");
+            Check(EndpointProtection.EngineBackoffSeconds(1)==15&&EndpointProtection.EngineBackoffSeconds(4)==120&&EndpointProtection.EngineBackoffSeconds(99)==120,"engine retry bounded backoff");
             Check(EndpointProtection.Entropy(flat,flat.Length)==0&&Math.Abs(EndpointProtection.Entropy(uniform,uniform.Length)-8)<0.00001,"entropy known vectors");
             Check(EndpointProtection.Malware("stream: Test.Signature FOUND")&&!EndpointProtection.Malware("stream: Heuristics.Limits.Exceeded FOUND")&&!EndpointProtection.Malware("stream: OK"),"clamd classification");
+            Check(EndpointProtection.CleanVerdict("stream: OK")&&!EndpointProtection.CleanVerdict("other: OK")&&!EndpointProtection.Malware("other: Test FOUND")&&!EndpointProtection.Malware(null),"strict INSTREAM verdict classification");
             bool refused=false;settings.Mode="protect";try{settings.Validate();}catch(InvalidDataException){refused=true;}Check(refused,"automatic actions require explicit response scope and verified engine pin");
             var cfg=new Config();cfg.Endpoint.WriteEvents=false;var dbPath=Path.Combine(dir,"ep-alerts.sqlite");var legacy=Path.Combine(dir,"ep-no-legacy.json");var alerts=new Alerts(dbPath,legacy);long now=History.Now();
             var transitions=new List<object[]>{new object[]{1L,now,"test","test.txt","Test detection","critical","Test only","hash",1L},new object[]{2L,now,"test","test.txt","Test detection","critical","Test only","hash",0L}};
@@ -194,6 +208,7 @@ namespace LinkScope {
             alerts.EndpointTransitions("test-stream",new List<object[]>{new object[]{3L,now,"old-warning","ClamAV","Engine unavailable","warning","Legacy warning","",1L},new object[]{4L,now,"still-active","test.txt","Malware detected","critical","Test only","hash",1L}},cfg);
             alerts.Sample("endpoint_protection",new {status="partial",items=new object[0]},cfg);
             alerts.ReconcileEndpointFindings(new HashSet<string>{"still-active"});
+            alerts.Sample("endpoint_protection",new {status="partial",items=new object[0]},cfg);
             var remaining=alerts.List(new[]{"endpoint_protection"},true).Select(AsMap).ToArray();
             Check(remaining.Length==2&&remaining.Any(a=>Equals(a["title"],"Malware detected"))&&remaining.Any(a=>Equals(a["title"],"endpoint_protection coverage is partial")),"reconciliation keeps actual findings and coverage");
             using(var db=new Sqlite(dbPath,true))Check(Convert.ToInt64(db.Rows("SELECT COUNT(*) FROM alert_events WHERE alert_key='endpoint_protection/old-warning' AND resolved=1 AND is_read=0")[0][0])==1,"orphan alert resolved, unread history preserved");

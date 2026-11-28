@@ -70,7 +70,8 @@ namespace LinkScope {
   }
   internal sealed class ScanBatch {
    public string Kind {get;set;} public string Detail {get;set;} public string Hash {get;set;}
-   public double Entropy {get;set;} public int Sample {get;set;} public string Verdict {get;set;}
+   public double Entropy {get;set;} public long Size {get;set;} public int Sample {get;set;} public string Verdict {get;set;}
+   public bool Cached {get;set;} public string Generation {get;set;} public bool MetadataCached {get;set;} public string Stamp {get;set;}
    public string[] Children {get;set;}
    public DownloadEntry[] Downloads {get;set;}
    public bool WatchStarted {get;set;} public bool WatchGap {get;set;} public string[] WatchArrivals {get;set;}
@@ -134,14 +135,56 @@ namespace LinkScope {
    var drive=new DriveInfo(Path.GetPathRoot(path));
    return drive.DriveType==DriveType.Fixed&&drive.IsReady&&policy.Enabled&&policy.Paths.Any(p=>EndpointProtection.Under(path,p))&&!EndpointProtection.Excluded(policy,path);
   }
-  static void VerifyScanPath(SafeFileHandle h,string path){
+  internal static void VerifyScanPath(SafeFileHandle h,string path){
    var buffer=new StringBuilder(4096);uint n=GetFinalPathNameByHandle(h,buffer,(uint)buffer.Capacity,0);
    if(n==0||n>=buffer.Capacity||!string.Equals(buffer.ToString().TrimEnd('\\'),(@"\\?\"+path).TrimEnd('\\'),StringComparison.OrdinalIgnoreCase))throw new IOException("Scan handle final path mismatch");
   }
-  ScanBatch ReadScan(string path,bool enumerate){
+  [StructLayout(LayoutKind.Sequential)] struct StampFileInfo {
+   internal uint Attributes,CreationLow,CreationHigh,AccessLow,AccessHigh,WriteLow,WriteHigh,Volume,SizeHigh,SizeLow,Links,IndexHigh,IndexLow;
+  }
+  [StructLayout(LayoutKind.Sequential)] struct StampBasicInfo {internal long Creation,Access,Write,Change;internal uint Attributes;}
+  [DllImport("kernel32.dll",SetLastError=true)] static extern bool GetFileInformationByHandle(SafeFileHandle h,out StampFileInfo info);
+  [DllImport("kernel32.dll",SetLastError=true)] static extern bool GetFileInformationByHandleEx(SafeFileHandle h,int kind,out StampBasicInfo info,uint size);
+  [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool GetVolumeNameForVolumeMountPoint(string root,StringBuilder name,uint size);
+  static bool StampJournal(SafeFileHandle volume,out long id,out long first,out long tail){
+   id=first=tail=0;var data=new byte[128];int n;
+   if(!DeviceIoControl(volume,QueryJournal,null,0,data,data.Length,out n,IntPtr.Zero)||n<56)return false;
+   id=BitConverter.ToInt64(data,0);first=Math.Max(BitConverter.ToInt64(data,8),BitConverter.ToInt64(data,24));tail=BitConverter.ToInt64(data,16);
+   return id!=0&&first>=0&&tail>=first;
+  }
+  // Never use timestamps alone. Bind the same verified read handle to a local
+  // NTFS volume GUID, file reference, current journal ID and per-file USN.
+  // A journal reset, inaccessible metadata, unsupported version, aged-out
+  // record, hard link or offline/reparse file disables this fast path.
+  static SafeFileHandle OpenStampVolume(string root){
+   string path=@"\\.\"+root.Substring(0,2);var handle=CreateFile(path,0,7,IntPtr.Zero,3,0,IntPtr.Zero);
+   long id,first,tail;if(!handle.IsInvalid&&StampJournal(handle,out id,out first,out tail))return handle;
+   handle.Dispose();return CreateFile(path,0x80000000,7,IntPtr.Zero,3,0,IntPtr.Zero);
+  }
+  internal static string FileChangeStamp(SafeFileHandle file,string path){
+   try{
+    string root=Path.GetPathRoot(path);if(root==null||root.Length!=3||root[1]!=':')return null;
+    var drive=new DriveInfo(root);if(drive.DriveType!=DriveType.Fixed||!drive.IsReady||!string.Equals(drive.DriveFormat,"NTFS",StringComparison.OrdinalIgnoreCase))return null;
+    var guid=new StringBuilder(128);if(!GetVolumeNameForVolumeMountPoint(root,guid,(uint)guid.Capacity))return null;
+    var final=new StringBuilder(4096);uint finalLength=GetFinalPathNameByHandle(file,final,(uint)final.Capacity,1);if(finalLength==0||finalLength>=final.Capacity||!final.ToString().StartsWith(guid.ToString(),StringComparison.OrdinalIgnoreCase))return null;
+    StampFileInfo info;StampBasicInfo basic;
+    if(!GetFileInformationByHandle(file,out info)||info.Links!=1||(info.Attributes&0x00441410)!=0||!GetFileInformationByHandleEx(file,0,out basic,(uint)Marshal.SizeOf(typeof(StampBasicInfo))))return null;
+    using(var volume=OpenStampVolume(root)){
+     long id,first,tail;if(volume.IsInvalid||!StampJournal(volume,out id,out first,out tail))return null;
+     // FSCTL_READ_FILE_USN_DATA, explicitly request the NTFS V2 layout.
+     var input=new byte[]{2,0,2,0};var record=new byte[1024];int n;
+     if(!DeviceIoControl(file,0x000900eb,input,input.Length,record,record.Length,out n,IntPtr.Zero)||n<60||BitConverter.ToUInt16(record,4)!=2||BitConverter.ToUInt16(record,6)!=0||BitConverter.ToUInt32(record,0)>n||BitConverter.ToUInt32(record,0)<60)return null;
+     ulong reference=((ulong)info.IndexHigh<<32)|info.IndexLow;long usn=BitConverter.ToInt64(record,24);
+     if(reference==0||BitConverter.ToUInt64(record,8)!=reference||usn<first||usn>=tail)return null;
+     long afterId,afterFirst,afterTail;if(!StampJournal(volume,out afterId,out afterFirst,out afterTail)||afterId!=id||usn<afterFirst||usn>=afterTail)return null;
+     return EndpointProtection.Hash(Encoding.UTF8.GetBytes(string.Join("|",new[]{"ntfs-v1",guid.ToString(),info.Volume.ToString(),reference.ToString(),id.ToString(),usn.ToString(),info.SizeHigh.ToString(),info.SizeLow.ToString(),basic.Creation.ToString(),basic.Write.ToString(),basic.Change.ToString(),basic.Attributes.ToString()})));
+    }
+   }catch(Exception){return null;}
+  }
+  ScanBatch ReadScan(string path,bool enumerate,bool cacheBaseline=false,string expectedHash=null,string expectedGeneration=null,string expectedStamp=null){
    // Authorize independently of caller inputs, against the saved protection scope.
    var c=Config.Load().Endpoint;if(!LocalScanPath(path,c))throw new UnauthorizedAccessException("Path outside saved local scan scope");
-   EndpointProtection.SafePath(path);var attr=File.GetAttributes(path);
+   try{EndpointProtection.SafePath(path);}catch(EndpointProtection.ScanReparseException ex){return new ScanBatch{Kind="Reparse",Detail=ex.Message};}var attr=File.GetAttributes(path);
    if((attr&FileAttributes.Directory)!=0){
     if(!enumerate)return new ScanBatch{Kind="Directory",Children=new string[0]};
     // Hold the directory open without delete sharing; refuse reparse paths and verify the handle.
@@ -156,11 +199,19 @@ namespace LinkScope {
    using(var handle=CreateFile(path,0x80000000,1,IntPtr.Zero,3,0x00200000,IntPtr.Zero)){
     if(handle.IsInvalid)throw new Win32Exception(Marshal.GetLastWin32Error());VerifyScanPath(handle,path);EndpointResponse.VerifyHandle(handle,path);
     using(var file=new FileStream(handle,FileAccess.Read)){
-     if(file.Length>c.MaxFileMiB*1048576L)return new ScanBatch{Kind="Limited"};
-     byte[] b=new byte[65536];int n=0,read;while(n<b.Length&&(read=file.Read(b,n,b.Length-n))>0)n+=read;
-     double entropy=EndpointProtection.Entropy(b,n);file.Position=0;string hash=EndpointProtection.FileHash(file);file.Position=0;
-     string reply;try{reply=EndpointProtection.Command(3310,"INSTREAM",file,stopping,tcp=>ClamUpdateWorker.VerifyPrivilegedScanPeer(tcp));}catch(OperationCanceledException){throw;}catch(Exception ex){reply="Privileged ClamAV scan error: "+ex.GetType().Name+": "+ex.Message+" [ERROR]";}
-     return new ScanBatch{Kind="File",Hash=hash,Entropy=entropy,Sample=n,Verdict=reply};
+     if(file.Length>c.MaxFileMiB*1048576L)return new ScanBatch{Kind="Limited",Size=file.Length};
+     bool cacheAllowed=cacheBaseline&&!c.CanaryPaths.Contains(path,StringComparer.OrdinalIgnoreCase)&&!EndpointProtection.BackgroundExcluded(c,path);
+     string stamp=cacheAllowed&&c.MetadataFastCache?FileChangeStamp(handle,path):null;
+     string generation=cacheAllowed?ClamUpdateWorker.CacheGeneration(stopping,true):null;
+     if(cacheAllowed&&c.MetadataFastCache&&stamp!=null&&stamp==expectedStamp&&generation!=null&&generation==expectedGeneration&&!string.IsNullOrEmpty(expectedHash)&&stamp==FileChangeStamp(handle,path))return new ScanBatch{Kind="File",Hash=expectedHash,Verdict="Cached clean",Cached=true,Generation=generation,MetadataCached=true,Stamp=stamp};
+     var budget=enumerate&&!c.CanaryPaths.Contains(path,StringComparer.OrdinalIgnoreCase)?new EndpointReadBudget(c.BackgroundReadMiB,stopping):null;
+     byte[] b=new byte[65536];int n=0,read;while(n<b.Length&&(read=budget==null?file.Read(b,n,b.Length-n):budget.Read(file,b,n,b.Length-n))>0)n+=read;
+     double entropy=EndpointProtection.Entropy(b,n);file.Position=0;string hash=EndpointProtection.FileHash(file,budget);file.Position=0;
+     if(cacheAllowed)generation=ClamUpdateWorker.CacheGeneration(stopping,true);
+     if(generation!=null&&generation==expectedGeneration&&hash==expectedHash)return new ScanBatch{Kind="File",Hash=hash,Entropy=entropy,Sample=n,Verdict="Cached clean",Cached=true,Generation=generation};
+     string reply;try{reply=EndpointProtection.Command(3310,"INSTREAM",file,stopping,tcp=>ClamUpdateWorker.VerifyPrivilegedScanPeer(tcp),budget);}catch(OperationCanceledException){throw;}catch(Exception ex){reply="Privileged ClamAV scan error: "+ex.GetType().Name+": "+ex.Message+" [ERROR]";}
+     if(generation!=null&&(!EndpointProtection.CleanVerdict(reply)||generation!=ClamUpdateWorker.CacheGeneration(stopping,true)))generation=null;
+     return new ScanBatch{Kind="File",Hash=hash,Entropy=entropy,Sample=n,Verdict=reply,Generation=generation,Stamp=generation!=null&&stamp!=null&&stamp==FileChangeStamp(handle,path)?stamp:null};
     }
    }
   }
@@ -174,33 +225,44 @@ namespace LinkScope {
      lock(gate){if(stopping.WaitOne(0))return;if(watchOnly)watchActive=pipe;else scanActive=pipe;}
      try{pipe.WaitForConnection();int length=BitConverter.ToInt32(ReadExact(pipe,4,3000),0);if(length<2||length>4097)throw new IOException("Invalid scan request length");
       byte[] request=ReadExact(pipe,length,3000);ScanBatch result;
-      try{if(watchOnly?request[0]!=3:request[0]>2)throw new IOException("Invalid scan request");string path=new UTF8Encoding(false,true).GetString(request,1,length-1);result=request[0]==2?ReadDownloads(path):request[0]==3?ReadWatcher(path):ReadScan(path,request[0]==1);}
+      try{if(watchOnly?request[0]!=3:(request[0]>4||request[0]==3))throw new IOException("Invalid scan request");string path=new UTF8Encoding(false,true).GetString(request,1,length-1);
+       if(request[0]==4){var args=path.Split('\n');if((args.Length!=3&&args.Length!=4)||!CacheToken(args[1])||!CacheToken(args[2])||(args.Length==4&&!CacheToken(args[3])))throw new IOException("Invalid baseline cache request");using(var priority=new EndpointBackgroundPriority(true))result=ReadScan(args[0],true,true,args[1],args[2],args.Length==4?args[3]:null);}
+       else if(request[0]==1){using(var priority=new EndpointBackgroundPriority(true))result=ReadScan(path,true);}
+       else result=request[0]==2?ReadDownloads(path):request[0]==3?ReadWatcher(path):ReadScan(path,false);}
       catch(FileNotFoundException ex){result=new ScanBatch{Kind="Missing",Detail=ex.Message};}catch(DirectoryNotFoundException ex){result=new ScanBatch{Kind="Missing",Detail=ex.Message};}
-      catch(Win32Exception ex){result=new ScanBatch{Kind=ex.NativeErrorCode==2||ex.NativeErrorCode==3?"Missing":"Error",Detail=ex.Message};}
-      catch(Exception ex){result=new ScanBatch{Kind="Error",Detail=ex.GetType().Name+": "+ex.Message};}
+      catch(Win32Exception ex){result=new ScanBatch{Kind=ex.NativeErrorCode==2||ex.NativeErrorCode==3?"Missing":ex.NativeErrorCode==32||ex.NativeErrorCode==33?"Locked":"Error",Detail=ex.Message};}
+      catch(Exception ex){result=new ScanBatch{Kind=EndpointProtection.LockedFile(ex)?"Locked":"Error",Detail=ex.GetType().Name+": "+ex.Message};}
       byte[] response=Encoding.UTF8.GetBytes(Config.Json().Serialize(result));if(response.Length>MaxScanReply)response=Encoding.UTF8.GetBytes(Config.Json().Serialize(new ScanBatch{Kind="Error",Detail="Privileged scan reply exceeds limit"}));
       WriteBounded(pipe,BitConverter.GetBytes(response.Length),5000);WriteBounded(pipe,response,5000);
      }finally{lock(gate){if(watchOnly)watchActive=null;else scanActive=null;}}
     }
    }catch(Exception){if(stopping.WaitOne(500))return;}
   }
+  static bool CacheToken(string value){return value!=null&&(value.Length==0||(value.Length==64&&value.All(Uri.IsHexDigit)));}
+  internal static ScanBatch FetchBaselineScan(string path,string hash,string generation,string stamp){return FetchScanMode(path,4,hash,generation,stamp);}
   internal static ScanBatch FetchScan(string path,bool enumerate){return FetchScanMode(path,(byte)(enumerate?1:0));}
   internal static ScanBatch FetchDownloads(string path){return FetchScanMode(path,2);}
   internal static ScanBatch FetchWatcher(string path){return FetchScanMode(path,3);}
-  static ScanBatch FetchScanMode(string path,byte mode){
+  static ScanBatch FetchScanMode(string path,byte mode,string hash=null,string generation=null,string stamp=null){
    string stage="connect";try{using(var pipe=new NamedPipeClientStream(".",mode==3?WatchPipeName:ScanPipeName,PipeAccessRights.ReadWrite|PipeAccessRights.Synchronize,PipeOptions.Asynchronous,TokenImpersonationLevel.Identification,HandleInheritability.None)){
     pipe.Connect(1500);stage="verify LinkScopeUsn service identity";if(!IsReader(pipe.SafePipeHandle))throw new IOException("Privileged scan service identity could not be verified");
-    byte[] request=new[]{mode}.Concat(Encoding.UTF8.GetBytes(path)).ToArray();if(request.Length>4097)throw new IOException("Scan path exceeds protocol limit");
+    byte[] request=new[]{mode}.Concat(Encoding.UTF8.GetBytes(mode==4?path+"\n"+hash+"\n"+generation+"\n"+stamp:path)).ToArray();if(request.Length>4097)throw new IOException("Scan path exceeds protocol limit");
     stage="send request";WriteBounded(pipe,BitConverter.GetBytes(request.Length),3000);WriteBounded(pipe,request,3000);
-    stage="read reply header";int length=BitConverter.ToInt32(ReadExact(pipe,4,mode==3?5000:45000),0);if(length<2||length>MaxScanReply)throw new IOException("Invalid privileged scan reply size");
+    stage="read reply header";int length=BitConverter.ToInt32(ReadExact(pipe,4,mode==3?5000:mode==4||mode==1?90000:45000),0);if(length<2||length>MaxScanReply)throw new IOException("Invalid privileged scan reply size");
     stage="read and validate reply";var result=Config.Json().Deserialize<ScanBatch>(new UTF8Encoding(false,true).GetString(ReadExact(pipe,length,10000)));
-    if(result==null||!new[]{"Directory","File","Missing","Limited","Error","Downloads","Watcher"}.Contains(result.Kind))throw new IOException("Invalid privileged scan reply");
+    if(result==null||!new[]{"Directory","File","Missing","Limited","Error","Locked","Downloads","Watcher","Reparse"}.Contains(result.Kind))throw new IOException("Invalid privileged scan reply");
     if(result.Kind=="Downloads"&&(mode!=2||result.Downloads==null||result.Downloads.Length>MaxDirectoryEntries||result.Downloads.Any(f=>f==null||string.IsNullOrEmpty(f.Path)||f.Path.Length>1024||f.Size<0||f.Written<0||f.Created<0||!string.Equals(Path.GetDirectoryName(f.Path),path.TrimEnd('\\'),StringComparison.OrdinalIgnoreCase)||!string.Equals(Path.GetFullPath(f.Path),f.Path,StringComparison.OrdinalIgnoreCase)||f.Path.Substring(2).Contains(":"))))throw new IOException("Invalid Downloads metadata reply");
     if(mode==2&&result.Kind!="Downloads"&&result.Kind!="Missing"&&result.Kind!="Error")throw new IOException("Unexpected Downloads reply");
     if(mode==3&&result.Kind!="Watcher"&&result.Kind!="Missing"&&result.Kind!="Error")throw new IOException("Unexpected watcher reply");
     if(result.Kind=="Watcher"&&(mode!=3||result.Children==null||result.WatchArrivals==null||result.Children.Length>MaxPrivilegedWatchBatch||result.WatchArrivals.Length>result.Children.Length||result.Children.Any(x=>string.IsNullOrEmpty(x)||x.Length>1024||x.Length<3||x.Any(char.IsControl)||x.Substring(2).Contains(":")||!string.Equals(Path.GetFullPath(x),x,StringComparison.OrdinalIgnoreCase)||!EndpointProtection.Under(x,path))||result.WatchArrivals.Any(x=>!result.Children.Contains(x,StringComparer.OrdinalIgnoreCase))))throw new IOException("Invalid privileged watcher metadata");
     if(result.Kind=="Directory"&&(result.Children==null||result.Children.Length>MaxDirectoryEntries||result.Children.Any(child=>string.IsNullOrEmpty(child)||!string.Equals(Path.GetDirectoryName(child),path.TrimEnd('\\'),StringComparison.OrdinalIgnoreCase)&&!string.Equals(Path.GetDirectoryName(child),path,StringComparison.OrdinalIgnoreCase)||child.Length>1024)))throw new IOException("Invalid directory reply");
+    if(result.Kind=="Limited"&&result.Size<0)throw new IOException("Invalid limited file size");
+    if(result.Kind=="Reparse"&&(mode>1&&mode!=4||string.IsNullOrEmpty(result.Detail)||result.Detail.Length>2048))throw new IOException("Invalid reparse boundary reply");
     if(result.Kind=="File"&&(result.Hash==null||result.Hash.Length!=64||!result.Hash.All(Uri.IsHexDigit)||result.Sample<0||result.Sample>65536||double.IsNaN(result.Entropy)||result.Entropy<0||result.Entropy>8||result.Verdict==null||result.Verdict.Length>4096))throw new IOException("Invalid file verdict");
+    if(result.Cached&&(mode!=4||result.Kind!="File"||result.Verdict!="Cached clean"||result.Hash!=hash||result.Generation!=generation||string.IsNullOrEmpty(generation)))throw new IOException("Invalid cached baseline reply");
+    if(!string.IsNullOrEmpty(result.Generation)&&(mode!=4||!CacheToken(result.Generation)||result.Kind!="File"||(!result.Cached&&!EndpointProtection.CleanVerdict(result.Verdict))))throw new IOException("Invalid cache generation reply");
+    if(result.MetadataCached&&(!result.Cached||mode!=4||string.IsNullOrEmpty(stamp)||result.Stamp!=stamp))throw new IOException("Invalid NTFS cached reply");
+    if(!string.IsNullOrEmpty(result.Stamp)&&(mode!=4||!CacheToken(result.Stamp)||string.IsNullOrEmpty(result.Generation)||result.Kind!="File"||(!result.MetadataCached&&!EndpointProtection.CleanVerdict(result.Verdict))))throw new IOException("Invalid NTFS stamp reply");
     return result;
    }}catch(Exception ex){if(mode==3)throw new IOException("Privileged watcher "+stage+": "+ex.GetType().Name+": "+ex.Message,ex);throw;}
   }
@@ -304,10 +366,10 @@ namespace LinkScope {
   sealed class Volume {internal string Root,Status="Waiting",Detail="";internal long Journal,Next,Tail;internal long Retry;internal bool Loaded;internal Task<UsnJournalService.Batch> Work;}
   readonly List<Volume> volumes=new List<Volume>(); string scope; bool preferRecent=true;
   internal void Configure(EndpointSettings c,string key){volumes.Clear();scope=key;if(!c.Enabled||!c.RealTime)return;foreach(string root in c.Paths.Select(Path.GetPathRoot).Distinct(StringComparer.OrdinalIgnoreCase)){if(root!=null&&root.Length==3&&root[1]==':')volumes.Add(new Volume{Root=root.ToUpperInvariant()});}}
-  internal static void Schema(Sqlite db){db.Exec("CREATE TABLE IF NOT EXISTS usn_checkpoint(scope TEXT NOT NULL,volume TEXT NOT NULL,journal INTEGER NOT NULL,cursor INTEGER NOT NULL,PRIMARY KEY(scope,volume))");db.Exec("CREATE TABLE IF NOT EXISTS usn_pending(scope TEXT NOT NULL,path TEXT COLLATE NOCASE NOT NULL,PRIMARY KEY(scope,path))");db.Exec("CREATE TABLE IF NOT EXISTS usn_arrivals(scope TEXT NOT NULL,path TEXT COLLATE NOCASE NOT NULL,PRIMARY KEY(scope,path))");db.Exec("CREATE TABLE IF NOT EXISTS usn_retry(scope TEXT NOT NULL,path TEXT COLLATE NOCASE NOT NULL,ready INTEGER NOT NULL,PRIMARY KEY(scope,path))");}
+  internal static void Schema(Sqlite db){db.Exec("CREATE TABLE IF NOT EXISTS usn_checkpoint(scope TEXT NOT NULL,volume TEXT NOT NULL,journal INTEGER NOT NULL,cursor INTEGER NOT NULL,PRIMARY KEY(scope,volume))");db.Exec("CREATE TABLE IF NOT EXISTS usn_pending(scope TEXT NOT NULL,path TEXT COLLATE NOCASE NOT NULL,PRIMARY KEY(scope,path))");db.Exec("CREATE TABLE IF NOT EXISTS usn_arrivals(scope TEXT NOT NULL,path TEXT COLLATE NOCASE NOT NULL,PRIMARY KEY(scope,path))");db.Exec("CREATE TABLE IF NOT EXISTS usn_retry(scope TEXT NOT NULL,path TEXT COLLATE NOCASE NOT NULL,ready INTEGER NOT NULL,PRIMARY KEY(scope,path))");db.Exec("CREATE TABLE IF NOT EXISTS usn_retry_attempts(scope TEXT NOT NULL,path TEXT COLLATE NOCASE NOT NULL,attempts INTEGER NOT NULL,PRIMARY KEY(scope,path))");}
   internal void Poll(Sqlite db,EndpointSettings c,Action<string,string> warning,Action<string> clear,Action<string,string> gap,Action reconcile){
    if(!c.RealTime||volumes.Count==0)return;
-   long now=History.Now();if(!volumes.Any(v=>v.Loaded)){db.Exec("DELETE FROM usn_pending WHERE scope<>?",scope);db.Exec("DELETE FROM usn_checkpoint WHERE scope<>?",scope);db.Exec("DELETE FROM usn_arrivals WHERE scope<>?",scope);db.Exec("DELETE FROM usn_retry WHERE scope<>?",scope);}int queued=Convert.ToInt32(db.Rows("SELECT COUNT(*) FROM usn_pending WHERE scope=?",scope)[0][0]);
+   long now=History.Now();if(!volumes.Any(v=>v.Loaded)){db.Exec("DELETE FROM usn_pending WHERE scope<>?",scope);db.Exec("DELETE FROM usn_checkpoint WHERE scope<>?",scope);db.Exec("DELETE FROM usn_arrivals WHERE scope<>?",scope);db.Exec("DELETE FROM usn_retry WHERE scope<>?",scope);db.Exec("DELETE FROM usn_retry_attempts WHERE scope<>?",scope);}int queued=Convert.ToInt32(db.Rows("SELECT COUNT(*) FROM usn_pending WHERE scope=?",scope)[0][0]);
    foreach(var v in volumes){
     if(!v.Loaded){var row=db.Rows("SELECT journal,cursor FROM usn_checkpoint WHERE scope=? AND volume=?",scope,v.Root).FirstOrDefault();if(row!=null){v.Journal=Convert.ToInt64(row[0]);v.Next=Convert.ToInt64(row[1]);}v.Loaded=true;}
     if(v.Work!=null&&v.Work.IsCompleted){var b=v.Work.Result;v.Work=null;
@@ -316,13 +378,13 @@ namespace LinkScope {
      if(!b.Gap&&v.Journal!=0&&(v.Journal!=b.Journal||b.Next<v.Next)){v.Status="Fallback";v.Detail="Unexpected checkpoint response";v.Retry=now+60;warning(v.Root,v.Detail);continue;}
      var paths=b.Paths.Where(p=>c.Paths.Any(x=>EndpointProtection.Under(p,x))&&!EndpointProtection.Excluded(c,p)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
      // Persist the coverage warning before advancing beyond unavailable historical records.
-     if(b.Gap||b.Unresolved>0){string detail=b.Gap?"Journal reset or records aged out; scheduled reconciliation required":"Historical parent paths could not be resolved; scheduled reconciliation required";
+     if(b.Gap||b.Unresolved>0){string detail=b.Gap?"Journal reset or records aged out; scheduled reconciliation required":b.Unresolved+" journal records have unresolved historical parent paths; protected-scope membership unknown; scheduled reconciliation required";
       // Record the gap before checkpoint advancement. Reconciliation is coalesced by the scanner.
       gap(v.Root,detail);reconcile();
      }
      db.Exec("BEGIN IMMEDIATE");try{foreach(var p in paths){db.Exec("INSERT OR IGNORE INTO usn_pending(scope,path) VALUES(?,?)",scope,p);if(b.Arrivals.Contains(p))db.Exec("INSERT OR IGNORE INTO usn_arrivals(scope,path) VALUES(?,?)",scope,p);}db.Exec("INSERT OR REPLACE INTO usn_checkpoint(scope,volume,journal,cursor) VALUES(?,?,?,?)",scope,v.Root,b.Journal,b.Next);db.Exec("COMMIT");}catch{db.Exec("ROLLBACK");throw;}
      queued+=paths.Length;v.Journal=b.Journal;v.Next=b.Next;v.Tail=b.Tail;v.Status=b.Next<b.Tail?"Replaying":"Live";v.Detail="Journal checkpoint committed";clear(v.Root);
-     if(b.Gap||b.Unresolved>0)v.Detail=b.Gap?"Journal reset or records aged out; scheduled reconciliation required":"Historical parent paths could not be resolved; scheduled reconciliation required";
+     if(b.Gap||b.Unresolved>0)v.Detail=b.Gap?"Journal reset or records aged out; scheduled reconciliation required":b.Unresolved+" journal records have unresolved historical parent paths; protected-scope membership unknown; scheduled reconciliation required";
     }
    }
    // One outstanding request across all volumes per monitor; round-robin to prevent starvation.
@@ -341,8 +403,28 @@ namespace LinkScope {
    var arrivals=db.Rows("SELECT p.path FROM usn_pending p JOIN usn_arrivals a ON a.scope=p.scope AND a.path=p.path WHERE p.scope=? AND NOT EXISTS (SELECT 1 FROM usn_retry r WHERE r.scope=p.scope AND r.path=p.path AND r.ready>?) ORDER BY a.rowid LIMIT ?",scope,now,limit).Select(x=>(string)x[0]);
    var fast=downloads.Concat(arrivals).Concat(recent);bool fastFirst=preferRecent;preferRecent=!preferRecent;return (fastFirst?fast.Concat(fifo):fifo.Take(1).Concat(fast).Concat(fifo)).Distinct(StringComparer.OrdinalIgnoreCase).Take(limit).ToArray();
   }
-  internal void Defer(Sqlite db,string path){db.Exec("INSERT OR REPLACE INTO usn_retry(scope,path,ready) SELECT scope,path,? FROM usn_pending WHERE scope=? AND path=?",History.Now()+30,scope,path);}
-  internal void Ack(Sqlite db,string path){db.Exec("BEGIN IMMEDIATE");try{db.Exec("DELETE FROM usn_pending WHERE scope=? AND path=?",scope,path);db.Exec("DELETE FROM usn_arrivals WHERE scope=? AND path=?",scope,path);db.Exec("DELETE FROM usn_retry WHERE scope=? AND path=?",scope,path);db.Exec("COMMIT");}catch{db.Exec("ROLLBACK");throw;}}
+  // Persist accepted watcher work before scanning so transient failures and restarts
+  // do not depend on the existence of an NTFS journal event for the same path.
+  internal bool RetainWatcher(Sqlite db,string path,bool priority){
+   if(Depth(db)>=Capacity&&db.Rows("SELECT path FROM usn_pending WHERE scope=? AND path=?",scope,path).Count==0)return false;
+   db.Exec("BEGIN IMMEDIATE");try{db.Exec("INSERT OR IGNORE INTO usn_pending(scope,path) VALUES(?,?)",scope,path);if(priority)db.Exec("INSERT OR IGNORE INTO usn_arrivals(scope,path) VALUES(?,?)",scope,path);db.Exec("COMMIT");return true;}catch{db.Exec("ROLLBACK");throw;}
+  }
+  internal bool RetryWaiting(Sqlite db,string path){return db.Rows("SELECT 1 FROM usn_retry WHERE scope=? AND path=? AND ready>?",scope,path,History.Now()).Count!=0;}
+  internal int ReadyDepth(Sqlite db){return Convert.ToInt32(db.Rows("SELECT COUNT(*) FROM usn_pending p WHERE scope=? AND NOT EXISTS (SELECT 1 FROM usn_retry r WHERE r.scope=p.scope AND r.path=p.path AND r.ready>?)",scope,History.Now())[0][0]);}
+  internal int DeferredDepth(Sqlite db){return Convert.ToInt32(db.Rows("SELECT COUNT(*) FROM usn_retry WHERE scope=? AND ready>?",scope,History.Now())[0][0]);}
+  internal static int RetryDelay(int attempts){return Math.Min(900,30 << Math.Min(5,Math.Max(0,attempts-1)));}
+  internal void Defer(Sqlite db,string path){
+   long now=History.Now();db.Exec("BEGIN IMMEDIATE");try{
+    // Duplicate callers in the same attempt must not extend or accelerate the cooldown.
+    if(db.Rows("SELECT 1 FROM usn_pending WHERE scope=? AND path=?",scope,path).Count!=0&&!RetryWaiting(db,path)){
+     var prior=db.Rows("SELECT attempts FROM usn_retry_attempts WHERE scope=? AND path=?",scope,path).FirstOrDefault();int attempts=prior==null?1:Math.Min(6,Convert.ToInt32(prior[0])+1);
+     db.Exec("INSERT OR REPLACE INTO usn_retry_attempts(scope,path,attempts) VALUES(?,?,?)",scope,path,attempts);
+     db.Exec("INSERT OR REPLACE INTO usn_retry(scope,path,ready) VALUES(?,?,?)",scope,path,now+RetryDelay(attempts));
+    }
+    db.Exec("COMMIT");
+   }catch{db.Exec("ROLLBACK");throw;}
+  }
+  internal void Ack(Sqlite db,string path){db.Exec("BEGIN IMMEDIATE");try{db.Exec("DELETE FROM usn_pending WHERE scope=? AND path=?",scope,path);db.Exec("DELETE FROM usn_arrivals WHERE scope=? AND path=?",scope,path);db.Exec("DELETE FROM usn_retry WHERE scope=? AND path=?",scope,path);db.Exec("DELETE FROM usn_retry_attempts WHERE scope=? AND path=?",scope,path);db.Exec("COMMIT");}catch{db.Exec("ROLLBACK");throw;}}
   internal int PriorityDepth(Sqlite db){if(volumes.Count==0)return 0;return Convert.ToInt32(db.Rows("SELECT COUNT(*) FROM usn_arrivals WHERE scope=?",scope)[0][0]);}
   internal int Depth(Sqlite db){if(volumes.Count==0)return 0;return Convert.ToInt32(db.Rows("SELECT COUNT(*) FROM usn_pending WHERE scope=?",scope)[0][0]);}
   internal bool Covers(string path){string root=Path.GetPathRoot(path);return volumes.Any(v=>string.Equals(v.Root,root,StringComparison.OrdinalIgnoreCase)&&(v.Status=="Live"||v.Status=="Replaying"));}

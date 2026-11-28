@@ -28,7 +28,7 @@ assert 'watcherRootsCoveredByJournal' in e and 'failedWatchers.Where(x=>!usn.Cov
 assert 'r.Path=="/ui/endpoint-reset"){if(!session.IsAdmin)Deny()' in w
 assert 'const currentKind=independent' in j and 'canaryState' in j and '/ui/endpoint-reset' in j
 reset=e[e.index('if(Interlocked.Exchange(ref resetRequested'):e.index('if(scopeReconcilePending)ConsolidateCoverage')]
-assert 'DELETE FROM' not in reset and "severity='warning'" in reset and 'Malware signature detected' not in reset and 'Canary integrity violation' not in reset
+assert set(re.findall(r'DELETE FROM (\w+)',reset))=={'clean_verdict_cache'} and 'ClearBaseline(db)' in reset and "severity='warning'" in reset and 'Malware signature detected' not in reset and 'Canary integrity violation' not in reset
 # Actual SQLite statements, migration from existing queue, case-insensitive arrival upgrade and atomic acknowledgement.
 db=sqlite3.connect(':memory:',isolation_level=None)
 for q in re.findall(r'db\.Exec\("(CREATE TABLE IF NOT EXISTS usn_[^"\n]+)"',u):db.execute(q)

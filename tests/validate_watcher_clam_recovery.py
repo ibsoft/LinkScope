@@ -16,14 +16,14 @@ assert 'ScanIssue(db,c,p,"Engine scan incomplete",transport)' in e and 'else usn
 assert 'Resolve(db,p,"Engine scan incomplete");lastFileScan' in e
 schema=re.findall(r'db\.Exec\("(CREATE TABLE IF NOT EXISTS usn_[^"\n]+)"',u)
 queries=re.findall(r'db\.Rows\("(SELECT path FROM usn_pending[^"\n]+)"',u)
-defer=re.search(r'db\.Exec\("(INSERT OR REPLACE INTO usn_retry[^"\n]+)"',u)[1]
+defer=re.search(r'db\.Exec\("(INSERT OR REPLACE INTO usn_retry\(scope,path,ready\)[^"\n]+)"',u)[1]
 ack=re.search(r'db\.Exec\("(DELETE FROM usn_retry WHERE scope=\? AND path=\?)"',u)[1]
 with tempfile.TemporaryDirectory() as d:
  p=Path(d)/'q.db';db=sqlite3.connect(p)
  for sql in schema:db.execute(sql)
  a=r'C:\Users\User\Downloads\blocked.txt';b=r'C:\Users\User\Downloads\next.txt'
  db.executemany('INSERT INTO usn_pending VALUES(?,?)',[('s',a),('s',b)])
- db.execute(defer,(130,'s',a));db.commit();db.close();db=sqlite3.connect(p)
+ db.execute(defer,('s',a,130));db.commit();db.close();db=sqlite3.connect(p)
  assert db.execute(queries[0],('s',100,4)).fetchall()==[(b,)]
  assert db.execute(queries[0],('s',130,4)).fetchall()==[(a,),(b,)]
  assert db.execute('SELECT COUNT(*) FROM usn_pending').fetchone()==(2,)

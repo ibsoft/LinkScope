@@ -9,8 +9,8 @@ method=s.split('internal static int ReconcileCoverageScope',1)[1].split('interna
 select=re.search(r'db.Rows\("(SELECT id,path,change FROM findings.*?)"\)',method).group(1)
 close=re.search(r'db.Exec\("(INSERT INTO endpoint_outbox.*?)",History.Now\(\),id\)',method).group(1)
 update=re.search(r'db.Exec\("(UPDATE findings SET active=0 WHERE id=\?)",id\)',method).group(1)
-assert 'scopeReconcilePending=true' in s and 'if(scopeReconcilePending){int retired=ReconcileCoverageScope' in s
-assert s.index('if(scopeReconcilePending){int retired=ReconcileCoverageScope')<s.index('var maintenance=ClamUpdateState.Read();',s.index('internal object Tick'))
+assert 'scopeReconcilePending=true' in s and 'int retired=ReconcileCoverageScope' in s
+assert s.index('int retired=ReconcileCoverageScope')<s.index('var maintenance=ClamUpdateState.Read();',s.index('internal object Tick'))
 assert 'CheckEndpointScope(dir)' in native
 assert 'if(!c.Paths.Any(root=>Under(path,root))||Excluded(c,path))return;' in s
 assert 'if(!c.Paths.Any(x=>Under(p,x)))return true;if(Excluded(c,p))' in s

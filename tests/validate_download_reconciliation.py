@@ -12,7 +12,7 @@ assert 'UsnJournalService.FetchDownloads(root)' in e and 'request[0]==2?ReadDown
 assert 'LocalScanPath(path,c)' in u and 'VerifyScanPath(h,path)' in u and 'EndpointProtection.Excluded(c,f.FullName)' in u
 assert 'downloadWork.Count>=32768' in e and 'count>MaxDirectoryEntries' in u
 assert 'work.Entry.Size==file.Size&&work.Entry.Written==file.Written&&work.Entry.Created==file.Created' in e
-assert 'work.Done=row!=null&&new[]{"Clean","Infected","Heuristic","Quarantined","Limited","Excluded"}' in e
+assert 'work.Done=row!=null&&new[]{"Clean","Infected","Heuristic","Quarantined","Limited","Excluded","Reparse boundary"}' in e
 assert 'work.Next=now+15' in e and 'downloadSource??' in e
 assert 'downloadLastResult' in j and 'endpoint-download-state' in h
 assert 'ResetDownloads();' in e and 'downloadWork.Remove(path)' in e
