@@ -84,7 +84,7 @@ In **Settings → Data Integrity & Tamper Detection**, enable the feature only w
 
 The scanner runs on its own worker. SHA-256 hashes are compared against the initial baseline; each complete scan appends a sequence/timestamp/previous-HMAC/snapshot-digest/policy-digest record authenticated with a random 256-bit HMAC key protected by Windows DPAPI (LocalMachine). The snapshot digest is SHA-256 over a deterministic sorted list of path/hash pairs, not a Merkle tree. The baseline and chain live in `C:\ProgramData\LinkScope\data\integrity\chain.json`; a separate local head checkpoint is `data\integrity-checkpoint.json`. The data folder inherits the service's restricted ACLs. A separate checkpoint detects a truncated chain if the checkpoint itself remains intact. Do not delete either file or the protected master key. A crash between state and checkpoint writes can cause a fail-closed verification error; investigate and recover from trusted backups. Full local deletion or rollback of all state, key and checkpoint cannot be reliably detected without an independent remote anchor. The module is tamper-evident, not a replacement for ACLs, EDR, immutable backups or remote monitoring.
 
-Modifications, missing files, additions, scan problems and authentication failures enter the existing alert history, unread counter and toast pipeline; incident details enter Application Logs and the configured Syslog/SIEM forwarding pipeline subject to log level and receiver settings. Enable the Event Viewer option to write incident events under `Unixfor LinkScope` (event 4201). The `data_integrity` category is available for API tokens and telemetry export selection; existing tokens and selected exports need the category explicitly added. System reports and AI evidence use the existing category infrastructure. Policy changes and manual scans are audited. Acknowledging an alert does not update the baseline. New files added to coverage after enrollment are treated as new, not automatically trusted. This version deliberately has no web-based rebaseline/approval action, real-time watcher, remote checkpoint verifier, metadata/ACL/signature comparison or automatic remediation. Exclusions are global patterns or exact absolute paths. Only complete scans append checkpoints; unreadable files, reparse points and unavailable paths produce incomplete coverage, not proof of integrity. Limit: 100,000 hashed files per scan, up to 1,000 collected scan error details. The JSON chain grows with each scan; back up and monitor its storage. Periodic scans may miss transient changes between scans. Windows self-check includes isolated baseline, exclusion, modification, deletion, policy and chain tests; run the Windows build and verification before production deployment.
+Modifications, missing files, additions, scan problems and authentication failures enter the existing alert history, unread counter and toast pipeline; incident details enter Application Logs and the configured Syslog/SIEM forwarding pipeline subject to log level and receiver settings. Enable the Event Viewer option to write incident events under `LinkScope` (event 4201). The `data_integrity` category is available for API tokens and telemetry export selection; existing tokens and selected exports need the category explicitly added. System reports and AI evidence use the existing category infrastructure. Policy changes and manual scans are audited. Acknowledging an alert does not update the baseline. New files added to coverage after enrollment are treated as new, not automatically trusted. This version deliberately has no web-based rebaseline/approval action, real-time watcher, remote checkpoint verifier, metadata/ACL/signature comparison or automatic remediation. Exclusions are global patterns or exact absolute paths. Only complete scans append checkpoints; unreadable files, reparse points and unavailable paths produce incomplete coverage, not proof of integrity. Limit: 100,000 hashed files per scan, up to 1,000 collected scan error details. The JSON chain grows with each scan; back up and monitor its storage. Periodic scans may miss transient changes between scans. Windows self-check includes isolated baseline, exclusion, modification, deletion, policy and chain tests; run the Windows build and verification before production deployment.
 
 ### Data Integrity dashboard
 Open `/integrity` from the main navigation. The dashboard shares the System Health styles and polls every 15 seconds. Configure monitoring in Settings. Full PDF exports include the integrity snapshot (including embedded JSON) when enabled; historical alerts remain retained. The bearer-token API `/api/v1/system?categories=data_integrity` requires a token scoped to `data_integrity`; disabled monitoring reports disabled status.
@@ -113,7 +113,7 @@ The Endpoint Protection dashboard includes a live activity indicator and scoped 
 
 ### Endpoint canaries, live scan activity and signature updates
 
-See [ENDPOINT-CANARY-SETUP.md](ENDPOINT-CANARY-SETUP.md) for automatic setup provisioning of Word/Excel/text canaries, alert/API/report integration, local signature update controls, limitations and Windows acceptance tests. Run the GUI setup normally (the wizard elevates the service installation itself) to provision canaries for the original interactive user.
+Canaries are enrolled only from the Endpoint Protection Maintenance tab in a saved, explicitly protected directory. No Documents canaries are created by setup in V50.
 
 ## Endpoint maintenance
 
@@ -166,7 +166,7 @@ V25: See [privileged watcher fallback](PRIVILEGED-WATCHER-FALLBACK.md) for cover
 
 ### Default user profile protection (V26)
 
-Setup now seeds current-user profile protection and editable background-only exclusions; existing enabled policies retain their additional paths. See [USER-PROFILE-PROTECTION.md](USER-PROFILE-PROTECTION.md) for upgrade behavior and Windows acceptance checks.
+Historical V26 behavior, superseded by V50. New installations start with no monitored folders and Endpoint Protection disabled. Existing policies are retained; select application directories in Settings and enable protection explicitly. See [ENDPOINT-PROTECTION-V50.md](ENDPOINT-PROTECTION-V50.md).
 
 ### Watcher coverage and alert recovery (V27)
 
@@ -175,3 +175,17 @@ See [WATCHER-ALERT-RECOVERY.md](WATCHER-ALERT-RECOVERY.md). Keeps the privileged
 ### Independent watcher and ClamD deadline (V28)
 
 See [WATCHER-CLAMD-RECOVERY.md](WATCHER-CLAMD-RECOVERY.md) for the watcher heartbeat, bounded ClamD transport and persistent retry behavior. Genuine coverage and security alerts remain visible.
+
+
+### V65 isolated validation lab
+
+See [ENDPOINT-PROTECTION-V65.md](ENDPOINT-PROTECTION-V65.md) for the opt-in disposable canary comparison and real EICAR quarantine exercise, evidence requirements, and limitations.
+
+### Test Center directories
+V66 requires explicitly saved disposable Test Center directories for live exercises. See [settings-driven test directory configuration](ENDPOINT-PROTECTION-V66.md).
+
+V67 extends the full validation suite with temporary enrolled-canary watcher and normal-detector incident attribution evidence. See [production-path validation and limitations](ENDPOINT-PROTECTION-V67.md).
+
+### V68 controlled termination validation
+
+Full security validation includes a fixed owned-child process exit test and separately reports actual malicious-process containment as unverified. The production response now verifies exit on the retained process handle. See [V68 production acceptance record](ENDPOINT-PROTECTION-V68.md) for safeguards, regression results and Windows acceptance requirements.

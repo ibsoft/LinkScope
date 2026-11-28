@@ -17,14 +17,16 @@ body=body.replace('{{brand}}','LinkScope').replace('{{version}}','v_test')
 # Execute the actual event-handler source used by settingsPage and revealCategory.
 accordion=app.split('function settingsPage(){',1)[1].split("    byId('configForm').addEventListener('input'",1)[0]
 reveal=app.split('function revealCategory(){',1)[1].split("window.addEventListener('linkscope-reveal'",1)[0]
-script="const byId=id=>document.getElementById(id);const page='settings';\n"+accordion+'\nfunction revealCategory(){'+reveal+'\nwindow.addEventListener("hashchange",revealCategory);'
+helpers=app.split('function setupSettingsHelp(){',1)[1].split('function settingsPage(){',1)[0]
+quick=app.split('function ensureSettingsQuickLinks(categories){',1)[1].split('function decorateHealthSection(',1)[0]
+script="const byId=id=>document.getElementById(id);const element=(tag,text)=>{const e=document.createElement(tag);if(text!=null)e.textContent=text;return e;};const page='settings';const resetEndpointHistory=()=>{};const refreshEndpointHistoryReset=()=>Promise.resolve();\nfunction setupSettingsHelp(){"+helpers+'\nfunction ensureSettingsQuickLinks(categories){'+quick+'\n'+accordion+'\nfunction revealCategory(){'+reveal+'\nwindow.addEventListener("hashchange",revealCategory);'
 fixture='<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>'+ '\n'.join(css)+'</style></head>'+body.replace('</body>','<script>'+script+'</script></body>')+'</html>'
 with sync_playwright() as pw:
     browser=pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH','/usr/bin/chromium'),args=['--no-sandbox','--disable-dev-shm-usage','--disable-gpu'])
     page=browser.new_page(viewport={'width':1440,'height':900}); errors=[]; page.on('pageerror',lambda err:errors.append(str(err)))
     page.set_content(fixture,wait_until='domcontentloaded')
     categories=page.locator('details.settings-category'); assert categories.count()==16
-    assert page.locator('details.settings-category[open]').count()==1
+    assert page.locator('details.settings-category[open]').count()==0
     page.locator('#settings-expand-all').click();assert page.locator('details.settings-category[open]').count()==16
     pin=page.locator('#EndpointTrustedEngineSha256'); pin.fill('a'*64)
     page.locator('#settings-collapse-all').click();assert page.locator('details.settings-category[open]').count()==0

@@ -37,12 +37,13 @@ $providers=Button 'Third-party signature sources...' 24 359 410
 $clamRemove=Button 'Uninstall ClamAV' 444 359 232
 $pwa=New-Object Windows.Forms.CheckBox;$pwa.Text='Register managed Edge PWA (local policy; optional)';$pwa.Checked=$true;$pwa.SetBounds(24,401,652,26);$form.Controls.Add($pwa)
 $pwaNote=Label 'Desktop shortcut is created by default. Managed Edge PWA installs at browser launch and cannot be removed in Edge. Existing policies are preserved.' 24 429 652 45
-$canaries=New-Object Windows.Forms.CheckBox;$canaries.Text='Create and enroll Word, Excel and text canaries in my Documents';$canaries.Checked=$true;$canaries.SetBounds(24,474,652,25);$form.Controls.Add($canaries)
-$note=Label 'New installs protect your Windows profile in Monitor mode. Existing paths are retained; add more in Settings. ClamAV definitions need Internet access.' 24 505 652 72
+$note=Label 'New installations start with no protected folders. Select application directories in Settings. Upgrades retain saved scope and automatically review permissions for Protect / Contain; changes require approval.' 24 478 652 99
 $progress=New-Object Windows.Forms.ProgressBar;$progress.SetBounds(24,590,652,16);$form.Controls.Add($progress)
 $status=Label 'Ready.' 24 616 550 58
 $close=Button 'Close' 586 627 90
 $debugButton=Button 'Open debug log' 24 676 160
+$endpointPermissions=Button 'Endpoint permission repair...' 194 676 280
+$endpointPermissions.Add_Click({[void](Start-Operation '--endpoint-permissions')})
 $debugButton.Add_Click({try{Write-DebugLog 'Debug log opened';Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\notepad.exe') -ArgumentList ('"'+$debugLog+'"')}catch{$status.Text=$_.Exception.Message}})
 $timer=New-Object Windows.Forms.Timer;$timer.Interval=500
 $script:job=$null;$script:operation='';$script:pendingInstall=$false;$script:clamCheck=1;$script:rebootRequired=$false;$script:checking=$false
@@ -53,12 +54,12 @@ $area=[Windows.Forms.Screen]::FromControl($form).WorkingArea
 $form.Height=[Math]::Min($form.Height,$area.Height-24)
 function Is-ClamOperation($verb){return ($verb -in @('--install-clamav','--configure-clamav','--update-clamav','--clamav-providers','--uninstall-clamav'))}
 $checkTimer=New-Object Windows.Forms.Timer;$checkTimer.Interval=200
-$script:checkProcess=$null;$script:checkDeadline=[DateTime]::MinValue;$script:afterCheck='';$script:completedOperation='';$script:completedCode=0;$script:completedPending=$false
+$script:checkWasElevated=$false;$script:lastCheckWasElevated=$false;$script:checkProcess=$null;$script:checkDeadline=[DateTime]::MinValue;$script:afterCheck='';$script:completedOperation='';$script:completedCode=0;$script:completedPending=$false
 function Update-State([bool]$elevatedCheck=$false,[string]$after='') {
- if($script:checking -or $script:job -or $script:prepProcess){return}
+ if($script:checking -or $script:job){return}
  Write-DebugLog ('Readiness check: '+$after+' elevated='+$elevatedCheck)
- $script:checking=$true;$script:afterCheck=$after
- $install.Enabled=$false;$remove.Enabled=$false;$clamButton.Enabled=$false;$clamRemove.Enabled=$false;$update.Enabled=$false;$providers.Enabled=$false;$checkButton.Enabled=$false;$dashboard.Enabled=$false
+ $script:checking=$true;$script:afterCheck=$after;$script:checkWasElevated=$elevatedCheck
+ $endpointPermissions.Enabled=$false;$install.Enabled=$false;$remove.Enabled=$false;$clamButton.Enabled=$false;$clamRemove.Enabled=$false;$update.Enabled=$false;$providers.Enabled=$false;$checkButton.Enabled=$false;$dashboard.Enabled=$false
  $close.Enabled=$true
  $clamState.Text='Checking ClamAV configuration and services...'
  try {
@@ -72,12 +73,14 @@ function Update-State([bool]$elevatedCheck=$false,[string]$after='') {
   $script:checkDeadline=[DateTime]::UtcNow.AddSeconds(25)
   $checkTimer.Start()
  } catch {
-  $script:clamCheck=1
+  Write-DebugLog ('Readiness check could not start: '+$_.Exception.Message)
+  $script:clamCheck=14
   Complete-State
  }
 }
 function Complete-State {
- Write-DebugLog ('Readiness result: '+$script:clamCheck)
+ $script:lastCheckWasElevated=$script:checkWasElevated
+ Write-DebugLog ('Readiness result: '+$script:clamCheck+' elevated='+$script:lastCheckWasElevated)
  try {
  $clamState.ForeColor=[Drawing.Color]::FromArgb(146,64,14)
  $clamButton.Text='Configure / repair ClamAV'
@@ -90,17 +93,17 @@ function Complete-State {
   6 {$clamState.Text='Installed | Custom configuration preserved. Review manually.'}
   7 {$clamState.Text='Installed | Engine responding | Updater/startup needs repair.'}
   8 {$clamButton.Text='Repair / reinstall ClamAV';$clamButton.Enabled=([IO.File]::Exists($msi) -and [IO.File]::Exists($sig));$clamState.Text=if($clamButton.Enabled){'Incomplete installation. Repair using the verified MSI, or uninstall remaining services.'}else{'Incomplete installation. Uninstall remaining services, or provide the signed MSI in deploy to repair.'}}
-  13 {$clamState.Text='ClamAV settings are private. Click Check again for an elevated check.';$clamButton.Enabled=$false}
-  9 {$clamState.Text='Installed | Engine responding | Definition date stale or unknown.'}
+  13 {$clamState.Text=if($script:lastCheckWasElevated){'ClamAV configuration could not be read even by the elevated check. Review the administrator setup log.'}else{'ClamAV settings are private. Click Check again for an elevated check.'};$clamButton.Enabled=$false}
+  9 {$clamState.Text='Installed | Engine responding | Definitions stale, unknown or awaiting reload. See elevated check log; use Update signatures if due.';$clamButton.Enabled=$false}
   default {$clamState.Text='ClamAV readiness unknown. Review locally.'}
  }
  if($script:rebootRequired){$clamButton.Enabled=$false;$clamState.Text+=' Restart Windows before configuring ClamAV.'}
  $clamRemove.Enabled=($script:clamCheck -ne 3) -and -not $script:rebootRequired
- $providers.Enabled=($script:clamCheck -in @(0,9)) -and -not $script:rebootRequired;$update.Enabled=($script:clamCheck -in @(0,9)) -and -not $script:rebootRequired;$install.Enabled=$true;$pwa.Enabled=$true;$canaries.Enabled=$true;$dashboard.Enabled=$true;$checkButton.Enabled=$true;$close.Enabled=$true
- } finally {$script:checking=$false;$checkButton.Enabled=$true;$close.Enabled=$true;$install.Enabled=$true}
+ $providers.Enabled=($script:clamCheck -in @(0,9)) -and -not $script:rebootRequired;$update.Enabled=($script:clamCheck -in @(0,9)) -and -not $script:rebootRequired;$endpointPermissions.Enabled=$true;$install.Enabled=$true;$pwa.Enabled=$true;$dashboard.Enabled=$true;$checkButton.Enabled=$true;$close.Enabled=$true
+ } finally {$script:checking=$false;$checkButton.Enabled=$true;$close.Enabled=$true;$endpointPermissions.Enabled=$true;$install.Enabled=$true}
  $after=$script:afterCheck;$script:afterCheck=''
  if($after -eq 'operation'){Complete-Operation}
- elseif($after -eq 'manual'){$status.Text='Readiness check completed.'}
+ elseif($after -eq 'manual'){$status.Text=if($script:clamCheck -eq 0){'Readiness check completed: ClamAV ready.'}elseif($script:clamCheck -eq 9){'Engine online; official signature freshness or reload requires attention.'}else{'Readiness check completed with code '+$script:clamCheck+'. Review the status and elevated setup logs.'}}
  elseif($after -eq 'install'){Begin-LinkScopeInstall}
 }
 $checkTimer.Add_Tick({
@@ -114,76 +117,28 @@ $checkTimer.Add_Tick({
  $script:checkProcess.Dispose();$script:checkProcess=$null
  Complete-State
 })
-function Start-Operation($verb,[bool]$skipPreparation=$false,[string]$canaryToken='', [bool]$repairCanaries=$false){
- if($script:job -or $script:checking -or $script:prepProcess){return $false}
+function Start-Operation($verb){
+ if($script:job -or $script:checking){return $false}
  if($verb -eq '--uninstall' -and [Windows.Forms.MessageBox]::Show($form,'Remove the LinkScope service? Configuration, history and ClamAV are retained.','Confirm uninstall','YesNo','Warning') -ne 'Yes'){return $false}
  try {
   if($verb -eq '--upgrade' -and $pwa.Checked){$verb='--upgrade-pwa'}
   $arguments=@($verb)
-  if($verb -in @('--upgrade','--upgrade-pwa') -and $canaries.Checked -and -not $skipPreparation){
-   Write-DebugLog 'Canary worker launch requested'
-   $script:prepVerb=$verb
-   $start=New-Object Diagnostics.ProcessStartInfo
-   $start.FileName=$exe;$start.Arguments=if($repairCanaries){'--repair-canaries'}else{'--prepare-canaries'};$start.UseShellExecute=$false;$start.CreateNoWindow=$true;$start.WorkingDirectory=[IO.Path]::GetDirectoryName($exe)
-   $script:prepProcess=[Diagnostics.Process]::Start($start)
-   if(-not $script:prepProcess){throw 'Canary worker did not start.'}
-   Write-DebugLog ('Canary worker PID='+$script:prepProcess.Id)
-   $script:prepDeadline=[DateTime]::UtcNow.AddSeconds(30)
-   foreach($control in @($install,$pwa,$canaries,$remove,$dashboard,$clamButton,$update,$providers,$clamRemove,$checkButton)){$control.Enabled=$false}
-   $close.Enabled=$true;$progress.Style='Marquee';$status.Text='Preparing optional canary documents (30 second limit)...'
-   $prepTimer.Start();return $true
-  }
-  if($verb -in @('--upgrade','--upgrade-pwa','--install')){
-   $profileSid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-   $profileToken=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('profile-v1|'+$profileSid+'|'+$canaryToken))
-   $arguments+=$profileToken
-   Write-DebugLog ('Profile policy requested for SID '+$profileSid)
-  } elseif($canaryToken){$arguments+=$canaryToken}
   Write-DebugLog ('Starting elevated operation '+$verb)
   $script:operation=$verb
   $script:operationStarted=[DateTime]::UtcNow
   $script:longOperationLogged=$false
   $script:job=Start-Process -FilePath $exe -ArgumentList $arguments -Verb RunAs -PassThru -ErrorAction Stop
-  $install.Enabled=$false;$pwa.Enabled=$false;$canaries.Enabled=$false;$remove.Enabled=$false;$dashboard.Enabled=$false;$clamButton.Enabled=$false;$update.Enabled=$false;$providers.Enabled=$false;$clamRemove.Enabled=$false;$checkButton.Enabled=$false;$close.Enabled=$false
-  $progress.Style='Marquee';$status.Text=if(Is-ClamOperation $verb){'ClamAV maintenance in progress. Follow the administrator prompts.'}else{'Running elevated installer. Console windows are hidden.'};$timer.Start()
+  $endpointPermissions.Enabled=$false;$install.Enabled=$false;$pwa.Enabled=$false;$remove.Enabled=$false;$dashboard.Enabled=$false;$clamButton.Enabled=$false;$update.Enabled=$false;$providers.Enabled=$false;$clamRemove.Enabled=$false;$checkButton.Enabled=$false;$close.Enabled=$false
+  $progress.Style='Marquee';$status.Text=if(Is-ClamOperation $verb){'ClamAV maintenance in progress. Follow the administrator prompts.'}else{'Running elevated installer. Follow the permission approval prompt if shown.'};$timer.Start()
   return $true
  } catch {Write-DebugLog ('Operation start failed: '+$_.Exception.ToString());$status.Text='Operation could not start: '+$_.Exception.Message;$script:job=$null;$script:pendingInstall=$false;Update-State;return $false}
 }
-$prepTimer=New-Object Windows.Forms.Timer;$prepTimer.Interval=250
-$script:prepProcess=$null
-$prepTimer.Add_Tick({
- if(-not $script:prepProcess){$prepTimer.Stop();return}
- $code=1;$detail=''
- try {
-  if(-not $script:prepProcess.HasExited -and [DateTime]::UtcNow -lt $script:prepDeadline){return}
-  if($script:prepProcess.HasExited){$code=$script:prepProcess.ExitCode}
-  else{$script:prepProcess.Kill();$detail='Preparation timed out.'}
- } catch {$detail=$_.Exception.Message}
- Write-DebugLog ('Canary worker exit='+$code+' detail='+$detail)
- $prepTimer.Stop();$script:prepProcess.Dispose();$script:prepProcess=$null
- $progress.Style='Blocks';$progress.Value=0
- if($code -eq 12){
-  $choice=[Windows.Forms.MessageBox]::Show($form,'Canaries are already enrolled. Restore missing original documents? Existing modified files will not be overwritten. Incident history and baselines are retained.','Repair enrolled canaries','YesNoCancel','Warning')
-  if($choice -eq 'Cancel'){Update-State $false 'manual';return}
-  if($choice -eq 'Yes'){if(-not (Start-Operation $script:prepVerb $false '' $true)){Update-State};return}
- }
- $token=''
- if($code -eq 0){
-  try {$folder=Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'LinkScope Canary Documents';$sid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value;$token=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($folder+'|'+$sid))}catch{$code=1;$detail=$_.Exception.Message}
- }
- if($code -notin @(0,12)){
-  try {Add-Content -LiteralPath (Join-Path ([IO.Path]::GetTempPath()) 'LinkScope-Canary-errors.log') -Value ((Get-Date).ToString('o')+' Wizard preparation exit '+$code+' '+$detail) -ErrorAction Stop}catch{}
-  $status.Text='Canary preparation failed. See LinkScope-Canary-errors.log in TEMP. '+$detail
-  [void][Windows.Forms.MessageBox]::Show($form,('Canary preparation failed. '+$detail+"`r`nSee LinkScope-Canary-errors.log in TEMP. Installation paused; canaries remain selected."),'Canary setup','OK','Warning');Update-State $false 'manual';return
- }
- if(-not (Start-Operation $script:prepVerb $true $token)){Update-State}
-})
 function Begin-LinkScopeInstall {
  if($script:clamCheck -eq 3 -and [IO.File]::Exists($msi) -and [IO.File]::Exists($sig) -and -not $script:rebootRequired){
   $choice=[Windows.Forms.MessageBox]::Show($form,'ClamAV is missing. Verify the local MSI and install/configure ClamAV before LinkScope? Choose No to skip.','Optional ClamAV setup','YesNoCancel','Question')
   if($choice -eq 'Cancel'){return}
   if($choice -eq 'Yes'){$script:pendingInstall=$true;[void](Start-Operation '--install-clamav');return}
- } elseif($script:clamCheck -in @(4,5,7,9) -and -not $script:rebootRequired){
+ } elseif($script:clamCheck -in @(4,5,7) -and -not $script:rebootRequired){
   $choice=[Windows.Forms.MessageBox]::Show($form,'ClamAV is not fully ready. Configure / repair it now? Choose No to skip.','Optional ClamAV repair','YesNoCancel','Question')
   if($choice -eq 'Cancel'){return}
   if($choice -eq 'Yes'){$script:pendingInstall=$true;[void](Start-Operation '--configure-clamav');return}
@@ -192,7 +147,8 @@ function Begin-LinkScopeInstall {
  }
  [void](Start-Operation '--upgrade')
 }
-$install.Add_Click({Update-State $false 'install'})
+# Private configuration must not overwrite a completed administrator check.
+$install.Add_Click({Update-State ($script:lastCheckWasElevated -or $script:clamCheck -eq 13) 'install'})
 $clamButton.Add_Click({$script:pendingInstall=$false;if($script:clamCheck -in @(3,8)){[void](Start-Operation '--install-clamav')}else{[void](Start-Operation '--configure-clamav')}})
 $update.Add_Click({[void](Start-Operation '--update-clamav')})
 $clamRemove.Add_Click({$script:pendingInstall=$false;[void](Start-Operation '--uninstall-clamav')})
@@ -201,7 +157,7 @@ $checkButton.Add_Click({if(-not $script:job){Update-State $true 'manual'}})
 $remove.Add_Click({[void](Start-Operation '--uninstall')})
 $dashboard.Add_Click({Start-Process 'http://127.0.0.1:9876/'})
 $close.Add_Click({$form.Close()})
-$form.Add_FormClosing({param($sender,$e) if($script:prepProcess){$prepTimer.Stop();try{if(-not $script:prepProcess.HasExited){$script:prepProcess.Kill()}}catch{};$script:prepProcess.Dispose();$script:prepProcess=$null};if($script:job -and -not $script:job.HasExited){$e.Cancel=$true;return};if($script:checking){$checkTimer.Stop();if($script:checkProcess){try{if(-not $script:checkProcess.HasExited){$script:checkProcess.Kill()}}catch{}; $script:checkProcess.Dispose();$script:checkProcess=$null};$script:checking=$false}})
+$form.Add_FormClosing({param($sender,$e) if($script:job -and -not $script:job.HasExited){$e.Cancel=$true;return};if($script:checking){$checkTimer.Stop();if($script:checkProcess){try{if(-not $script:checkProcess.HasExited){$script:checkProcess.Kill()}}catch{}; $script:checkProcess.Dispose();$script:checkProcess=$null};$script:checking=$false}})
 $timer.Add_Tick({
  if(-not $script:job){$timer.Stop();return}
  if(-not $script:job.HasExited){
@@ -218,7 +174,9 @@ $timer.Add_Tick({
  $progress.Style='Blocks';$progress.Value=0
  if(($op -in @('--install-clamav','--uninstall-clamav')) -and ($rc -eq 3010 -or $rc -eq 1641)){$script:rebootRequired=$true}
  $script:completedOperation=$op;$script:completedCode=$rc;$script:completedPending=$pending
- Update-State $false 'operation'
+ # A completed mutation invalidates prior readiness. Recheck with the same access,
+ # or request elevation after ClamAV changes; the user may decline UAC.
+ Update-State ($script:lastCheckWasElevated -or (Is-ClamOperation $op)) 'operation'
 })
 function Complete-Operation {
  $op=$script:completedOperation;$rc=$script:completedCode;$pending=$script:completedPending
@@ -226,14 +184,16 @@ function Complete-Operation {
  if($op -eq '--uninstall-clamav' -and $rc -eq 0){$progress.Value=100;$status.Text='ClamAV removal completed. Remaining custom files are preserved.'}
  elseif($op -eq '--uninstall-clamav' -and $rc -eq 3010){$status.Text='ClamAV removal requires a Windows restart.'}
  elseif($op -eq '--uninstall-clamav' -and $rc -eq 4){$status.Text='Native services removed; non-MSI ClamAV files require manual removal.'}
- elseif($op -eq '--clamav-providers' -and $rc -eq 0){$progress.Value=100;$status.Text='Sources saved; FreshClam restarted. Review native logs for downloads.'}
+ elseif($op -eq '--clamav-providers' -and $rc -eq 0){$progress.Value=100;$status.Text='Provider schedules saved; official FreshClam restarted. Custom downloads respect their configured cooldowns.'}
  elseif($op -eq '--clamav-providers' -and $rc -eq 1602){$status.Text='Provider configuration cancelled.'}
  elseif((Is-ClamOperation $op) -and $rc -eq 0 -and $script:clamCheck -eq 0){$progress.Value=100;$status.Text='ClamAV ready. Engine checks passed.'}
  elseif((Is-ClamOperation $op) -and $script:rebootRequired){$status.Text='MSI installation requires a Windows restart. Run Configure / repair ClamAV afterward.'}
  elseif($op -eq '--install-clamav' -and $rc -eq 10){$status.Text='ClamAV MSI blocked: signature verification failed. Review setup logs.'}
  elseif((Is-ClamOperation $op) -and $rc -eq 1602){$status.Text='ClamAV setup cancelled.'}
+ elseif((Is-ClamOperation $op) -and ($rc -eq 9 -or $script:clamCheck -eq 9)){$status.Text='ClamD responding; official definitions not confirmed current. Review elevated logs: '+$logFolder}
  elseif(Is-ClamOperation $op){$status.Text='ClamAV not confirmed ready (exit '+$rc+'). Review setup logs as administrator: '+$logFolder}
- elseif($rc -eq 11){$progress.Value=100;$status.Text='LinkScope installed but canary enrollment failed. Keep documents; review setup log and retry Upgrade / repair.'}
+ elseif($op -eq '--endpoint-permissions' -and $rc -eq 0){$status.Text='Permission wizard closed. Verify effective access in Endpoint Test Center.'}
+ elseif(($op -in @('--install','--upgrade','--upgrade-pwa')) -and $rc -eq 21){$progress.Value=100;$status.Text='LinkScope installed; endpoint permissions require review. See elevated setup log.'}
  elseif($rc -eq 0){$progress.Value=100;$status.Text='LinkScope operation completed successfully.'}
  else{$status.Text='Setup failed (exit '+$rc+'). Review setup logs as administrator: '+$logFolder}
  if((Is-ClamOperation $op) -and $pending){
@@ -246,9 +206,9 @@ function Complete-Operation {
  Write-DebugLog $message
  try {Add-Content -LiteralPath (Join-Path ([IO.Path]::GetTempPath()) 'LinkScope-Wizard-errors.log') -Value ((Get-Date).ToString('o')+' '+$message) -ErrorAction Stop}catch{}
  $status.Text='Wizard error: '+$eventArgs.Exception.Message+' | See LinkScope-Wizard-errors.log in TEMP.'
- if(-not $script:job -and -not $script:checkProcess){$timer.Stop();$checkTimer.Stop();$script:checking=$false;$close.Enabled=$true;$checkButton.Enabled=$true;$install.Enabled=$true}
+ if(-not $script:job -and -not $script:checkProcess){$timer.Stop();$checkTimer.Stop();$script:checking=$false;$close.Enabled=$true;$checkButton.Enabled=$true;$endpointPermissions.Enabled=$true;$install.Enabled=$true}
 })
 $form.Add_Shown({Update-State})
 [void]$form.ShowDialog()
 Write-DebugLog 'Wizard closed'
-$prepTimer.Stop();$prepTimer.Dispose();$checkTimer.Stop();$checkTimer.Dispose();$timer.Dispose();$brand.Image.Dispose();$form.Dispose()
+$checkTimer.Stop();$checkTimer.Dispose();$timer.Dispose();$brand.Image.Dispose();$form.Dispose()

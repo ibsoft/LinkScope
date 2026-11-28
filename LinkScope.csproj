@@ -119,6 +119,7 @@
     <EmbeddedResource Include="src\settings.html"><LogicalName>settings.html</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="src\smart.ps1"><LogicalName>smart.ps1</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="src\system.html"><LogicalName>system.html</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="Test-LinkScopeContainmentLab.ps1"><LogicalName>Test-LinkScopeContainmentLab.ps1</LogicalName><WithCulture>false</WithCulture></EmbeddedResource>
     <EmbeddedResource Include="src\endpoint.html"><LogicalName>endpoint.html</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="src\integrity.html"><LogicalName>integrity.html</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="src\toast.css"><LogicalName>toast.css</LogicalName></EmbeddedResource>
@@ -155,6 +156,7 @@
        Do not add the nested setup project as an independent solution build: it consumes this payload. -->
   <ItemGroup>
     <None Include="tools\Write-BuildVersion.ps1" />
+    <None Include="source-build-version.txt" />
     <None Include="tools\Assert-EndpointSources.ps1" />
     <None Include="tools\RequiredSources.txt" />
     <None Include="tools\Invoke-ProjectBuild.ps1" />

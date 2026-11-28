@@ -190,3 +190,131 @@ body[data-page=integrity] #category-data_integrity.health-category-card>small,bo
 #EndpointHistoryReset:not(:disabled){background:#b42318;color:#fff;border-color:#b42318;}
 #EndpointHistoryReset:not(:disabled):hover{background:#912018;border-color:#912018;}
 #endpoint-history-reset{scroll-margin-top:80px;}
+
+
+/* Settings quick category shortcuts */
+body[data-page=settings] .settings-quick-links{display:flex;flex-wrap:wrap;gap:8px;margin:-2px 0 14px}
+body[data-page=settings] .settings-quick-link{display:grid;place-items:center;width:44px;height:44px;padding:0;border-radius:10px}
+body[data-page=settings] .settings-quick-link .settings-category-icon{width:20px;height:20px;background:none;border-radius:0;box-shadow:none}
+body[data-page=settings] .settings-quick-link .settings-category-icon svg{width:18px;height:18px}
+
+/* Clickable dashboard cards */
+.health-metric-card-action{cursor:pointer;transition:transform .12s ease,box-shadow .12s ease}
+.health-metric-card-action:hover{transform:translateY(-1px);box-shadow:0 6px 18px #15354012}
+.health-metric-card-action:focus-visible{outline:3px solid #379c90;outline-offset:2px}
+.metric-jump-highlight{animation:metricJumpHighlight 1.6s ease-out 1}
+@keyframes metricJumpHighlight{0%{box-shadow:0 0 0 0 #3db59e55}40%{box-shadow:0 0 0 10px #3db59e22}100%{box-shadow:0 0 0 0 #3db59e00}}
+
+/* Login responsiveness on laptop, tablet, mobile */
+@media(max-width:1080px){body[data-page=login] .login-shell{padding:28px 18px}.login-layout{max-width:860px;grid-template-columns:.96fr 1fr;border-radius:20px}.login-intro{padding:34px}.login-intro h2{font-size:clamp(30px,4vw,50px)}body[data-page=login] .login{padding:34px 30px}.login h1{font-size:32px}}
+@media(max-width:900px){.login-layout{max-width:720px;grid-template-columns:.88fr 1fr}.login-intro{padding:28px}.login-features{gap:10px;font-size:12px}body[data-page=login] .login{padding:28px 24px}.login h1{font-size:29px}}
+@media(max-width:760px){body[data-page=login] .login-shell{padding:20px 14px}.login-layout{max-width:500px}.login-intro{padding:20px}body[data-page=login] .login{padding:24px 20px}.login h1{font-size:28px}}
+@media(max-width:420px){body[data-page=login] .login-shell{padding:14px 10px}.login-layout{border-radius:16px}body[data-page=login] .login{padding:20px 16px}.login .field input{padding:12px}.login #signInButton{padding:13px}.login h1{font-size:26px}}
+
+/* V43: compact, accessible settings help without changing input dimensions. */
+body[data-page=settings] .setting-help{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip-path:inset(50%);white-space:nowrap!important;border:0!important}
+body[data-page=settings] .setting-label-row{display:flex;align-items:center;gap:6px;min-width:0;min-height:28px;justify-content:space-between}
+body[data-page=settings] .setting-label-row>label{min-width:0;overflow-wrap:anywhere;line-height:1.35;font-weight:600}
+body[data-page=settings] .setting-label-row>h3{margin:8px 0}
+body[data-page=settings] .setting-label-row>.field{margin:8px 0}
+body[data-page=settings] .setting-field{min-width:0}
+body[data-page=settings] .setting-check-row{display:flex;align-items:flex-start;justify-content:space-between;gap:6px;min-width:0;align-self:start;margin:0}
+body[data-page=settings] .setting-check-label{display:flex;align-items:flex-start;gap:6px;min-width:0;line-height:1.5;padding:3px 0;overflow-wrap:anywhere}
+body[data-page=settings] .setting-check-label>input{flex:none;margin:5px 0 0 0}
+body[data-page=settings] .setting-check-label>span{min-width:0}
+body[data-page=settings] button.setting-help-button{flex:0 0 28px;width:28px;height:28px;min-height:28px;max-width:28px;margin:0;padding:0;display:inline-grid;place-items:center;line-height:1;color:var(--muted);background:transparent;border:0;border-radius:6px;box-shadow:none;white-space:nowrap}
+body[data-page=settings] button.setting-help-button>span{display:grid;place-items:center;width:17px;height:17px;border-radius:50%;border:1px solid currentColor;font:700 12px/1 "Segoe UI",sans-serif}
+body[data-page=settings] button.setting-help-button:hover{background:#19857820;color:var(--ink)}
+body[data-page=settings] #probe-rules th .setting-label-row{white-space:normal;min-width:90px}
+body[data-page=settings] .setting-help-dialog{width:min(440px,calc(100% - 28px));max-height:85vh;padding:22px;overflow:auto}
+body[data-page=settings] .setting-help-dialog h2{font-size:19px;overflow-wrap:anywhere}
+body[data-page=settings] .setting-help-dialog p{font-size:14px;line-height:1.6;color:var(--ink);white-space:pre-wrap}
+:root[data-theme=dark] body[data-page=settings] .setting-help-dialog{background:#203541;color:var(--ink);border-color:var(--line)}
+@media(pointer:coarse){body[data-page=settings] button.setting-help-button{flex-basis:36px;width:36px;height:36px;max-width:36px;min-height:36px}body[data-page=settings] .setting-check-label{padding-top:7px}}
+
+/* V43: responsive named category shortcuts. */
+body[data-page=settings] .settings-quick-links{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:8px}
+body[data-page=settings] button.settings-quick-link{display:flex;align-items:center;justify-content:flex-start;gap:9px;width:100%;height:auto;min-height:46px;padding:9px 12px;border:1px solid var(--line);text-align:left;white-space:normal}
+body[data-page=settings] .settings-quick-link .settings-category-icon{flex:none;color:inherit}
+body[data-page=settings] .settings-quick-name{min-width:0;overflow-wrap:anywhere;font-size:13px;line-height:1.35}
+body[data-page=settings] .settings-quick-link[aria-expanded=true]{border-color:var(--sea)}
+@media(max-width:600px){body[data-page=settings] .settings-quick-links{grid-template-columns:repeat(2,minmax(0,1fr))}body[data-page=settings] button.settings-quick-link{padding:9px 8px;gap:6px}}
+@media(max-width:340px){body[data-page=settings] .settings-quick-links{grid-template-columns:1fr}}
+
+/* Endpoint resource telemetry */
+#endpoint-resources{scroll-margin-top:80px}.endpoint-resource-grid,.endpoint-resource-charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:12px;margin:12px 0}.endpoint-resource-grid>div,.endpoint-resource-chart{min-width:0;border:1px solid var(--line);border-radius:8px;padding:12px}.endpoint-resource-grid p{margin:8px 0 0;font:600 19px/1.3 Consolas,monospace;overflow-wrap:anywhere}.endpoint-resource-chart svg{width:100%;display:block;color:var(--ink);margin:8px 0}.endpoint-resource-chart small{display:block}
+
+/* V45 Endpoint workspace: information hierarchy, restrained status colors, responsive views. */
+body[data-page=endpoint] main{max-width:1600px;min-width:0}
+body[data-page=endpoint] .ep-page-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;margin:8px 0 20px}
+body[data-page=endpoint] .ep-page-head h1{font-size:clamp(25px,3vw,34px);line-height:1.15;letter-spacing:-.7px;margin:6px 0}
+body[data-page=endpoint] .ep-eyebrow{font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--muted)}
+body[data-page=endpoint] .ep-page-head #stamp{font-size:12px;margin:5px 0 0;color:var(--muted)}
+body[data-page=endpoint] .ep-head-actions,.ep-action-row{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+body[data-page=endpoint] .ep-link{display:inline-flex;align-items:center;min-height:40px;padding:8px 13px;border:1px solid var(--line);border-radius:8px;color:var(--ink);font-weight:600;text-decoration:none;background:var(--paper)}
+body[data-page=endpoint] .ep-nav{display:flex;flex-wrap:wrap;gap:5px;border-bottom:1px solid var(--line);margin:0 0 18px;padding:0 0 8px}
+body[data-page=endpoint] .ep-nav button{background:transparent;color:var(--muted);border:1px solid transparent;padding:10px 15px;border-radius:7px;min-height:42px;font-size:13px}
+body[data-page=endpoint] .ep-nav button[aria-pressed=true]{color:var(--ink);background:var(--paper);border-color:var(--line);box-shadow:inset 0 -3px 0 var(--sea)}
+body[data-page=endpoint] .ep-nav button:hover{color:var(--ink);border-color:var(--line)}
+body[data-page=endpoint] .ep-overview{padding:0;background:transparent;border:0;box-shadow:none;margin:0}
+body[data-page=endpoint] .ep-hero{display:flex;gap:18px;align-items:center;background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:24px;min-width:0}
+body[data-page=endpoint] .ep-hero-icon{display:grid;place-items:center;flex:0 0 58px;height:58px;border:1px solid currentColor;border-radius:16px;color:var(--muted)}
+body[data-page=endpoint] .ep-hero-icon svg{width:34px;height:34px}
+body[data-page=endpoint] .ep-overview[data-state=ok] .ep-hero-icon{color:#258a65}body[data-page=endpoint] .ep-overview[data-state=review] .ep-hero-icon{color:#b88a35}body[data-page=endpoint] .ep-overview[data-state=fail] .ep-hero-icon{color:#cf5656}
+body[data-page=endpoint] .ep-hero h2{font-size:clamp(20px,2.4vw,27px);line-height:1.2;margin:5px 0 7px;letter-spacing:-.4px}
+body[data-page=endpoint] .ep-hero p{margin:0;color:var(--muted);font-size:13px;overflow-wrap:anywhere}
+body[data-page=endpoint] .ep-mode{margin-left:auto;white-space:nowrap;align-self:flex-start;border:1px solid var(--line);border-radius:20px;padding:7px 12px;font-size:12px;font-weight:600;color:var(--muted)}
+body[data-page=endpoint] .ep-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:16px 0}
+body[data-page=endpoint] .ep-kpi{text-align:left;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:12px;padding:17px;border-radius:12px;border:1px solid var(--line);background:var(--paper);color:var(--ink);box-shadow:none}
+body[data-page=endpoint] .ep-kpi:hover{border-color:var(--sea)}
+body[data-page=endpoint] .ep-kpi span{font-size:13px;font-weight:600}body[data-page=endpoint] .ep-kpi strong{font-size:clamp(24px,3vw,34px);letter-spacing:-.6px;line-height:1.1;overflow-wrap:anywhere}body[data-page=endpoint] .ep-kpi small{font-size:12px;font-weight:400;margin-top:auto;color:var(--muted)}
+body[data-page=endpoint] .ep-kpi[data-state=fail] strong{color:#cf5656}body[data-page=endpoint] .ep-kpi[data-state=review] strong{color:#b88a35}
+body[data-page=endpoint] .ep-overview-lower{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+body[data-page=endpoint] .ep-overview-panel{background:var(--paper);border:1px solid var(--line);padding:18px;border-radius:12px;min-width:0;display:flex;flex-direction:column;align-items:flex-start}
+body[data-page=endpoint] .ep-overview-panel h3{margin:0 0 8px;font-size:16px}body[data-page=endpoint] .ep-overview-panel p{margin:5px 0;overflow-wrap:anywhere}body[data-page=endpoint] .ep-overview-panel button{margin-top:auto;align-self:flex-start}body[data-page=endpoint] .ep-overview-panel button:last-child{margin-top:14px}
+body[data-page=endpoint] .ep-muted{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+body[data-page=endpoint] .integrity-metrics{grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:12px}
+body[data-page=endpoint] #category-endpoint_protection .health-metric-card{min-height:120px;padding:15px;box-shadow:none;border-left-width:1px;min-width:0}
+body[data-page=endpoint] #category-endpoint_protection .health-metric-card .metric{font-size:clamp(22px,2.7vw,32px)}
+body[data-page=endpoint] #category-endpoint_protection .health-metric-card>.health-badge{border:0;background:transparent;color:var(--muted);padding:5px 0;font-weight:400;border-radius:0;white-space:normal}
+body[data-page=endpoint] #ep-maintenance .endpoint-maintenance{border:0;padding:0;margin:0;gap:24px}
+body[data-page=endpoint] #ep-maintenance small{display:block;color:var(--muted);margin:8px 0;overflow-wrap:anywhere}
+body[data-page=endpoint] #ep-maintenance button{margin:4px 0 10px}
+body[data-page=endpoint] #ep-maintenance select{max-width:100%}
+body[data-page=endpoint] #endpoint-live[data-state=paused]{border-left-color:#b88a35}
+body[data-page=endpoint] #endpoint-live #endpoint-worker-state,body[data-page=endpoint] #endpoint-scan-health{margin:10px 0 0}
+body[data-page=endpoint] [data-endpoint-view][hidden]{display:none!important}
+body[data-page=endpoint] #endpoint-evidence h3{margin-top:28px;scroll-margin-top:20px}
+body[data-page=endpoint] #ep-behavior-evidence{scroll-margin-top:20px}
+@media(max-width:900px){body[data-page=endpoint] .ep-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}body[data-page=endpoint] .ep-hero{padding:18px}}
+@media(max-width:600px){body[data-page=endpoint] .ep-overview-lower{grid-template-columns:1fr}body[data-page=endpoint] .ep-hero{flex-wrap:wrap;gap:12px;padding:14px}body[data-page=endpoint] .ep-hero-icon{flex-basis:40px;height:40px;border-radius:10px}body[data-page=endpoint] .ep-hero-icon svg{width:25px;height:25px}body[data-page=endpoint] .ep-hero>div:nth-child(2){flex:1;min-width:0}body[data-page=endpoint] .ep-mode{margin-left:52px}body[data-page=endpoint] .ep-nav button{padding:8px 10px;min-height:40px}body[data-page=endpoint] .ep-kpi{padding:12px;gap:8px}body[data-page=endpoint] #ep-maintenance .endpoint-maintenance{grid-template-columns:1fr}}
+body[data-page=endpoint] .ep-telemetry-warning{padding:10px 13px;border:1px solid var(--line);border-left:3px solid #b88a35;border-radius:8px;color:var(--ink);background:var(--paper);font-size:13px}
+body[data-page=endpoint] .ep-scan-counts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}
+body[data-page=endpoint] .ep-scan-counts>div{border:1px solid var(--line);border-radius:8px;padding:12px;min-width:0}
+body[data-page=endpoint] .ep-scan-counts small{margin:0 0 7px;font-size:12px}
+body[data-page=endpoint] .ep-scan-counts strong{font-size:22px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+body[data-page=endpoint] #ep-scan-technical{margin:12px 0 0;padding:12px;border:1px solid var(--line);border-radius:8px;font-size:13px;overflow-wrap:anywhere}
+@media(max-width:700px){body[data-page=endpoint] .ep-scan-counts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* V48: containment validation workspace */
+.ep-test-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}.ep-test-heading h2{margin:4px 0}.ep-test-heading p,.ep-test-card p,.ep-test-notice p{margin:6px 0;overflow-wrap:anywhere}.ep-test-notice,.ep-test-card,.ep-test-guide details{border:1px solid var(--border,#8795a355);border-radius:12px;padding:14px;background:var(--card,transparent)}.ep-test-notice{margin:12px 0 20px;border-left:3px solid #718fa5}.ep-test-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0 20px}.ep-test-card{min-width:0}.ep-test-card-top{display:flex;gap:8px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}.ep-test-card small{opacity:.75}.ep-test-guide{display:grid;gap:8px;margin-bottom:20px}.ep-test-guide pre{white-space:pre-wrap;overflow-wrap:anywhere}.ep-test-guide summary{cursor:pointer;font-weight:600}#ep-test-marker{width:100%;max-width:760px;box-sizing:border-box}#ep-test-center h3{margin-top:20px}@media(max-width:680px){.ep-test-grid{grid-template-columns:1fr}.ep-test-heading>button{width:100%}}
+
+/* V56 live audit workspace */
+.ep-audit-controls{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin:14px 0}.ep-audit-controls>div{flex:1 1 260px;min-width:0}.ep-audit-controls label{display:block;margin-bottom:6px}.ep-audit-controls select{width:100%;max-width:100%;box-sizing:border-box}.ep-audit-controls button{flex:0 0 auto}#ep-audit-probe{min-width:0}#ep-audit-probe h3{margin-top:0}#ep-audit-results:empty{display:none}@media(max-width:680px){.ep-audit-controls button{width:100%}}
+
+/* V58 guided validation workspace: scoped to the endpoint test center. */
+#ep-test-center .ep-test-heading{padding-bottom:16px;border-bottom:1px solid var(--line);margin-bottom:20px}
+.ep-wizard-tag{font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:20px;padding:5px 10px;max-width:100%}
+.ep-wizard-layout{display:grid;grid-template-columns: minmax(190px,235px) minmax(0,1fr);gap:22px;align-items:start}
+.ep-wizard-nav{display:grid;gap:6px;min-width:0;align-content:start}
+#ep-test-center .ep-wizard-nav button{display:flex;align-items:center;text-align:left;gap:11px;width:100%;padding:11px 12px;color:var(--ink);background:transparent;border:1px solid transparent;border-radius:9px;white-space:normal;min-width:0}
+#ep-test-center .ep-wizard-nav button[aria-current=step]{background:color-mix(in srgb,var(--sea) 9%,transparent);border-color:var(--sea)}
+.ep-wizard-nav button:hover{border-color:var(--line)!important}.ep-wizard-nav button>span:last-child{min-width:0}.ep-wizard-nav strong,.ep-wizard-nav small{display:block;overflow-wrap:anywhere}.ep-wizard-nav small{font-weight:400;font-size:12px;margin-top:3px}.ep-step-number{font-variant-numeric:tabular-nums;display:grid;place-items:center;flex:0 0 34px;height:34px;border-radius:50%;border:1px solid var(--line);color:var(--muted)}
+.ep-wizard-nav [aria-current=step] .ep-step-number{background:var(--sea);color:white;border-color:transparent}.ep-wizard-main{min-width:0;border:1px solid var(--line);border-radius:12px;padding:22px}.ep-stage-kicker{font-size:11px;letter-spacing:1.3px;font-weight:650;color:var(--muted);margin:0 0 8px}
+#ep-test-center [data-test-panel]>h3{font-size:22px;letter-spacing:-.4px;margin:0 0 10px}#ep-test-center h4{font-size:14px;margin:20px 0 8px}.ep-stage-callout,.ep-stage-help,.ep-exercise{padding:14px;border:1px solid var(--line);border-radius:9px;margin:16px 0;overflow-wrap:anywhere}.ep-stage-callout p,.ep-exercise p{margin:5px 0 0}.ep-stage-callout{background:color-mix(in srgb,var(--sea) 4%,transparent)}.ep-stage-links{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:15px 0}.ep-stage-result{font-size:13px;margin:14px 0;color:var(--muted);overflow-wrap:anywhere}.ep-stage-code{border:1px solid var(--line);padding:12px;border-radius:8px;font-size:13px;overflow-wrap:anywhere;white-space:pre-wrap}.ep-stage-instructions{padding-left:22px}.ep-stage-instructions li{margin:8px 0}.ep-exercise h4{margin:0 0 8px!important}.ep-exercise button{margin-top:12px}.ep-wizard-footer{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:18px;margin-top:22px}.ep-wizard-footer span{font-size:12px;color:var(--muted)}.ep-wizard-footnote{font-size:12px;margin:16px 0 0}.ep-review-grid{display:grid;gap:8px;margin:16px 0}.ep-review-row{display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid var(--line);padding:8px 0;flex-wrap:wrap}.ep-review-row span{color:var(--muted);font-size:13px}#ep-test-center .ep-test-grid{grid-template-columns:1fr;gap:0;border:1px solid var(--line);border-radius:9px;overflow:hidden}#ep-test-center .ep-test-grid:empty{display:none}#ep-test-center .ep-test-card{border:0;border-radius:0;padding:12px 14px;background:transparent}#ep-test-center .ep-test-card+.ep-test-card{border-top:1px solid var(--line)}#ep-test-center .ep-test-card p{font-size:13px;margin:5px 0 2px}#ep-test-center #ep-audit-probe{padding:14px;margin:16px 0;border:1px solid var(--line)}#ep-test-center #ep-test-marker{margin-bottom:10px}
+@media(max-width:850px){.ep-wizard-layout{grid-template-columns:1fr;gap:12px}.ep-wizard-nav{grid-template-columns:repeat(3,minmax(0,1fr))}.ep-wizard-main{padding:16px}}
+@media(max-width:540px){.ep-wizard-nav{grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}#ep-test-center .ep-wizard-nav button{padding:8px 5px;gap:6px;font-size:12px}.ep-step-number{flex-basis:26px;height:26px}.ep-wizard-nav small{font-size:11px}.ep-wizard-main{padding:11px}.ep-wizard-footer button{font-size:12px;padding:9px}.ep-wizard-footer span{order:-1;width:100%}#ep-test-center .ep-test-card{padding:10px}#ep-test-center [data-test-panel]>h3{font-size:19px}}
+@media(min-width:1050px){#ep-test-center #ep-test-readiness{grid-template-columns:repeat(2,minmax(0,1fr));gap:0}#ep-test-center #ep-test-readiness .ep-test-card{border:0;border-bottom:1px solid var(--line)}#ep-test-center #ep-test-readiness .ep-test-card:nth-child(odd){border-right:1px solid var(--line)}#ep-test-center #ep-test-readiness .ep-test-card:nth-last-child(-n+2){border-bottom:0}#ep-test-center #ep-test-readiness .ep-test-card:only-child{grid-column:1/-1;border:0}}
+
+/* V59 automated validation and report */
+.ep-suite{border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:20px;min-width:0}.ep-suite-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}.ep-suite-heading>div{flex:1 1 270px;min-width:0}#ep-test-center .ep-suite h3{margin:0 0 6px}.ep-suite p{overflow-wrap:anywhere}.ep-suite select{display:block;width:100%;max-width:760px;margin:6px 0}.ep-suite progress{width:100%;height:8px;accent-color:var(--sea)}#ep-suite-status{font-size:13px;margin:8px 0 0}#ep-suite-report{border-top:1px solid var(--line);padding-top:12px}#ep-suite-summary{overflow-wrap:anywhere}@media(max-width:540px){#ep-suite-run{width:100%}.ep-suite{padding:12px}}

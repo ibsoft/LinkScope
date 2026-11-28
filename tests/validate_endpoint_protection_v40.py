@@ -4,17 +4,18 @@ from collections import Counter
 from ntpath import dirname
 r=Path(__file__).resolve().parents[1]
 s=(r/'src/EndpointProtection.cs').read_text(); j=(r/'src/app.js').read_text()
-assert 'ExtendedEntropyWindowSeconds=300, ExtendedEntropyThreshold=5' in s
-assert 'EntropyTransition(n,entropy,Convert.ToDouble(old[1]))' in s
-assert 'sample>=4096&&current>=7.5&&current-previous>=1.0' in s
+assert 'ExtendedEntropyWindowSeconds=300;ExtendedEntropyThreshold=5' in s
+assert 'EntropyTransition(n,entropy,Convert.ToDouble(old[1]),c)' in s
+assert 'sample>=c.EntropyMinimumSampleBytes&&current>=c.EntropyMinimumCurrent&&current-previous>=c.EntropyMinimumIncrease' in s
+assert 'EntropyMinimumSampleBytes=4096;EntropyMinimumCurrent=7.5;EntropyMinimumIncrease=1.0' in s
 assert 'if(entropy){' in s and 'extendedEntropy[p]=now' in s
 assert s.count('extendedEntropy.Clear();extendedEntropyPeak=0;')==2
 assert 'x.Value>=cutoff&&x.Value<=now' in s
 assert 'GroupBy(x=>Path.GetDirectoryName(x.Key)??"",StringComparer.OrdinalIgnoreCase)' in s
-assert 'if(!rapidSuspect&&peak.Value>=ExtendedEntropyThreshold)' in s
+assert 'if(!rapidSuspect&&peak.Value>=c.ExtendedEntropyThreshold)' in s
 extended=s.split('void ExtendedBehavior(',1)[1].split('void Behavior(',1)[0]
 assert '"warning"' in extended and 'EndpointResponse.Contain' not in extended
-assert 'ExtendedBehavior(db,suspect)' in s and 'changed>=threshold&&entropyIncreases>=3' in s
+assert 'ExtendedBehavior(db,c,suspect)' in s and 'changed>=threshold&&entropyIncreases>=3' in s
 assert 'if(critical&&newIncident&&c.Mode=="contain"&&authorized())' in s
 assert 'Extended entropy changes' in j and 'extendedEntropyPeak=extendedEntropyPeak' in s
 # Reference-model cases for directory grouping, expiry and case-insensitive deduplication.

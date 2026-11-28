@@ -1,0 +1,52 @@
+V51 targeted verification (Linux container; Windows native self-check not executed).
+--- validate_setup_readiness_v51.py
+PASS: migration property snapshot/idempotence, installer check access flow, shared freshness checks, daily header diagnostics, reload verification, and C# delimiter balance (static). Native Windows self-check, FreshClam and UAC not executed.
+Exit: 0
+--- validate_profile_defaults.py
+PASS: explicit setup scope, no default enrollment, background-only scan guard, evidence preservation, actual JS settings round-trip. Native self-test not executed.
+Exit: 0
+--- validate_clamav_setup.py
+PASS: ClamAV setup source/build inclusion, readiness-state branches, loopback configuration, service/update safeguards, wizard command length, and C# delimiter checks. Not Windows compilation or runtime tests.
+Exit: 0
+--- validate_setup_build.py
+PASS: MSBuild setup project, x64 GUI settings, exact payload resource, build order, conditional MSI copy, cleanup and standalone build compatibility (static checks only).
+Exit: 0
+--- validate_provider_policy_v47.py
+PASS: generic provider grouping, persistent cooldown before launch, migration ordering, private URL storage, custom-only command, provider scheduling and dashboard, retired-brand migration allowlist, alert modal wiring (static).
+Exit: 0
+--- validate_provider_sources.py
+PASS: provider formats, local elevated editor, validation/merge safeguards, private configuration and logging, header icon sizing, login label, and summary-card-first dashboard (static checks only).
+Exit: 0
+--- validate_signature_schedule.py
+PASS: actual settings JS roundtrip, optional schedule, daily/weekly/monthly, hidden inputs and preserved choices
+PASS: persisted schedule SQL, fixed task and cooldown, opt-in gates, reporting/API/AI source integration; C# runtime calendar/task tests pending
+Exit: 0
+--- validate_visualstudio_config.py
+PASS: explicit legacy IDE configs, fresh consistent GUIDs, six enabled solution mappings, direct clean/build wrappers, setup verification and skipped-Clean regression guard.
+Windows MSBuild and PowerShell execution not tested.
+Exit: 0
+--- validate_endpoint_permissions_v49.py
+PASS: administrator-only wizard, explicit service-SID read ACE, scoped audit/response rights, scope and directory guards, durable backup ordering, conflict-aware rollback, independent diagnostics and build graph (static).
+Exit: 0
+--- validate_endpoint_scope.py
+PASS: portable SQLite scope retirement, idempotency, boundary/exclusion model, preserved threats and historical incidents; native self-test added (not run).
+Exit: 0
+--- validate_endpoint_maintenance.py
+PASS: maintenance fixed action, state semantics, canary reservation, log patterns, version wiring, project XML and JavaScript
+Exit: 0
+--- validate_clam_signature.py
+PASS: official key import/fingerprint, genuine synthetic detached signature, tampered payload, wrong signer, malformed signature, expiry/revocation status rejection, setup ordering and embedded resources. Windows runtime not tested.
+Exit: 0
+--- validate_endpoint_resources_v44.py
+PASS: resource defaults, settings help and binding, bounded history, scan scheduling and signature deferral wiring (static)
+PASS: actual resource renderer, null readings, stale state and four responsive widths (Chromium fixture)
+Exit: 0
+--- validate_containment_test_center_v48.py
+PASS: diagnostic isolation, route authorization, scope checks, negative verdict tests, local lab source constraints (static)
+PASS: real browser test center, fresh/stale readiness, diagnostics, evidence escaping, errors, 320–1440 px, dark/light and evidence navigation (mock API)
+Exit: 0
+--- validate_endpoint_workspace_v45.py
+PASS: full endpoint UI fixture: overview, tab routing, behavioral evidence, worker status, independent pause/signature status, stale telemetry and responsive overview
+PASS: worker frame and version wiring (static)
+Exit: 0
+Native Windows compilation, PowerShell/UAC, installer self-check execution and live FreshClam reload NOT tested.

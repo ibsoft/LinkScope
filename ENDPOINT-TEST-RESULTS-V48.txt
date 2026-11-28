@@ -1,0 +1,8 @@
+V48 portable validation
+PASS validate_containment_test_center_v48.py: route and safety static checks; real browser rendering with mocked API, freshness, literal evidence, errors, 320–1440 px, dark/light, navigation.
+PASS validate_endpoint_workspace_v45.py: existing workspace/worker UI and source wiring.
+PASS validate_alert_details_v47.py: existing alert modal browser regression.
+PASS validate_provider_policy_v47.py: existing provider/branding source regression after updating its version assertion to accept later releases.
+PASS node --check src/app.js.
+Known inherited fixture failures: validate_response_defaults.py expects a retired V34 asset alias in settings; validate_response_access_settings.py expects one accordion open by default (contradicts later collapsed UI requirement). Not changed.
+NOT RUN: Windows C# compilation, PowerShell script execution, actual 4663 correlation, real EICAR quarantine, service-driven process termination. No production certification.

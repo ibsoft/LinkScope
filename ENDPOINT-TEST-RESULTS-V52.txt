@@ -1,0 +1,6 @@
+PASS validate_automatic_permissions_v52.py — static wiring, confirmation, boundaries, delimiters
+PASS validate_endpoint_permissions_v49.py — static existing permission and rollback guards
+PASS validate_setup_readiness_v51.py — static setup and signature readiness regression; version assertion accepts successors
+PASS validate_setup_build.py — static project/build graph
+PASS validate_containment_test_center_v48.py — static and mock API browser regression, 320–1440 px, dark/light
+NOT RUN: Windows compilation, native installation, UAC, ACL modification, actual service permission verification, full historical regression suite.

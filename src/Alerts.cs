@@ -208,7 +208,7 @@ namespace LinkScope {
                 }
                 foreach(var x in changed){if(x.Value==null)current.Remove(x.Key);else current[x.Key]=x.Value;}
                 foreach(var a in closed)AppJournal.Event(LogLevel.Info,"Endpoint","resolve",a.Title+" · "+a.Message);
-                foreach(var a in opened){var level=a.Severity=="critical"?LogLevel.Error:a.Severity=="warning"?LogLevel.Warning:LogLevel.Info;AppJournal.Event(level,"Endpoint",a.Title,a.Message);if(cfg.Endpoint.WriteEvents)try{System.Diagnostics.EventLog.WriteEntry("Unixfor LinkScope",a.Title+" · "+a.Message,a.Severity=="critical"?System.Diagnostics.EventLogEntryType.Error:a.Severity=="warning"?System.Diagnostics.EventLogEntryType.Warning:System.Diagnostics.EventLogEntryType.Information,4201);}catch(Exception ex){AppJournal.Fault("Endpoint","event-log",ex);}}
+                foreach(var a in opened){var level=a.Severity=="critical"?LogLevel.Error:a.Severity=="warning"?LogLevel.Warning:LogLevel.Info;AppJournal.Event(level,"Endpoint",a.Title,a.Message);if(cfg.Endpoint.WriteEvents)try{System.Diagnostics.EventLog.WriteEntry("LinkScope",a.Title+" · "+a.Message,a.Severity=="critical"?System.Diagnostics.EventLogEntryType.Error:a.Severity=="warning"?System.Diagnostics.EventLogEntryType.Warning:System.Diagnostics.EventLogEntryType.Information,4201);}catch(Exception ex){AppJournal.Fault("Endpoint","event-log",ex);}}
                 if(changed.Count>0)Changed();
             }
         }
@@ -239,7 +239,7 @@ namespace LinkScope {
         static IEnumerable<Dictionary<string,object>> Rows(Dictionary<string,object> o,string key="items"){
             var a=Field(o,key) as IEnumerable;return a==null?Enumerable.Empty<Dictionary<string,object>>():a.Cast<object>().Select(Map);}
         internal static bool IsOwnEndpointEvent(string channel,string provider,string eventId){
-            return string.Equals(channel,"Application",StringComparison.OrdinalIgnoreCase)&&string.Equals(provider,"Unixfor LinkScope",StringComparison.OrdinalIgnoreCase)&&eventId=="4201";
+            return string.Equals(channel,"Application",StringComparison.OrdinalIgnoreCase)&&(string.Equals(provider,"LinkScope",StringComparison.OrdinalIgnoreCase)||string.Equals(provider,"Unixfor LinkScope",StringComparison.OrdinalIgnoreCase))&&eventId=="4201";
         }
         internal void Sample(string cat,object result,Config cfg){
             var value=result as Dictionary<string,object>??Map(Config.Json().DeserializeObject(Config.Json().Serialize(result)));
@@ -267,7 +267,7 @@ namespace LinkScope {
                         var a=Signal(cat,id,severity,title,message,S(item,"actualHash"));list.Add(a);HealthAlert previous;
                         if(!current.TryGetValue(a.Key,out previous)||previous.Revision!=a.Revision||previous.Severity!=a.Severity){
                             AppJournal.Event(severity=="critical"?LogLevel.Error:LogLevel.Warning,cat=="data_integrity"?"Integrity":"Endpoint",title,message);
-                            if(cat=="data_integrity"?cfg.Integrity.WriteEvents:cfg.Endpoint.WriteEvents)try{System.Diagnostics.EventLog.WriteEntry("Unixfor LinkScope",title+" · "+message,severity=="critical"?System.Diagnostics.EventLogEntryType.Error:System.Diagnostics.EventLogEntryType.Warning,4201);}catch(Exception ex){AppJournal.Fault("Integrity","event-log",ex);}
+                            if(cat=="data_integrity"?cfg.Integrity.WriteEvents:cfg.Endpoint.WriteEvents)try{System.Diagnostics.EventLog.WriteEntry("LinkScope",title+" · "+message,severity=="critical"?System.Diagnostics.EventLogEntryType.Error:System.Diagnostics.EventLogEntryType.Warning,4201);}catch(Exception ex){AppJournal.Fault("Integrity","event-log",ex);}
                         }
                     }
                     if(status=="unavailable"||status=="partial")list.AddRange(current.Values.Where(x=>x.Category==cat&&!list.Any(y=>y.Key==x.Key)));

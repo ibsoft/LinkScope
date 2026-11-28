@@ -159,26 +159,53 @@ namespace LinkScope {
                 Check(Convert.ToInt64(db.Rows("SELECT COUNT(*) FROM incidents")[0][0])==4,"history preserved");
             }
         }
-        static void CheckProfileDefaults(string dir){
-            string profile=Path.Combine(dir,"Profile"),additional=Path.Combine(dir,"Other"),canary=Path.Combine(profile,"Documents","canary.txt");
-            var fresh=new EndpointSettings();Program.ApplyProfileDefaults(fresh,profile,true);
-            Check(fresh.Enabled&&fresh.RealTime&&fresh.Mode=="monitor"&&fresh.IntervalSeconds==86400&&fresh.MaxFileMiB==100,"fresh profile safe default");
-            Check(fresh.Paths.SequenceEqual(new[]{profile})&&fresh.ProfileDefaultsApplied,"profile default applied once");
-            string cache=Path.Combine(profile,@"AppData\Local\Google\Chrome\User Data\Default\Cache\test.exe");
-            Check(EndpointProtection.BackgroundExcluded(fresh,cache)&&!EndpointProtection.Excluded(fresh,cache),"cache excluded only from full scans");
-            Check(!EndpointProtection.BackgroundExcluded(fresh,Path.Combine(profile,@"AppData\Local\Temp\test.exe")),"temp remains protected");
-            fresh.CanaryPaths=new[]{canary};fresh.BackgroundExcludedPaths=new[]{profile};
-            Check(!EndpointProtection.BackgroundExcluded(fresh,canary)&&!EndpointProtection.BackgroundExcluded(fresh,Path.Combine(profile,"Documents")),"canary traversal protected");
-            fresh.Paths=new[]{additional};fresh.CanaryPaths=new string[0];Program.ApplyProfileDefaults(fresh,profile,false);
-            Check(fresh.Paths.SequenceEqual(new[]{additional}),"later custom changes not overwritten");
-            var existing=new EndpointSettings{Enabled=true,Paths=new[]{additional},IntervalSeconds=900,MaxFileMiB=25,ExcludedPaths=new[]{Path.Combine(additional,"skip")}};
-            Program.ApplyProfileDefaults(existing,profile,false);
-            Check(existing.Paths.SequenceEqual(new[]{additional,profile})&&existing.IntervalSeconds==900&&existing.MaxFileMiB==25&&existing.ExcludedPaths.Length==1,"upgrade adds profile and preserves custom settings");
-            var disabled=new EndpointSettings{Paths=new[]{additional}};Program.ApplyProfileDefaults(disabled,profile,false);
-            Check(!disabled.Enabled&&disabled.Paths.SequenceEqual(new[]{additional}),"disabled configured policy stays disabled");
+        static void CheckExplicitEndpointScope(string dir){
+            string chosen=Path.Combine(dir,"Application"),canary=Path.Combine(chosen,"canary.txt");
+            var fresh=new EndpointSettings();Program.PreserveExplicitEndpointScope(fresh);
+            Check(!fresh.Enabled&&fresh.Paths.Length==0&&fresh.CanaryPaths.Length==0&&fresh.BackgroundExcludedPaths.Length==0&&fresh.Mode=="monitor","new installs require explicit scope");
+            var existing=new EndpointSettings{Enabled=true,Paths=new[]{chosen},CanaryPaths=new[]{canary},IntervalSeconds=900,MaxFileMiB=25,ExcludedPaths=new[]{Path.Combine(chosen,"skip")},BackgroundExcludedPaths=new[]{chosen}};
+            // Compare actual values, not the serializer's unspecified property ordering.
+            // Clone arrays so an in-place mutation cannot change the expected snapshot.
+            var properties=typeof(EndpointSettings).GetProperties();
+            var expected=properties.ToDictionary(p=>p.Name,p=>{object v=p.GetValue(existing,null);var a=v as string[];return a==null?v:(object)a.Clone();});
+            Check(!existing.ProfileDefaultsApplied,"legacy fixture starts without migration marker");
+            for(int pass=0;pass<2;pass++){
+                Program.PreserveExplicitEndpointScope(existing);
+                Check(existing.ProfileDefaultsApplied,"explicit scope migration marker set");
+                foreach(var property in properties){
+                    if(property.Name=="ProfileDefaultsApplied")continue;
+                    object before=expected[property.Name],after=property.GetValue(existing,null);
+                    var a=before as string[];var b=after as string[];
+                    Check(a!=null?b!=null&&a.SequenceEqual(b,StringComparer.Ordinal):Object.Equals(before,after),"upgrade preserves endpoint setting: "+property.Name);
+                }
+            }
+            Check(!EndpointProtection.BackgroundExcluded(existing,canary)&&!EndpointProtection.BackgroundExcluded(existing,chosen),"canary traversal protected");
+            var disabled=new EndpointSettings{Paths=new[]{chosen}};Program.PreserveExplicitEndpointScope(disabled);
+            Check(!disabled.Enabled&&disabled.Paths.SequenceEqual(new[]{chosen}),"disabled configured policy stays disabled");
         }
         static void CheckEndpoint(string dir){
-            CheckSignatureSchedule();CheckEndpointScope(dir);CheckProfileDefaults(dir);
+            CheckSignatureSchedule();CheckEndpointScope(dir);CheckExplicitEndpointScope(dir);
+            long databaseVersion;DateTime definitionStamp;
+            var reference=new DateTime(2026,11,28,8,26,59);
+            string versionFixture="ClamAV 1.5.5/28194/Wed Nov 25 08:26:59 2026";
+            Check(ClamUpdateWorker.DefinitionFreshness(versionFixture,reference.AddSeconds(-1),out databaseVersion,out definitionStamp)=="Current"&&databaseVersion==28194,"definition age below 72 hours");
+            Check(ClamUpdateWorker.DefinitionFreshness(versionFixture,reference,out databaseVersion,out definitionStamp)=="Stale","definition age reaches 72 hours");
+            Check(ClamUpdateWorker.DefinitionFreshness("ClamAV 1.5.5/invalid/Wed Nov 25 08:26:59 2026",reference,out databaseVersion,out definitionStamp)=="Unknown","invalid definition version is never current");
+            Check(ClamUpdateWorker.DefinitionFreshness(versionFixture,reference.AddDays(-5),out databaseVersion,out definitionStamp)=="Unknown","future definition timestamp is never current");
+            Check(ClamUpdateWorker.DefinitionFreshness(versionFixture,new DateTime(2026,11,25,8,20,59),out databaseVersion,out definitionStamp)=="Unknown","definition timestamp more than five minutes ahead rejected");
+            string comparison;
+            Check(ClamUpdateWorker.CompareDefinition("Stale",28194,28194,out comparison)=="Current"&&comparison.Contains("exceeds 72 hours"),"current advertised version with old publication date");
+            Check(ClamUpdateWorker.CompareDefinition("Current",28194,28195,out comparison)=="Stale","newer advertised daily version overrides young age");
+            Check(ClamUpdateWorker.CompareDefinition("Stale",28194,0,out comparison)=="Unknown"&&comparison.Contains("Publication age: Stale"),"unavailable DNS retains age warning");
+            Check(ClamUpdateWorker.CompareDefinition("Current",28194,0,out comparison)=="Unknown","young publication alone is not verified current");
+            Check(ClamUpdateWorker.CompareDefinition("Unknown",28194,28194,out comparison)=="Unknown","invalid engine date remains unknown");
+            Check(ClamUpdateWorker.CompareDefinition("Current",28195,28194,out comparison)=="Unknown","advertised version behind engine is inconclusive");
+            var dnsTime=new DateTime(2026,11,28,8,29,0,DateTimeKind.Utc);
+            string dnsFixture="1.4.7:63:28194:1795854540:1:90:49192:339";
+            Check(ClamUpdateWorker.ParseAdvertisedDaily(dnsFixture,dnsTime.AddHours(1))==28194,"official DNS daily field");
+            Check(ClamUpdateWorker.ParseAdvertisedDaily(dnsFixture,dnsTime.AddHours(4))==0,"stale DNS advertisement rejected");
+            Check(ClamUpdateWorker.ParseAdvertisedDaily(dnsFixture,dnsTime.AddMinutes(-6))==0,"future DNS advertisement rejected");
+            Check(ClamUpdateWorker.ParseAdvertisedDaily("invalid",dnsTime)==0,"malformed DNS advertisement rejected");
             var settings=new EndpointSettings{Enabled=true,Paths=new[]{dir},ExcludedPatterns=new[]{"*.tmp"}};settings.Validate();
             Check(settings.Mode=="monitor"&&settings.RealTime,"endpoint safe defaults");
             Check(settings.BackgroundReadMiB==10&&settings.MetadataFastCache&&settings.BackgroundPauseOnBusyDisk&&!settings.BackgroundPauseOnBattery,"endpoint background resource defaults");
@@ -188,6 +215,15 @@ namespace LinkScope {
             Check(!EndpointProtection.Excluded(settings,Path.Combine(dir,"trace.txt")),"endpoint exclusion boundary");
             var flat=new byte[4096];var uniform=Enumerable.Range(0,4096).Select(n=>(byte)(n%256)).ToArray();
             Check(!EndpointProtection.RansomwareCorroborated(54,0,50)&&!EndpointProtection.RansomwareCorroborated(50,2,50)&&EndpointProtection.RansomwareCorroborated(50,3,50),"file activity alone is not ransomware evidence");
+            Check(EndpointResourceMonitor.NativeCounterSelfCheck(),"native query-only process memory/time counters");
+            Check(EndpointResourceMonitor.CpuDelta(100,300,1000,2000,4)==5.0&&EndpointResourceMonitor.CpuDelta(300,100,1000,2000,4)==null&&EndpointResourceMonitor.CpuDelta(100,100,1000,2000,4)==0.0,"resource CPU delta and counter reset");
+            Check(EndpointResourceMonitor.Floor(8192,512,10)==820&&EndpointResourceMonitor.Floor(1024,8192,10)==512,"resource RAM floor and small-host cap");
+            int lowRamSamples=0,highRamSamples=0;bool ramPressure=false;
+            ramPressure=EndpointResourceMonitor.Pressure(ramPressure,400,8192,820,ref lowRamSamples,ref highRamSamples);Check(!ramPressure,"single low-memory sample does not pause");
+            ramPressure=EndpointResourceMonitor.Pressure(ramPressure,400,8192,820,ref lowRamSamples,ref highRamSamples);Check(ramPressure,"two low-memory samples pause background");
+            ramPressure=EndpointResourceMonitor.Pressure(ramPressure,900,8192,820,ref lowRamSamples,ref highRamSamples);Check(ramPressure,"recovery hysteresis");
+            ramPressure=EndpointResourceMonitor.Pressure(ramPressure,1200,8192,820,ref lowRamSamples,ref highRamSamples);Check(ramPressure,"single recovery sample does not resume");
+            ramPressure=EndpointResourceMonitor.Pressure(ramPressure,1200,8192,820,ref lowRamSamples,ref highRamSamples);Check(!ramPressure,"two recovery samples resume background");
             Check(EndpointProtection.EntropyTransition(65536,7.99,4.0)&&!EndpointProtection.EntropyTransition(65536,7.99,7.9)&&!EndpointProtection.EntropyTransition(100,7.99,0),"entropy transition requires established lower entropy and substantial sample");
             var observedAt=DateTime.UtcNow;var entropyEvidence=new Dictionary<string,DateTime>(StringComparer.OrdinalIgnoreCase);
             for(int i=0;i<5;i++)entropyEvidence[Path.Combine(dir,"test-"+i+".txt")]=observedAt.AddSeconds(-i*50);
@@ -231,7 +267,7 @@ namespace LinkScope {
             Check(!alerts.List(new[]{"endpoint_protection"},true).Select(AsMap).Any(a=>Equals(a["title"],"endpoint_protection coverage is partial")),"specific watcher warning prevents duplicate generic warning");
             alerts.RefreshEndpointWatcherFinding("watcher-test",null);
             Check(!alerts.List(new[]{"endpoint_protection"},true).Select(AsMap).Any(a=>Equals(a["title"],"Watcher coverage incomplete"))&&alerts.List(new[]{"endpoint_protection"},true).Select(AsMap).Any(a=>Equals(a["title"],"Malware detected")),"retire watcher warning only");
-            var own=new {provider="Unixfor LinkScope",eventId=4201,level="Warning",recordId=2,utc="test"};
+            var own=new {provider="LinkScope",eventId=4201,level="Warning",recordId=2,utc="test"};
             var external=new {provider="Other provider",eventId=4201,level="Warning",recordId=3,utc="test"};
             alerts.Sample("events",new {status="ok",items=new[]{new {channel="Application",status="ok",items=new[]{own}}}},cfg);
             Check(alerts.List(new[]{"events"},true).Length==0,"own mirrored endpoint event not re-alerted");

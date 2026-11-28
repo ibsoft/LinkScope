@@ -29,6 +29,12 @@ if ($env:LINKSCOPE_RELEASE_VERSION) {
     }
     $version = $env:LINKSCOPE_RELEASE_VERSION
     $source = 'explicit release metadata'
+} elseif (Test-Path -LiteralPath (Join-Path $root 'source-build-version.txt') -PathType Leaf) {
+    # The source archive has its own release identity, even inside an older Git checkout.
+    $candidate = (Get-Content -Raw -LiteralPath (Join-Path $root 'source-build-version.txt')).Trim()
+    if ($candidate -cnotmatch '^V[1-9][0-9]*$') { throw 'source-build-version.txt must contain an archive version such as V42.' }
+    $version = $candidate
+    $source = 'packaged source release metadata'
 } else {
     $top = Invoke-Git @('rev-parse','--show-toplevel') | Select-Object -First 1
     $head = $null

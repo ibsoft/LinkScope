@@ -27,6 +27,7 @@
     <Reference Include="System.Security" />
     <Reference Include="System.Web.Extensions" />
     <Compile Include="Setup.cs" />
+    <Compile Include="EndpointPermissions.cs" />
     <Compile Include="..\src\CanaryTemplates.cs" />
     <Compile Include="..\src\ClamUpdateWorker.cs" />
     <Compile Include="ClamSetup.cs" />

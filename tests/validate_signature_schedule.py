@@ -4,6 +4,9 @@ import json, re, sqlite3, subprocess
 root=Path(__file__).resolve().parents[1];src=root/'src'
 app=(src/'app.js').read_text(); ep=(src/'EndpointProtection.cs').read_text(); program=(src/'Program.cs').read_text(); html=(src/'settings.html').read_text(); endpoint=(src/'endpoint.html').read_text()
 policy=json.loads((src/'default.json').read_text())['Endpoint']
+# The backend preserves this installer-owned flag independently of the browser form.
+assert 'next.Endpoint.ProfileDefaultsApplied=settings.Endpoint.ProfileDefaultsApplied' in (src/'Web.cs').read_text()
+policy.pop('ProfileDefaultsApplied')
 assert not policy['SignatureScheduleEnabled'] and policy['SignatureScheduleFrequency']=='daily' and policy['SignatureScheduleTime']=='03:00'
 for field in ('Enabled','Frequency','Time','Weekday','MonthDay'):
     assert html.count('id="EndpointSignatureSchedule'+field+'"')==1,field

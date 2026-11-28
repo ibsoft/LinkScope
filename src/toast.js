@@ -48,7 +48,61 @@
         const nameNode=b.querySelector('.ls-brand-name');if(nameNode){if(nameNode.textContent!==name)nameNode.textContent=name;}else if(b.textContent!==name)b.textContent=name;
     }
     function applyCategoryRead(category,cutoff){categoryReadThrough.set(category,Math.max(categoryReadThrough.get(category)||0,Number(cutoff)||0));for(const [key,item] of toasts)if(item.category===category&&item.alertSequence!=null&&item.alertSequence<=cutoff)dismiss(key);}
-    window.LinkScopeToast={message:(level,title,text)=>show('ui:'+title,level,title,text),brand,categoryRead:(category,cutoff)=>{applyCategoryRead(category,cutoff);keep(localStorage,readSignal,{category,through:cutoff,at:Date.now()});poll();}};
+    // Explanations are local, deterministic descriptions of the alert rule, not an AI verdict.
+    function explainAlert(a){
+        const title=String(a.title||'').toLowerCase(),category=String(a.category||'');
+        const has=x=>title.includes(x);
+        if(category==='endpoint_protection'){
+            if(has('possible ransomware activity'))return ['The behavior detector observed multiple changed files with significant increases in content randomness (entropy). This pattern is consistent with encryption, but legitimate compression or encryption can also produce it. It is not a confirmed malware signature.','Review the recorded counts, observation window and any process attribution. Check the affected files and legitimate jobs before deciding on containment.'];
+            if(has('canary integrity violation'))return ['A registered decoy file no longer matches its trusted baseline or could not be found. This is an integrity finding, not proof of ransomware or the identity of a writer.','Investigate the file and any matching audit evidence. Restore verified original content only after investigation.'];
+            if(has('malware signature detected'))return ['ClamAV returned a recognized malware signature for an inspected file. A signature finding is different from a behavioral warning and may require verification of a false positive.','Review the recorded signature and SHA-256. Check whether quarantine succeeded in Endpoint Protection; do not assume detection means isolation.'];
+            if(has('heuristic'))return ['The antivirus reported a heuristic or policy-related finding rather than a confirmed malware classification.','Review the exact engine verdict and file evidence before taking action.'];
+            if(has('quarantine')||has('containment')||has('response engine'))return ['A response action, authorization check, or evidence-management operation was reported. The recorded result determines whether an action completed, was withheld, or failed.','Check the response and quarantine evidence, approved paths and permission diagnostics. Do not assume the file or process was contained.'];
+            if(has('provider update')||has('provider schedule'))return ['A third-party signature source update or scheduling operation needs review. This is separate from the official ClamAV database freshness.','Review the provider status and next eligible attempt. Respect the configured cooldown; inspect protected local logs as an administrator.'];
+            if(has('signature')&& !has('malware'))return ['A signature freshness or update operation needs attention. A responsive antivirus engine does not necessarily mean its databases are current.','Compare the engine-reported database version, update outcome and provider schedules in Maintenance.'];
+            if(has('engine unavailable')||has('engine scan incomplete'))return ['The scanner could not obtain a verified antivirus verdict. The affected file or interval is not confirmed clean.','Check ClamD connectivity and readiness, then verify that pending scans recover.'];
+            if(has('coverage')||has('scan incomplete')||has('scan error')||has('scan limited')||has('protected path')||has('queue overflow')||has('journal')||has('traversal'))return ['Some monitoring or file verification could not be completed. This is a coverage gap, not a malware detection.','Inspect the exact path, scan error and watcher/journal state. Verify that pending work or a reconciliation scan completes; investigate persistent gaps.'];
+            return ['Endpoint Protection recorded a security or operational finding. The recorded title and evidence identify the specific condition; no additional cause has been established.','Review Endpoint Protection evidence and any related response or coverage records.'];
+        }
+        if(category==='network'){
+            if(has('latency'))return ['The measured round-trip time exceeded the configured threshold. This does not identify which network segment caused the delay.','Review the target, threshold and recent network measurements.'];
+            if(has('packet loss')||has('timeout')||has('probe failing'))return ['One or more monitoring probes did not receive an expected reply, or a configured loss/failure threshold was exceeded. A blocked or rate-limited ICMP response is also possible.','Check the recorded target and probe status, then verify reachability and firewall policy independently.'];
+            return ['A network monitoring rule reported a condition.','Review the target and recorded measurement in the Network dashboard.'];
+        }
+        if(['cpu','ram','disk_usage'].includes(category))return [has('unavailable')?'A resource measurement could not be collected. The actual usage is not established.':'Measured resource usage reached or exceeded its configured alert threshold. This does not identify the process or workload responsible.','Review current utilization, the recorded threshold and resource history in System health.'];
+        if(category==='smart')return ['Disk health telemetry reported a condition that needs review. The evidence is limited to the attributes and findings the collector recorded.','Review SMART/NVMe details and confirm backups; investigate any replacement recommendation.'];
+        if(category==='events'||category==='event_details')return ['The collector reported a Windows Event Log condition. A grouped alert may contain only a count and the latest provider/event ID, not every event message.','Open Windows event details and filter by channel, provider, event ID and time.'];
+        if(category==='data_integrity')return ['A file-integrity comparison or baseline verification reported a difference or an operational error. Not every file change is malicious.','Compare recorded expected and actual hashes and verify the authorized change history.'];
+        if(category==='firewall'||category==='antivirus'||category==='security')return ['A Windows security control or protection provider reported a state that needs review. This is a posture finding, not a malware verdict.','Review the recorded control or provider and confirm the intended Windows security policy.'];
+        return ['A monitoring rule recorded this condition. The available record does not establish a more specific cause.','Use the evidence below and the related dashboard to investigate.'];
+    }
+    let alertDialog=null;
+    function openAlert(a,trigger){
+        if(!a)return;
+        if(!alertDialog){
+            alertDialog=el('dialog');alertDialog.id='ls-alert-detail';alertDialog.className='ls-alert-dialog';alertDialog.setAttribute('aria-labelledby','ls-alert-detail-title');document.body.append(alertDialog);
+            alertDialog.addEventListener('click',e=>{if(e.target===alertDialog){const r=alertDialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)alertDialog.close();}});
+            alertDialog.addEventListener('close',()=>{if(alertDialog.returnFocus?.isConnected)alertDialog.returnFocus.focus();});
+        }
+        const title=el('h2',a.title||'Alert details');title.id='ls-alert-detail-title';
+        const header=el('div');header.className='ls-alert-dialog-header';const titleWrap=el('div');const kicker=el('small','LINKSCOPE · ALERT INVESTIGATION');titleWrap.append(kicker,title);
+        const close=el('button','×');close.type='button';close.className='ls-alert-close';close.setAttribute('aria-label','Close alert details');close.onclick=()=>alertDialog.close();header.append(titleWrap,close);
+        const badges=el('div');badges.className='ls-alert-badges';const severity=String(a.severity||'unknown').toLowerCase();const badge=el('span',severity);badge.className='ls-alert-severity '+(['critical','error','warning','info'].includes(severity)?severity:'unknown');badges.append(badge,el('span',a.resolved===true?'Resolved':a.resolved===false?'Active':'Status not recorded'));
+        const meta=el('dl');meta.className='ls-alert-meta';const time=v=>v&&Number.isFinite(Date.parse(v))?new Date(v).toLocaleString():'Not recorded';
+        for(const [key,value] of [['Category',a.category||'Not recorded'],['First recorded',time(a.sinceUtc)],['Resolved',a.resolved===true?time(a.resolvedUtc):'—'],['Alert ID',a.id||'Not recorded'],['Read status',a.read===true?'Read':a.read===false?'Unread':'Not recorded']]){meta.append(el('dt',key),el('dd',value));}
+        const [meaning,action]=explainAlert(a);const detail=el('div');detail.className='ls-alert-evidence';detail.append(el('h3','Recorded evidence'),el('p','Original stored alert message. Historical evidence may not reflect the current state.'),el('pre',a.message||'No detailed evidence was stored for this record.'));
+        const actions=el('div');actions.className='ls-alert-dialog-actions';const link=el('a','Open related dashboard');const cat=String(a.category||'');link.href=cat==='network'?'/':cat==='endpoint_protection'?'/endpoint#endpoint-alert-diagnostics':cat==='data_integrity'?'/integrity':'/system#category-'+encodeURIComponent(cat);actions.append(link);
+        const done=el('button','Close');done.type='button';done.onclick=()=>alertDialog.close();actions.append(done);
+        alertDialog.replaceChildren(header,badges,meta,el('h3','What this means'),el('p',meaning),detail,el('h3','Recommended investigation'),el('p',action),actions);
+        alertDialog.returnFocus=trigger||document.activeElement;if(!alertDialog.open)alertDialog.showModal();close.focus();
+    }
+    function attachAlertRow(node,a,cell){
+        if(!node||!cell)return;
+        const button=el('button','View details');button.type='button';button.className='ls-alert-detail-button';button.setAttribute('aria-label','View alert details: '+(a.title||'Alert'));
+        button.addEventListener('click',e=>{e.stopPropagation();openAlert(a,button);});cell.append(button);node.classList.add('ls-alert-clickable');
+        node.addEventListener('click',e=>{if(e.target.closest('button,a,input,select,textarea,label')||window.getSelection()?.toString())return;openAlert(a,button);});
+    }
+    window.LinkScopeToast={openAlert,attachAlertRow,message:(level,title,text)=>show('ui:'+title,level,title,text),brand,categoryRead:(category,cutoff)=>{applyCategoryRead(category,cutoff);keep(localStorage,readSignal,{category,through:cutoff,at:Date.now()});poll();}};
     if(document.body.dataset.page==='login')return;
     guestReads=stored(localStorage,'linkscope.read-alerts.v1',[]);guestSeen=stored(sessionStorage,'ls-guest-seen',[]);
     // The authenticated response already contains all controls and initial unread count.
@@ -95,7 +149,7 @@
     function addRow(a){
         const node=el('tr');node.className=a.read?'':'unread';node.dataset.seq=a.sequence;
         const time=el('time',new Date(a.sinceUtc).toLocaleString());time.dateTime=a.sinceUtc;node.insertCell().append(time);
-        node.insertCell().append(el('strong',a.title),el('p',a.message));
+        const description=node.insertCell();description.append(el('strong',a.title),el('p',a.message));attachAlertRow(node,a,description);
         node.insertCell().textContent=a.category;node.insertCell().textContent=a.severity;
         const lifecycle=node.insertCell();lifecycle.textContent=a.resolved?'Resolved':'Active';
         if(a.resolvedUtc)lifecycle.append(el('small',new Date(a.resolvedUtc).toLocaleString()));

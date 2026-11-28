@@ -43,11 +43,13 @@ function confirmAction(title, message, action, destructive = false) {
 let csrf='';
 async function request(url,data){
     const options={cache:'no-store',credentials:'same-origin',redirect:'error'};
+    const controller=(data===undefined&&['/ui/endpoint','/ui/endpoint-ack'].includes(url)||url==='/ui/endpoint-containment-tests'||url==='/ui/endpoint-audit-probe'||url==='/ui/endpoint-external-probe'||url==='/ui/endpoint-protection-lab')?new AbortController():null;
+    if(controller)options.signal=controller.signal;
+    const timeout=controller?setTimeout(()=>controller.abort(),url==='/ui/endpoint-external-probe'?25000:url==='/ui/endpoint-audit-probe'?20000:12000):null;
     if(data!==undefined){
         options.method='POST';options.headers={'Content-Type':'application/json','X-CSRF-Token':csrf};options.body=JSON.stringify(data);
     }
-    const response=await fetch(url,options);
-    const result=await response.json();
+    let response,result;try{response=await fetch(url,options);result=await response.json();}finally{if(timeout)clearTimeout(timeout);}
     if(!response.ok){
         if(response.status===401&&page!=='login')location.assign(page==='settings'&&location.hash==='#siem'?'/login#siem':'/login');
         throw new Error(result.error||'Request failed');
@@ -56,12 +58,12 @@ async function request(url,data){
 }
 const notice=(text,severity='success')=>{byId('notice').textContent=text;if(text&&window.LinkScopeToast)window.LinkScopeToast.message(severity,severity==='error'?'Action failed':'LinkScope',text);};
 const failure=ex=>notice(ex.message||String(ex),'error');
-function table(rows,key){
+function table(rows,key,alertRecords){
     const container=element('div');container.className='tablewrap';if(!rows.length){container.append(element('small','No records in this sample.'));return container;}
     const keys=[...new Set(rows.flatMap(row=>Object.keys(row)))];const t=element('table'),head=t.createTHead().insertRow(),body=t.createTBody();
     const endpointHeaders={utc:'Timestamp',firstUtc:'First detected',lastUtc:'Last detected',durationMs:'Duration (ms)',actualHash:'Actual SHA-256',expectedHash:'Expected SHA-256',result:'Result',path:'File / path',source:'Scan type',severity:'Severity',detail:'Details',status:'Status',hash:'SHA-256',change:'Detection'};
     keys.forEach(k=>head.append(element('th',page==='endpoint'?(endpointHeaders[k]||k):k)));
-    for(const row of rows){const tr=body.insertRow();for(const k of keys){const v=row[k];const cell=tr.insertCell(),stamp=page==='endpoint'&&/^(utc|.*Utc)$/.test(k)&&typeof v==='string'&&Number.isFinite(Date.parse(v)),text=v==null?'—':stamp?new Date(v).toLocaleString():typeof v==='object'?JSON.stringify(v):String(v);if(stamp)cell.title=v;const kind=(page==='system'||page==='integrity'||page==='endpoint')?healthCellKind(key,k,v):null;if(kind)cell.append(healthBadge(text,kind));else cell.textContent=text;}}
+    for(const row of rows){const tr=body.insertRow();for(const k of keys){const v=row[k];const cell=tr.insertCell(),stamp=page==='endpoint'&&/^(utc|.*Utc)$/.test(k)&&typeof v==='string'&&Number.isFinite(Date.parse(v)),text=v==null?'—':stamp?new Date(v).toLocaleString():typeof v==='object'?JSON.stringify(v):String(v);if(stamp)cell.title=v;const kind=(page==='system'||page==='integrity'||page==='endpoint')?healthCellKind(key,k,v):null;if(kind)cell.append(healthBadge(text,kind));else cell.textContent=text;}if(alertRecords&&window.LinkScopeToast?.attachAlertRow){const a=alertRecords[body.rows.length-1];if(a)window.LinkScopeToast.attachAlertRow(tr,a,tr.cells[1]||tr.cells[0]);}}
     container.append(t);LinkScopePages.attach(t,key,label(key),false,page==='system'||page==='integrity'||page==='endpoint');return container;
 }
 function checkboxList(id,options,selected){
@@ -287,9 +289,9 @@ async function refreshMaintenance(){try{showMaintenanceStatus(await request('/ui
 async function runMaintenance(){if(formDirty){notice('Save settings before running database cleanup.','error');return;}if(!(await confirmAction('Run database cleanup?', 'Records older than the saved retention period will be permanently deleted. Make sure you have a current backup.', 'Delete old records', true)))return;try{await request('/ui/database-maintenance',{});notice('Database cleanup queued.');await refreshMaintenance();}catch(ex){failure(ex);}}
 const integrityLines=id=>byId(id).value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
 function readIntegrity(){return {Enabled:byId('IntegrityEnabled').checked,IntervalSeconds:Number(byId('IntegrityInterval').value),Recursive:byId('IntegrityRecursive').checked,WriteEvents:byId('IntegrityWriteEvents').checked,Paths:integrityLines('IntegrityPaths'),ExcludedPaths:integrityLines('IntegrityExcludedPaths'),ExcludedPatterns:integrityLines('IntegrityExcludedPatterns')};}
-const endpointFlags=['Enabled','WriteEvents','RealTime','ProcessCorrelation','SignatureScheduleEnabled','MetadataFastCache','BackgroundPauseOnBusyDisk','BackgroundPauseOnBattery'];
-const endpointNumbers={IntervalSeconds:'EndpointInterval',ChangeThreshold:'EndpointThreshold',Port:'EndpointPort',MaxFileMiB:'EndpointMaxFileMiB',BackgroundReadMiB:'EndpointBackgroundReadMiB',BehaviorWindowSeconds:'EndpointBehaviorWindowSeconds'};
-const endpointArrays=['Paths','ExcludedPaths','BackgroundExcludedPaths','ExcludedPatterns','CanaryPaths','ResponsePaths','ContainmentExecutables'];
+const endpointFlags=['Enabled','WriteEvents','RealTime','ProcessCorrelation','SignatureScheduleEnabled','MetadataFastCache','BackgroundPauseOnBusyDisk','BackgroundPauseOnBattery','BackgroundPauseOnLowMemory'];
+const endpointNumbers={IntervalSeconds:'EndpointInterval',ChangeThreshold:'EndpointThreshold',Port:'EndpointPort',MaxFileMiB:'EndpointMaxFileMiB',BackgroundReadMiB:'EndpointBackgroundReadMiB',BehaviorWindowSeconds:'EndpointBehaviorWindowSeconds',ExtendedEntropyWindowSeconds:'EndpointExtendedEntropyWindowSeconds',ExtendedEntropyThreshold:'EndpointExtendedEntropyThreshold',EntropyMinimumSampleBytes:'EndpointEntropyMinimumSampleBytes',EntropyMinimumCurrent:'EndpointEntropyMinimumCurrent',EntropyMinimumIncrease:'EndpointEntropyMinimumIncrease',MemoryMinimumAvailableMiB:'EndpointMemoryMinimumAvailableMiB',MemoryMinimumAvailablePercent:'EndpointMemoryMinimumAvailablePercent',BackgroundBatchSize:'EndpointBackgroundBatchSize',SignatureMemoryDeferralMinutes:'EndpointSignatureMemoryDeferralMinutes'};
+const endpointArrays=['Paths','ExcludedPaths','BackgroundExcludedPaths','ExcludedPatterns','CanaryPaths','ResponsePaths','TestPaths','ContainmentExecutables'];
 function fillEndpoint(c){const e=c.Endpoint;for(const k of endpointFlags)byId('Endpoint'+k).checked=!!e[k];for(const [k,id] of Object.entries(endpointNumbers))byId(id).value=e[k];for(const k of endpointArrays)byId('Endpoint'+k).value=(e[k]||[]).join('\n');byId('EndpointMode').value=e.Mode;byId('EndpointTrustedEnginePath').value=e.TrustedEnginePath||'';byId('EndpointTrustedEngineSha256').value=e.TrustedEngineSha256||'';byId('EndpointSignatureScheduleFrequency').value=e.SignatureScheduleFrequency||'daily';byId('EndpointSignatureScheduleTime').value=e.SignatureScheduleTime||'03:00';byId('EndpointSignatureScheduleWeekday').value=String(e.SignatureScheduleWeekday??1);byId('EndpointSignatureScheduleMonthDay').value=e.SignatureScheduleMonthDay??1;signatureScheduleFields();}
 function signatureScheduleFields(){const enabled=byId('EndpointSignatureScheduleEnabled').checked,f=byId('EndpointSignatureScheduleFrequency').value;byId('signature-schedule-fields').hidden=!enabled;byId('signature-weekday-field').hidden=f!=='weekly';byId('signature-monthday-field').hidden=f!=='monthly';for(const id of ['Frequency','Time','Weekday','MonthDay'])byId('EndpointSignatureSchedule'+id).disabled=!enabled||(id==='Weekday'&&f!=='weekly')||(id==='MonthDay'&&f!=='monthly');byId('signature-schedule-summary').textContent=enabled?'Saved schedules run while Endpoint Protection is enabled and LinkScope is installed as a Windows service. Next run appears under Endpoint Protection → Signature maintenance.':'No additional LinkScope-scheduled updates.';}
 let endpointResponseSuggestions={paths:[],executables:[],engine:null};
@@ -308,6 +310,9 @@ function updateResponseSuggestions(){
     const executable=endpointResponseSuggestions.executables.filter(p=>protectedPaths.some(r=>responseUnder(p,r))&&selectedPaths.some(r=>responseUnder(p,r)));
     fillResponseOptions('EndpointSuggestedResponse',allowed,'No eligible saved application paths');
     fillResponseOptions('EndpointSuggestedExecutable',executable,'Choose a response path first');
+    const testCandidates=selectedPaths.filter(p=>protectedPaths.some(r=>responseUnder(p,r))&&!selectedPaths.some(other=>other.toLowerCase()!==p.toLowerCase()&&responseUnder(other,p)));
+    fillResponseOptions('EndpointSuggestedTest',testCandidates,'Choose a dedicated leaf response path first');
+    byId('EndpointAddSuggestedTest').disabled=!byId('EndpointSuggestedTest').value;
     byId('EndpointAddSuggestedResponse').disabled=!byId('EndpointSuggestedResponse').value;
     byId('EndpointAddSuggestedExecutable').disabled=!byId('EndpointSuggestedExecutable').value;
     byId('EndpointResponsePaths').placeholder=allowed.length?'Suggested: '+allowed[0]:'Save a non-system protected application path first';
@@ -375,11 +380,29 @@ async function resetEndpointHistory(){
         notice('Endpoint history reset queued. Completion will appear in Settings.');
     }catch(e){failure(e);}finally{endpointHistoryResetBusy=false;refreshEndpointHistoryReset().catch(failure);}
 }
+// One accessible dialog for every settings help icon. It never submits the form.
+function setupSettingsHelp(){
+    const dialog=byId('setting-help-dialog');if(!dialog)return;
+    const close=byId('setting-help-close');let opener=null;
+    for(const trigger of document.querySelectorAll('[data-setting-help]'))trigger.addEventListener('click',()=>{
+        const source=byId(trigger.dataset.settingHelp);if(!source||dialog.open)return;
+        opener=trigger;byId('setting-help-title').textContent=trigger.dataset.helpTitle;
+        byId('setting-help-content').textContent=source.textContent.trim();
+        dialog.showModal();close.focus();
+    });
+    close.addEventListener('click',()=>dialog.close());
+    dialog.addEventListener('close',()=>{if(opener&&opener.isConnected)opener.focus();opener=null;});
+    dialog.addEventListener('click',event=>{if(event.target!==dialog)return;const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)dialog.close();});
+}
 function settingsPage(){
+    setupSettingsHelp();
     byId('EndpointHistoryReset').onclick=resetEndpointHistory;
     setInterval(()=>refreshEndpointHistoryReset().catch(()=>{}),3000);
 
     const categories=[...document.querySelectorAll('details.settings-category')];
+    ensureSettingsQuickLinks(categories);
+    const hashTarget=location.hash?byId(location.hash.slice(1)):null;
+    if(hashTarget&&hashTarget.matches('details.settings-category'))setTimeout(()=>{hashTarget.open=true;hashTarget.scrollIntoView({behavior:'smooth',block:'start'});},50);
     byId('settings-expand-all').onclick=()=>{for(const d of categories)d.open=true;};
     byId('settings-collapse-all').onclick=()=>{for(const d of categories)d.open=false;};
     for(const form of [byId('configForm'),byId('tokenForm')])form.addEventListener('invalid',event=>{const d=event.target.closest('details.settings-category');if(d)d.open=true;},true);
@@ -389,6 +412,8 @@ function settingsPage(){
     byId('EndpointSuggestedExecutable').onchange=()=>{byId('EndpointAddSuggestedExecutable').disabled=!byId('EndpointSuggestedExecutable').value;};
     byId('EndpointAddSuggestedResponse').onclick=()=>addResponseSuggestion('EndpointSuggestedResponse','EndpointResponsePaths');
     byId('EndpointAddSuggestedExecutable').onclick=()=>addResponseSuggestion('EndpointSuggestedExecutable','EndpointContainmentExecutables');
+    byId('EndpointSuggestedTest').onchange=()=>{byId('EndpointAddSuggestedTest').disabled=!byId('EndpointSuggestedTest').value;};
+    byId('EndpointAddSuggestedTest').onclick=()=>addResponseSuggestion('EndpointSuggestedTest','EndpointTestPaths');
     for(const id of ['EndpointTrustedEnginePath','EndpointTrustedEngineSha256'])byId(id).addEventListener('input',updateEngineSuggestion);
     byId('EndpointUseDetectedEngine').onclick=()=>useDetectedEngine().catch(failure);
     byId('EndpointSignatureScheduleEnabled').onchange=byId('EndpointSignatureScheduleFrequency').onchange=signatureScheduleFields;
@@ -501,6 +526,33 @@ function metric(name,value,foot,collectionKind,alertState){
     for(const message of alertState.messages){const detail=element('small',message);detail.className='health-metric-alert-detail';d.append(detail);}
     return d;
 }
+function makeMetricJump(card,targetId,explanation,openId){
+    if(!card||!targetId)return card;
+    card.classList.add('health-metric-card-action');card.tabIndex=0;card.setAttribute('role','button');card.title=explanation||'Open evidence';
+    const go=()=>{
+        if(openId){const d=byId(openId);if(d)d.open=true;}
+        const target=byId(targetId);if(target){endpointJump(target);for(let p=target.parentElement;p;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true;target.scrollIntoView({behavior:'smooth',block:'start'});target.classList.add('metric-jump-highlight');setTimeout(()=>target.classList.remove('metric-jump-highlight'),1800);if(typeof target.focus==='function'&&target.tabIndex>=0)target.focus({preventScroll:true});}
+    };
+    card.addEventListener('click',go);
+    card.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();go();}});
+    return card;
+}
+function ensureSettingsQuickLinks(categories){
+    const toolbar=document.querySelector('body[data-page=settings] .settings-category-toolbar');
+    if(!toolbar||byId('settings-quick-links'))return;
+    const strip=element('div');strip.id='settings-quick-links';strip.className='settings-quick-links';strip.setAttribute('role','group');strip.setAttribute('aria-label','Jump to settings category');
+    for(const d of categories){
+        const summary=d.querySelector('summary');const title=d.querySelector('.settings-category-title')?.textContent?.trim()||d.id||'Category';
+        const sourceIcon=d.querySelector('.settings-category-icon');const button=document.createElement('button');button.type='button';button.className='secondary settings-quick-link';button.title=title;button.setAttribute('aria-label',title);
+        if(sourceIcon)button.append(sourceIcon.cloneNode(true));
+        const name=element('span',title);name.className='settings-quick-name';button.append(name);
+        button.setAttribute('aria-controls',d.id);button.setAttribute('aria-expanded',String(d.open));
+        d.addEventListener('toggle',()=>button.setAttribute('aria-expanded',String(d.open)));
+        button.addEventListener('click',()=>{d.open=true;d.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});history.replaceState(null,'','#'+d.id);});
+        strip.append(button);
+    }
+    toolbar.after(strip);
+}
 function decorateHealthSection(section,title,state,kind,alertState,timeText){
     section.className='health-category-card '+alertState.kind;
     const summary=element(page==='integrity'||page==='endpoint'?'div':'summary');
@@ -545,6 +597,282 @@ function renderDrive(d){
     }
     options.forEach((name,i)=>{const b=element('button',name);b.type='button';b.onclick=()=>{select(i);filterHealthCategories();};tabs.append(b);});
     card.append(tabs,panel);select(smartTabs.get(d.diskId)||0);return card;
+}
+
+let epView='overview',epRenderKey='',epAckPending=false;
+function applyEndpointView(){
+    if(page!=='endpoint')return;
+    document.querySelectorAll('[data-endpoint-view]').forEach(n=>{n.hidden=!n.dataset.endpointView.split(' ').includes(epView);});
+    document.querySelectorAll('[data-ep-tab]').forEach(n=>n.setAttribute('aria-pressed',String(n.dataset.epTab===epView)));
+}
+function selectEndpointView(view,writeHash=true){
+    if(!['overview','scan','behavior','maintenance','resources','evidence','quarantine','tests'].includes(view))return;
+    epView=view;applyEndpointView();if(writeHash)history.replaceState(null,'','#view-'+view);
+}
+function endpointJump(target){
+    if(!target||page!=='endpoint')return;
+    const owner=target.closest('[data-endpoint-view]');if(owner){const views=owner.dataset.endpointView.split(' ');if(!views.includes(epView))selectEndpointView(views[0],false);}
+}
+function setupEndpointWorkspace(){
+    const nav=byId('endpoint-views');if(!nav)return;setupContainmentTests();
+    nav.addEventListener('click',e=>{const b=e.target.closest('[data-ep-tab]');if(b)selectEndpointView(b.dataset.epTab);});
+    byId('ep-overview').addEventListener('click',e=>{const b=e.target.closest('[data-ep-go]');if(b)selectEndpointView(b.dataset.epGo);});
+    if(location.hash.startsWith('#view-'))selectEndpointView(location.hash.slice(6),false);else applyEndpointView();
+}
+function epTestCards(target,rows){
+    const node=byId(target);if(!node)return;const key=JSON.stringify(rows);if(node.dataset.key===key)return;node.dataset.key=key;
+    node.replaceChildren(...rows.map(row=>{const card=element('article');card.className='ep-test-card';const top=element('div');top.className='ep-test-card-top';top.append(element('strong',row.name),healthBadge(row.state,row.state==='Pass'?'ok':row.state==='Fail'?'fail':row.state==='Review'?'review':'unknown'));card.append(top,element('p',row.evidence));if(Number.isFinite(row.durationMs))card.append(element('small',row.durationMs+' ms'));if(row.sourceUtc)card.append(element('small','Source UTC: '+row.sourceUtc));return card;}));
+}
+// V58: session-local workflow progress. Navigation is never a test verdict.
+const epStepLabels=['Prepare','Run diagnostics','Verify live audit','Identify a writer','Test live protection','Review evidence'];
+let epTestStep=1,epDiagnosticBusy=false,epSuiteBusy=false,epSuiteReport=null,epReadinessRows=[],epReadinessObservedAt=0,epReadinessAge=Infinity,epReadinessUtc=null;
+let epSyncDiagnostics=()=>{};
+const epStepResults=['Awaiting telemetry','Not run','Not run','Not run','Not run','Review results'];
+function epStepResult(step,value){
+    epStepResults[step-1]=value;const label=byId('ep-step-state-'+step);if(label&&label.textContent!==value)label.textContent=value;
+    const review=byId('ep-test-review');if(!review)return;const key=JSON.stringify(epStepResults);if(review.dataset.key===key)return;review.dataset.key=key;
+    review.replaceChildren(...epStepLabels.slice(0,5).map((name,i)=>{const row=element('div');row.className='ep-review-row';row.append(element('strong',name),element('span',epStepResults[i]));return row;}));
+}
+function epSelectStep(step,focus=true){
+    if(!Number.isInteger(step)||step<1||step>epStepLabels.length)return;epTestStep=step;
+    document.querySelectorAll('[data-test-panel]').forEach(p=>{p.hidden=Number(p.dataset.testPanel)!==step;});
+    document.querySelectorAll('[data-test-step]').forEach(b=>{if(Number(b.dataset.testStep)===step)b.setAttribute('aria-current','step');else b.removeAttribute('aria-current');});
+    byId('ep-step-counter').textContent='Step '+step+' of '+epStepLabels.length;byId('ep-step-back').disabled=step===1;const next=byId('ep-step-next');next.hidden=step===epStepLabels.length;next.textContent=step<epStepLabels.length?'Next: '+epStepLabels[step]:'Complete';
+    if(focus){const heading=byId('ep-stage-'+step);if(heading)heading.focus();}
+}
+let epAuditBusy=false;
+let epExternalBusy=false,epProtectionBusy=false;
+function epAuditControls(paths,testPaths){
+    const select=byId('ep-audit-directory'),button=byId('ep-audit-run');if(!select||!button)return;
+    if(paths!==undefined){const configured=new Set((Array.isArray(testPaths)?testPaths:[]).filter(x=>typeof x==='string').map(x=>x.toLowerCase()));const available=Array.from(new Set(paths.filter(x=>configured.has(String(x.path).toLowerCase())&&!paths.some(other=>other.path.toLowerCase()!==x.path.toLowerCase()&&responseUnder(other.path,x.path))&&x.status==='ok'&&String(x.detail||'').startsWith('Directory list and delete-child access granted')).map(x=>x.path))),key=JSON.stringify(available);
+        if(select.dataset.key!==key){const previous=select.value;select.dataset.key=key;select.replaceChildren(new Option(available.length?'Choose a saved test directory':'No verified saved test directories',''),...available.map(path=>new Option(path,path)));if(available.includes(previous))select.value=previous;else if(available.length===1)select.value=available[0];}
+    }
+    select.disabled=epProtectionBusy||epExternalBusy||epAuditBusy||epSuiteBusy||epDiagnosticBusy||select.options.length<=1;button.disabled=epAuditBusy||epSuiteBusy||select.disabled||!select.value;
+    const suite=byId('ep-suite-directory'),run=byId('ep-suite-run');if(suite&&run){const key=select.dataset.key||'[]';if(suite.dataset.key!==key){const previous=suite.value;suite.dataset.key=key;suite.replaceChildren(...Array.from(select.options,x=>new Option(x.text,x.value)));suite.value=previous&&Array.from(suite.options).some(x=>x.value===previous)?previous:select.value;}suite.disabled=epProtectionBusy||epExternalBusy||epSuiteBusy||epAuditBusy||epDiagnosticBusy||suite.options.length<=1;run.disabled=suite.disabled||!suite.value;}
+
+    const external=byId('ep-external-directory'),externalRun=byId('ep-external-run');if(external&&externalRun){const key=select.dataset.key||'[]';if(external.dataset.key!==key){const previous=external.value;external.dataset.key=key;external.replaceChildren(...Array.from(select.options,x=>new Option(x.text,x.value)));external.value=previous&&Array.from(external.options).some(x=>x.value===previous)?previous:select.value;}external.disabled=epProtectionBusy||epExternalBusy||epSuiteBusy||epAuditBusy||epDiagnosticBusy||external.options.length<=1;externalRun.disabled=external.disabled||!external.value;const command=byId('ep-manual-lab-command');if(command)command.textContent=external.value?'& "$env:ProgramFiles\\LinkScope\\lab\\Test-LinkScopeContainmentLab.ps1" -LabRoot '+"'"+external.value.replace(/'/g,"''")+"'":'Select a saved Test Center directory above to generate the command.';}
+    const lab=byId('ep-protection-directory'),labRun=byId('ep-protection-run'),include=byId('ep-suite-protection');if(lab&&labRun){const available=Array.from(select.options).map(x=>x.value).filter(Boolean);const leaf=available.filter(x=>!available.some(y=>y.toLowerCase().startsWith(x.replace(/\\+$/,'').toLowerCase()+'\\')&&y.toLowerCase()!==x.toLowerCase()));const key=JSON.stringify(leaf);if(lab.dataset.key!==key){const previous=lab.value;lab.dataset.key=key;lab.replaceChildren(new Option('Choose dedicated test directory',''),...leaf.map(x=>new Option(x,x)));if(leaf.includes(previous))lab.value=previous;else if(leaf.length===1)lab.value=leaf[0];}lab.disabled=epProtectionBusy||epSuiteBusy||epAuditBusy||epDiagnosticBusy||epExternalBusy||!leaf.length;labRun.disabled=lab.disabled||!lab.value;const full=byId('ep-suite-full');if(full)full.disabled=!suite||suite.disabled||!leaf.includes(suite.value);if(include){include.disabled=epSuiteBusy||epProtectionBusy;if(include.checked&&suite&&suite.value&&!leaf.includes(suite.value)){run.disabled=true;if(!epSuiteBusy)byId('ep-suite-status').textContent='Select a dedicated leaf response directory for the isolated protection lab (not its parent).';}}}
+
+}
+// Only server-returned, nonempty evidence is displayed as a test result.
+// A missing/malformed result is inconclusive, never an implicit pass.
+const epAuditRequired=['Selected audit scope','Disposable marker write','Marker cleanup','Exact Event 4663 / service writer'];
+const epDiagnosticRequired=['Containment policy','Entropy detector (in memory)','Behavior aggregation (in memory)','Canary hash (in memory)','Response refusal gate (in memory)','Security log readability','File system audit evidence'];
+function epVerifiedRows(result,required){
+    if(!result||!Array.isArray(result.checks)||!Number.isFinite(Date.parse(result.utc)))throw new Error('Missing valid server result or execution timestamp');
+    const rows=result.checks.map((row,i)=>{
+        if(!row||typeof row.name!=='string'||!row.name.trim()||typeof row.evidence!=='string'||!row.evidence.trim()||!['Pass','Review','Fail','Not tested'].includes(row.state))return {name:'Invalid result row '+(i+1),state:'Review',evidence:'Malformed or missing server evidence; no verdict.',sourceUtc:result.utc};
+        return {...row,sourceUtc:result.utc};
+    });
+    for(const name of required){const hits=rows.filter(x=>x.name===name);if(hits.length!==1){for(const x of hits){x.state='Review';x.evidence='Duplicate result; cannot establish a unique verdict. '+x.evidence;}if(!hits.length)rows.push({name,state:'Not tested',evidence:'Required check was not returned by the service.',sourceUtc:result.utc});}}
+    return rows;
+}
+function epReadinessSnapshot(phase='suite start'){
+    const age=epReadinessAge+(performance.now()-epReadinessObservedAt)/1000;
+    if(!epReadinessRows.length||!epReadinessUtc||!Number.isFinite(age)||age<0||age>20)return [{name:'Current telemetry',state:'Not tested',evidence:'No fresh readiness snapshot at '+phase+'. No readiness verdict.'}];
+    return epReadinessRows.map(x=>({...x,sourceUtc:epReadinessUtc,evidence:x.evidence+' [Telemetry snapshot; age '+Math.round(age)+' s at '+phase+'.]'}));
+}
+// A final snapshot must be collected after the live probe, not just fetched after it.
+async function epRefreshFinalReadiness(afterUtc){
+    const cutoff=Date.parse(afterUtc);
+    if(!Number.isFinite(cutoff))return [{name:'Current telemetry',state:'Review',evidence:'No valid post-probe cutoff; final telemetry cannot be verified.'}];
+    const deadline=performance.now()+8000;let reason='No post-test telemetry sample returned';
+    do{
+        try{
+            const data=await request('/ui/endpoint');const sample=data?.categories?.endpoint_protection;
+            if(sample&&!sample.stale&&Number.isFinite(sample.ageSeconds)&&sample.ageSeconds>=0&&sample.ageSeconds<=20&&Date.parse(sample.collectedUtc)>=cutoff){
+                renderContainmentReadiness(sample);return epReadinessSnapshot('suite end');
+            }
+            reason='Latest sample predates the final diagnostic or is stale/unavailable';
+        }catch(ex){reason='Telemetry refresh failed: '+ex.message;break;}
+        if(performance.now()>=deadline)break;
+        await new Promise(resolve=>setTimeout(resolve,750));
+    }while(performance.now()<deadline);
+    return [{name:'Current telemetry',state:'Review',evidence:reason+'. Initial telemetry is retained separately; no final readiness verdict.'}];
+}
+function epAuditProofMatches(result,directory){
+    const m=result?.marker,p=result?.proof;
+    if(!m||!p||typeof directory!=='string'||typeof m.path!=='string'||typeof m.image!=='string'||!m.image.trim()||typeof p.path!=='string'||typeof p.image!=='string')return false;
+    const root=directory.replace(/\\+$/,'').toLowerCase()+'\\',path=m.path.toLowerCase();
+    const event=Date.parse(p.eventUtc),start=Date.parse(m.startedUtc),finish=Date.parse(result.utc);
+    // Compare decimal record IDs without Number precision loss.
+    const baseline=m.baselineRecordId,record=p.recordId;
+    if(typeof baseline!=='string'||typeof record!=='string'||!/^[1-9][0-9]{0,18}$/.test(baseline)||!/^[1-9][0-9]{0,18}$/.test(record)||!(record.length>baseline.length||(record.length===baseline.length&&record>baseline)))return false;
+    return path.startsWith(root)&&/^linkscope-audit-probe-[0-9a-f]{32}\.txt$/.test(path.slice(root.length))&&p.path.toLowerCase()===path&&p.image.toLowerCase()===m.image.toLowerCase()&&Number.isSafeInteger(m.pid)&&m.pid>4&&p.pid===m.pid&&p.eventId===4663&&typeof p.recordId==='string'&&/^[1-9][0-9]*$/.test(p.recordId)&&Number.isSafeInteger(p.accessMask)&&p.accessMask>0&&(p.accessMask&6)!==0&&Number.isFinite(event)&&Number.isFinite(start)&&Number.isFinite(finish)&&event>=start-1000&&event<=finish+2000;
+}
+async function epRunAudit(directory){
+    epAuditBusy=true;epAuditControls();const status=byId('ep-audit-status');
+    try{epStepResult(3,'Running');status.textContent='Writing marker and waiting for Windows audit evidence…';epTestCards('ep-audit-results',[]);
+        const result=await request('/ui/endpoint-audit-probe',{directory});const rows=epVerifiedRows(result,epAuditRequired);
+        for(const row of rows.filter(x=>x.name==='Exact Event 4663 / service writer'&&x.state==='Pass')){
+            if(!epAuditProofMatches(result,directory)){row.state='Review';row.evidence='Missing or inconsistent structured event proof. No writer verification. Server reported: '+row.evidence;}
+        }
+        const reportedPass=epAuditRequired.every(name=>rows.some(row=>row.name===name&&row.state==='Pass'));
+        const passed=result.passed===true&&reportedPass&&!rows.some(row=>row.state==='Fail'||row.state==='Review');
+        if(result.passed===true&&!passed||result.passed!==true&&reportedPass)rows.push({name:'Audit result consistency',state:'Review',evidence:'Service summary and individual checks do not establish a consistent pass.',sourceUtc:result.utc});
+        epTestCards('ep-audit-results',rows);
+        epStepResult(3,passed?'Passed · self-writer only':'Review evidence');status.textContent=(passed?'Live audit verification passed':'Live audit verification requires review')+' · '+localEndpointDate(result.utc)+' · no production containment executed.';return rows;
+    }catch(ex){epStepResult(3,'Result unavailable');status.textContent='Live audit result unavailable: '+ex.message+'. If the request timed out, the server may have completed the probe; wait before retrying.';return [{name:'Live audit request',state:'Review',evidence:status.textContent}];}finally{epAuditBusy=false;epAuditControls();}
+}
+const epExternalRequired=['Selected audit scope','Disposable marker write','Marker cleanup','Exact Event 4663 / external writer','External writer exit'];
+function epExternalProofMatches(result,directory){
+    const m=result?.marker,p=result?.proof,created=Date.parse(m?.processCreatedUtc);
+    return epAuditProofMatches(result,directory)&&m.external===true&&Number.isSafeInteger(m.servicePid)&&m.servicePid>4&&m.pid!==m.servicePid&&/^[a-z]:\\[^\r\n]+\\WindowsPowerShell\\v1\.0\\powershell\.exe$/i.test(m.image)&&Number.isFinite(created)&&created>=Date.parse(m.startedUtc)-1000&&created<=Date.parse(p.eventUtc);
+}
+async function epRunExternal(directory){
+    epExternalBusy=true;epAuditControls();const status=byId('ep-writer-status'),marker=byId('ep-external-marker');marker.value='';
+    try{epStepResult(4,'Running');status.textContent='Starting installed PowerShell lab and collecting real audit evidence…';epTestCards('ep-writer-results',[]);
+        const result=await request('/ui/endpoint-external-probe',{directory});const rows=epVerifiedRows(result,epExternalRequired);
+        if(typeof result.marker?.path==='string'&&result.marker.path.length<=1024)marker.value=result.marker.path;
+        for(const row of rows.filter(x=>x.name==='Exact Event 4663 / external writer'&&x.state==='Pass'))if(!epExternalProofMatches(result,directory)){row.state='Review';row.evidence='Missing or inconsistent independent writer proof. '+row.evidence;}
+        const reportedPass=epExternalRequired.every(name=>rows.some(row=>row.name===name&&row.state==='Pass'));
+        const passed=result.passed===true&&reportedPass&&!rows.some(row=>row.state==='Fail'||row.state==='Review');
+        if(result.passed===true&&!passed||result.passed!==true&&reportedPass)rows.push({name:'External writer result consistency',state:'Review',evidence:'Service summary and individual checks do not establish a consistent pass.',sourceUtc:result.utc});
+        epTestCards('ep-writer-results',rows);epStepResult(4,passed?'Passed · independent PowerShell writer':'Review evidence');status.textContent=(passed?'External writer verification passed':'External writer verification requires review')+' · '+localEndpointDate(result.utc)+' · no production response executed.';
+        return rows.filter(x=>x.name!=='Production containment');
+    }catch(ex){epStepResult(4,'Result unavailable');status.textContent='External writer result unavailable: '+ex.message;return [{name:'External writer request',state:'Review',evidence:status.textContent}];}finally{epExternalBusy=false;epAuditControls();}
+}
+const epProtectionRequired=['Lab scope and engine','Disposable canary comparison','Canary cleanup','Live enrolled-canary watcher detection','Controlled production incident attribution','Live containment target refusal','Owned child termination mechanics','Enrolled canary cleanup','EICAR sample creation','EICAR signature detection','EICAR sealed quarantine','EICAR original cleanup'];
+function epProtectionProof(result,directory){
+    const p=result?.proof,run=result?.runId;const id=x=>typeof x==='string'&&/^[1-9][0-9]{0,18}$/.test(x),root=directory.replace(/\\+$/,'')+'\\';
+    const start=Date.parse(result?.startedUtc),finish=Date.parse(result?.utc),receiptUtc=Date.parse(p?.receiptUtc);
+    const validRun=typeof run==='string'&&/^[a-f0-9]{32}$/.test(run)&&result.directory===directory&&Number.isFinite(start)&&Number.isFinite(finish)&&finish>=start;
+    const later=(a,b)=>a.length>b.length||(a.length===b.length&&a>b);
+    const c=validRun&&p?.canaryPath===root+'LinkScope-Lab-Canary-'+run+'.txt'&&p.expected==='91f9caa3348b49940b33bdd45fd185d529fafac274015516123ecaa112f68283'&&p.actual==='c71185d7e1e13483b70632d74ae30177e79378ee817cb620cb3d9ed802b31d7b'&&id(p.canaryIncident);
+    const sample=validRun&&p?.sampleCreated===true&&p.eicarPath===root+'LinkScope-Lab-EICAR-'+run+'.com'&&p.eicarHash==='275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f';
+    const e=sample&&typeof p.incidentWatermark==='string'&&/^(0|[1-9][0-9]{0,18})$/.test(p.incidentWatermark)&&id(p.malwareIncident)&&later(p.malwareIncident,p.incidentWatermark)&&typeof p.verdict==='string'&&/^stream: .*eicar.* FOUND$/i.test(p.verdict)&&!/Heuristics\./i.test(p.verdict);
+    return {scope:validRun&&p?.scopeVerified===true,sample,canary:c,canaryClean:c&&p.canaryClean===true,detection:e,quarantine:e&&id(p.quarantineIncident)&&later(p.quarantineIncident,p.malwareIncident)&&/^[a-f0-9]{32}$/.test(p.receipt||'')&&Number.isFinite(receiptUtc)&&receiptUtc>=start&&receiptUtc<=finish+2000&&p.quarantineVerified===true&&p.eicarClean===true,cleanup:sample&&p.eicarClean===true};
+}
+// Evidence must identify the newly enrolled file and the actual production detector incident.
+function epEnrolledProof(result,directory){
+    const p=result?.proof?.enrolled,run=result?.runId;const decimal=x=>typeof x==='string'&&/^(0|[1-9][0-9]{0,18})$/.test(x),later=(a,b)=>decimal(a)&&decimal(b)&&(a.length>b.length||(a.length===b.length&&a>b));
+    const start=Date.parse(result?.startedUtc),finish=Date.parse(result?.utc),modified=Date.parse(p?.modifiedUtc),event=Date.parse(p?.eventUtc);
+    const scope=typeof run==='string'&&/^[a-f0-9]{32}$/.test(run)&&result.directory===directory&&p?.path===directory.replace(/\\+$/,'')+'\\LinkScope-Lab-Enrolled-'+run+'.txt'&&p.expected==='91f9caa3348b49940b33bdd45fd185d529fafac274015516123ecaa112f68283'&&p.changed==='c71185d7e1e13483b70632d74ae30177e79378ee817cb620cb3d9ed802b31d7b'&&p.registered===true;
+    const incident=scope&&p.detected===true&&later(p.seq,p.incidentBaseline)&&Number.isFinite(start)&&Number.isFinite(finish)&&Number.isFinite(modified)&&modified>=start&&modified<=finish;
+    const mask=typeof p?.mask==='string'&&/^0x[0-9a-f]{1,8}$/i.test(p.mask)?parseInt(p.mask,16):0;
+    const attribution=incident&&p.attributed===true&&later(p.record,p.securityBaseline)&&Number.isSafeInteger(p.pid)&&p.pid>4&&p.pid===p.expectedPid&&typeof p.image==='string'&&p.image.length>0&&typeof p.expectedImage==='string'&&p.image.toLowerCase()===p.expectedImage.toLowerCase()&&Number.isFinite(event)&&event>=modified&&event<=finish+2000&&(mask&6)!==0;
+    return {watcher:incident&&p.source==='watcher',attribution,refusal:attribution&&p.refusal===true,cleanup:scope&&p.clean===true&&p.baselineRemoved===true};
+}
+// Only the fixed child launched during this run is eligible for a mechanics Pass.
+function epOwnedTerminationProof(result,directory){
+    const p=result?.proof?.termination,start=Date.parse(result?.startedUtc),finish=Date.parse(result?.utc),created=Date.parse(p?.createdUtc),requested=Date.parse(p?.requestedUtc),observed=Date.parse(p?.observedUtc);
+    return typeof result?.runId==='string'&&/^[a-f0-9]{32}$/.test(result.runId)&&result.directory===directory&&result.proof?.scopeVerified===true&&[start,finish,created,requested,observed].every(Number.isFinite)&&created>=start-1000&&created<=requested&&requested<=observed&&observed<=finish&&observed-requested<=3000&&Number.isSafeInteger(p?.pid)&&p.pid>4&&Number.isSafeInteger(p.servicePid)&&p.servicePid>4&&p.pid!==p.servicePid&&p.handlePid===p.pid&&typeof p.image==='string'&&typeof p.expectedImage==='string'&&p.image.toLowerCase()===p.expectedImage.toLowerCase()&&/^[a-z]:\\.+\\system32\\windowspowershell\\v1\.0\\powershell\.exe$/i.test(p.image)&&p.identityVerified===true&&p.ready===true&&p.requested===true&&p.exitVerified===true&&p.childExited===true&&p.expectedExitCode===0x4C530068&&p.observedExitCode===0x4C530068;
+}
+async function epRunProtection(directory){
+    epProtectionBusy=true;epAuditControls();const status=byId('ep-protection-status');epStepResult(5,'Running');status.textContent='Starting isolated protection lab; awaiting real scanner evidence…';epTestCards('ep-protection-results',[]);
+    try{let job=await request('/ui/endpoint-protection-lab',{action:'start',directory,confirmed:true});const jobId=job?.jobId;if(typeof jobId!=='string'||!/^[a-f0-9]{32}$/.test(jobId))throw new Error('Invalid lab job identifier');const deadline=performance.now()+75000;
+        while(!job.done&&performance.now()<deadline){await new Promise(resolve=>setTimeout(resolve,750));job=await request('/ui/endpoint-protection-lab',{action:'status',jobId});if(job?.jobId!==jobId)throw new Error('Lab job identity changed');}
+        if(!job.done||!job.result)throw new Error('Lab job still running or result unavailable; inspect the vault before retrying');const result=job.result,rows=epVerifiedRows(result,epProtectionRequired),proof=epProtectionProof(result,directory),enrolled=epEnrolledProof(result,directory);
+        const checks={'Lab scope and engine':proof.scope,'EICAR sample creation':proof.sample,'Disposable canary comparison':proof.canary,'Canary cleanup':proof.canaryClean,'Live enrolled-canary watcher detection':enrolled.watcher,'Controlled production incident attribution':enrolled.attribution,'Live containment target refusal':enrolled.refusal,'Owned child termination mechanics':epOwnedTerminationProof(result,directory),'Enrolled canary cleanup':enrolled.cleanup,'EICAR signature detection':proof.detection,'EICAR sealed quarantine':proof.quarantine,'EICAR original cleanup':proof.cleanup};
+        for(const row of rows)if(row.state==='Pass'&&(!Object.prototype.hasOwnProperty.call(checks,row.name)||!checks[row.name])){row.state='Review';row.evidence='Missing or inconsistent lab proof. '+row.evidence;}
+        const pass=epProtectionRequired.every(n=>rows.some(x=>x.name===n&&x.state==='Pass'))&&!rows.some(x=>x.state==='Review'||x.state==='Fail');epStepResult(5,pass?'Passed · isolated watcher, attribution, quarantine and owned child exit':'Review lab evidence');status.textContent=(pass?'Isolated lab checks passed':'Lab checks require review')+' · '+localEndpointDate(result.utc)+' · no production containment certification.';epTestCards('ep-protection-results',rows);return rows;
+    }catch(ex){epStepResult(5,'Result unavailable');status.textContent='Protection lab unavailable: '+ex.message;return [{name:'Protection lab request',state:'Review',evidence:status.textContent}];}finally{epProtectionBusy=false;epAuditControls();epSyncDiagnostics();}
+}
+function setupLiveAuditProbe(){
+    const select=byId('ep-audit-directory'),button=byId('ep-audit-run');if(!select||!button)return;
+    const lab=byId('ep-protection-directory'),labButton=byId('ep-protection-run');lab.onchange=()=>epAuditControls();labButton.onclick=async()=>{if(labButton.disabled)return;const directory=lab.value;epProtectionBusy=true;epAuditControls();epSyncDiagnostics();try{if(await confirmAction('Run isolated protection lab?', 'Confirm this is a disposable test directory in an isolated environment: '+directory+'. Creates and temporarily enrolls a disposable canary, writes an EICAR test file, may generate real alerts and retains a sealed quarantine receipt. Launches and terminates only a fixed harmless child owned by this test; no production process is selected.', 'Run protection lab'))await epRunProtection(directory);}finally{epProtectionBusy=false;epAuditControls();epSyncDiagnostics();}};
+    select.onchange=()=>epAuditControls();const ext=byId('ep-external-directory'),extButton=byId('ep-external-run');ext.onchange=()=>epAuditControls();extButton.onclick=async()=>{if(extButton.disabled||epProtectionBusy||epExternalBusy||epAuditBusy||epSuiteBusy||epDiagnosticBusy)return;const directory=ext.value;epExternalBusy=true;epAuditControls();epSyncDiagnostics();try{if(await confirmAction('Run automatic writer test?', 'Run the installed fixed PowerShell script under the existing service identity and create/remove one harmless marker in '+directory+'. No policy changes or containment.', 'Run writer test'))await epRunExternal(directory);}finally{epExternalBusy=false;epAuditControls();epSyncDiagnostics();}};button.onclick=async()=>{
+        if(button.disabled||epProtectionBusy||epExternalBusy||epAuditBusy||epSuiteBusy||epDiagnosticBusy)return;const directory=select.value;epAuditBusy=true;epAuditControls();epSyncDiagnostics();
+        try{if(!await confirmAction('Run live audit test?', 'Create and automatically remove a uniquely named harmless marker in '+directory+'. The test uses existing service permissions only.', 'Run live test'))return;
+            await epRunAudit(directory);
+        }finally{epAuditBusy=false;epAuditControls();epSyncDiagnostics();}
+    };
+}
+function epProductionCoverage(report){
+    const check=(name,key)=>{const matches=report.rows.filter(row=>row.name===key);return matches.length===1?{name,state:matches[0].state,evidence:matches[0].evidence,sourceUtc:matches[0].sourceUtc}: {name,state:matches.length?'Review':'Not tested',evidence:matches.length?'Duplicate capability results; cannot establish a verdict.':'No verified result for this capability in this run.'};};
+    return [check('Incident attribution through the normal detector (controlled writer)','Isolated protection / Controlled production incident attribution'),check('Enrolled-canary watcher detection','Isolated protection / Live enrolled-canary watcher detection'),check('Actual EICAR quarantine','Isolated protection / EICAR sealed quarantine'),check('Owned child termination mechanics (controlled)','Isolated protection / Owned child termination mechanics'),check('Production malicious-process termination','Production process containment')];
+}
+function epRenderSuiteReport(report){
+    epSuiteReport=report;byId('ep-suite-report').hidden=false;
+    const counts={Pass:0,Review:0,Fail:0,'Not tested':0};for(const row of report.rows)counts[Object.prototype.hasOwnProperty.call(counts,row.state)?row.state:'Review']++;
+    const summary=counts.Pass+' passed checks · '+counts.Review+' inconclusive / review · '+counts.Fail+' failed · '+counts['Not tested']+' not tested';
+    const overall=counts.Fail?'Failed checks present':counts.Review||counts['Not tested']?'Incomplete validation — not certified':'Reported checks passed — not certified';
+    report.summary=overall+' · '+summary;
+    byId('ep-suite-summary').textContent=overall+' · '+summary+' · '+report.directory+' · '+localEndpointDate(report.finishedUtc);
+    report.productionCoverage=epProductionCoverage(report);epTestCards('ep-suite-production',report.productionCoverage);epTestCards('ep-suite-results',report.rows);
+    epTestCards('ep-suite-baseline-results',report.baseline||[]);
+    byId('ep-suite-status').textContent='Validation finished. '+overall+'. '+summary+'. See Step 06 for the full report.';
+}
+function epExportSuite(){
+    if(!epSuiteReport)return;const r=epSuiteReport;const text=['LinkScope — Automated validation report','Started UTC: '+r.startedUtc,'Finished UTC: '+r.finishedUtc,'Directory: '+r.directory,'Verdict: '+r.summary,'Scope: initial observations, benign self-writer and independent PowerShell writer probes, optional temporary enrolled-canary watcher, EICAR and owned child termination lab, final diagnostics and fresh readiness telemetry. Controlled normal-detector incidents are not unplanned malicious incidents. No production termination certification.','Pass applies only to the named check; Review means inconclusive or needs attention.','','PRODUCTION READINESS ASSESSMENT — NOT CERTIFIED (summary, not additional checks)',...(r.productionCoverage||epProductionCoverage(r)).map(x=>x.state+' | '+x.name+'\r\n'+x.evidence+(x.sourceUtc?'\r\nSource UTC: '+x.sourceUtc:'')),'','DETAILED VALIDATION RESULTS',...r.rows.map(x=>x.state+' | '+x.name+(Number.isFinite(x.durationMs)?' ('+x.durationMs+' ms)':'')+'\r\n'+x.evidence+(x.sourceUtc?'\r\nSource UTC: '+x.sourceUtc:'')),'','INITIAL OBSERVATIONS (not counted in final verdict; retained for comparison)',...(r.baseline||[]).map(x=>x.state+' | '+x.name+'\r\n'+x.evidence+(x.sourceUtc?'\r\nSource UTC: '+x.sourceUtc:'')),'','Manual exercises must be independently verified.'].join('\r\n\r\n');
+    const url=URL.createObjectURL(new Blob([text],{type:'text/plain;charset=utf-8'}));const a=element('a');a.href=url;a.download='LinkScope-validation-'+r.finishedUtc.replace(/[:.]/g,'-')+'.txt';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function renderContainmentReadiness(v){
+    if(!byId('ep-test-readiness'))return;const r=v?.result||{},fresh=!!v&&!v.stale&&Number.isFinite(v.ageSeconds)&&v.ageSeconds>=0&&v.ageSeconds<=20&&Number.isFinite(Date.parse(v.collectedUtc))&&r.status!=='disabled'&&r.engineOnline!=null;
+    epReadinessObservedAt=performance.now();epReadinessAge=fresh?Number(v.ageSeconds):Infinity;epReadinessUtc=fresh?v.collectedUtc:null;
+    if(!fresh){epReadinessRows=[{name:'Current telemetry',state:'Not tested',evidence:'Disabled, stale or unavailable. No readiness verdict.'}];epStepResult(1,'Telemetry unavailable');epAuditControls([]);epTestCards('ep-test-readiness',[{name:'Current telemetry',state:'Not tested',evidence:'Disabled, stale or unavailable. No readiness verdict.'}]);epTestCards('ep-test-events',[{name:'Current evidence',state:'Not tested',evidence:'Await fresh telemetry.'}]);return;}
+    const recentCheck=value=>{const elapsed=(Date.parse(v.collectedUtc)-Date.parse(value))/1000;return Number.isFinite(elapsed)&&elapsed>=0&&elapsed<=90;};
+    const responseFresh=recentCheck(r.responseCheckedUtc),signatureFresh=recentCheck(r.lastSignatureCheckUtc);
+    const checks=[{name:'Protection mode',state:r.mode==='contain'?'Pass':'Review',evidence:'Saved mode: '+(r.mode||'Unknown')+' (configuration only; not a containment test).'},{name:'Engine and signature freshness',state:r.engineOnline===true&&signatureFresh&&r.signatureFreshness==='Current'&&typeof r.signatureComparison==='string'&&r.signatureComparison.startsWith('Current advertised daily version ')&&r.engineRecoveryPending===false?'Pass':'Review',evidence:(r.engineOnline?'Online':'Unavailable')+'; signatures '+(r.signatureFreshness||'Unknown')+(r.signatureComparison?' · '+r.signatureComparison:'')+' · Last checked UTC: '+(r.lastSignatureCheckUtc||'Unknown')+(signatureFresh?'':' (not recently verified)')},{name:'Response engine',state:responseFresh&&r.responseEngineStatus==='Ready'&&typeof r.responseEngineDetail==='string'&&r.responseEngineDetail.trim()?'Pass':'Review',evidence:(r.responseEngineStatus||'Unknown')+' — '+(r.responseEngineDetail||'No detail')+' · Last checked UTC: '+(r.responseCheckedUtc||'Unknown')+(responseFresh?'':' (not recently verified)')},{name:'Awaiting production incident evidence',state:typeof r.processCorrelation==='string'&&/^Awaiting matching audit evidence/i.test(r.processCorrelation)?'Not tested':'Review',evidence:(r.processCorrelation||'Unknown')+'; independent lab evidence is reported separately in Step 04. No production attribution verdict.'},{name:'Canary enrollment',state:(r.canaries||[]).length&&(r.canaries||[]).every(x=>x.status==='Enrolled')?'Pass':'Review',evidence:(r.canaries||[]).length+' registered; enrollment is not a detection test'}];
+    const paths=r.responsePathsReadiness||[];epAuditControls(responseFresh?paths:[],r.testPaths);checks.push({name:'Authorized response path access',state:responseFresh&&paths.length&&paths.every(x=>x.status==='ok')?'Pass':'Review',evidence:paths.length?paths.map(x=>x.path+' — '+x.detail).join(' | '):'No directory access results recorded'});if(!responseFresh)checks[checks.length-1].evidence+=' · Permission telemetry not recently verified.';epReadinessRows=checks;epTestCards('ep-test-readiness',checks);const reviewCount=checks.filter(x=>x.state!=='Pass').length;epStepResult(1,reviewCount?reviewCount+' item'+(reviewCount===1?'':'s')+' to review':'Checks reported ready');
+    const events=(r.recentIncidents||[]).filter(x=>/containment|canary integrity violation|malware signature detected|ransomware/i.test(x.change||'')).slice(0,8).map(x=>({name:x.change,state:'Recorded',evidence:[localEndpointDate(x.utc),x.path,x.detail].filter(Boolean).join(' · ')}));epTestCards('ep-test-events',events.length?events:[{name:'No matching recent incident',state:'Not tested',evidence:'No relevant record in the returned history.'}]);
+}
+function setupContainmentTests(){
+    const b=byId('ep-test-run'),writer=byId('ep-writer-run');if(!b||!writer)return;setupLiveAuditProbe();
+    byId('ep-test-evidence').onclick=()=>selectEndpointView('evidence');
+    const center=byId('ep-test-center');center.querySelectorAll('[data-test-step]').forEach(node=>node.onclick=()=>epSelectStep(Number(node.dataset.testStep)));
+    center.querySelectorAll('[data-test-view]').forEach(node=>node.onclick=()=>selectEndpointView(node.dataset.testView));
+    byId('ep-step-back').onclick=()=>epSelectStep(epTestStep-1);byId('ep-step-next').onclick=()=>epSelectStep(epTestStep+1);epSelectStep(1,false);epStepResult(1,epStepResults[0]);
+    const marker=byId('ep-test-marker');const sync=()=>{b.disabled=epProtectionBusy||epExternalBusy||epDiagnosticBusy||epSuiteBusy||epAuditBusy;writer.disabled=b.disabled||!marker.value.trim();epAuditControls();};epSyncDiagnostics=sync;marker.addEventListener('input',sync);sync();
+    async function run(external){
+        if(epProtectionBusy||epExternalBusy||epDiagnosticBusy||epAuditBusy)return [];const value=external?marker.value.trim():'';if(external&&!value)return [];epDiagnosticBusy=true;sync();
+        const step=external?4:2,target=external?'ep-writer-results':'ep-test-results',status=byId(external?'ep-writer-status':'ep-test-status');epStepResult(step,'Running');status.textContent=external?'Verifying external writer…':'Running read-only checks…';epTestCards(target,[]);
+        try{const result=await request('/ui/endpoint-containment-tests',{marker:value});const allRows=epVerifiedRows(result,external?['Lab writer correlation','Lab process identity']:epDiagnosticRequired);
+            if(!external&&!allRows.some(x=>x.name==='Response path access'||x.name==='Response directory permissions'))allRows.push({name:'Response path access',state:'Not tested',evidence:'Service returned no response-path access check.',sourceUtc:result.utc});
+            // Keep each step's evidence separate. Missing results are never a pass.
+            const rows=allRows.filter(row=>external?/^Lab (writer|process)/.test(row.name):!/^Lab (writer|process)|^Live quarantine and termination/.test(row.name));
+            epTestCards(target,rows);if(external){const passed=['Lab writer correlation','Lab process identity'].every(name=>rows.some(row=>row.name===name&&row.state==='Pass'));epStepResult(step,passed?'Passed · query-only identity':'Review / incomplete');}else{const needs=rows.filter(row=>row.state!=='Pass').length;epStepResult(step,!rows.length?'No checks returned':needs?needs+' check'+(needs===1?'':'s')+' to review':'Reported checks passed');}
+            status.textContent=(external?'Writer diagnostics completed':'Diagnostics completed')+' · '+localEndpointDate(result.utc)+' · no production response executed.';return rows.length?rows:[{name:'Service diagnostics',state:'Review',evidence:'No checks returned.'}];
+        }catch(ex){epStepResult(step,'Result unavailable');status.textContent='Diagnostics unavailable: '+ex.message;return [{name:'Service diagnostic request',state:'Review',evidence:status.textContent}];}finally{epDiagnosticBusy=false;sync();}
+    }
+    b.onclick=()=>{if(!epSuiteBusy)run(false);};writer.onclick=()=>{if(!epSuiteBusy)run(true);};
+    const suite=byId('ep-suite-run'),directory=byId('ep-suite-directory'),progress=byId('ep-suite-progress'),status=byId('ep-suite-status');
+    const full=byId('ep-suite-full');if(full)full.onclick=()=>{if(full.disabled)return;byId('ep-suite-protection').checked=true;epAuditControls();suite.click();};
+    directory.onchange=()=>epAuditControls();byId('ep-suite-protection').onchange=()=>epAuditControls();byId('ep-suite-export').onclick=epExportSuite;
+    suite.onclick=async()=>{
+        if(suite.disabled||epProtectionBusy||epExternalBusy||epSuiteBusy||epAuditBusy||epDiagnosticBusy)return;const selected=directory.value,includeProtection=byId('ep-suite-protection').checked;let report=null;epSuiteBusy=true;sync();
+        try{if(!await confirmAction('Run all automated tests?', 'Run read-only checks and create/remove two harmless markers in '+selected+'. The installed PowerShell script runs automatically. '+(includeProtection?'Also run temporary canary enrollment, watcher and incident-attribution verification the isolated EICAR exercise and a fixed owned-child termination test; confirm this is a disposable test directory in an isolated environment. Real alerts and sealed quarantine may result. ':'Canary and quarantine remain manual. ')+'Actual malicious-process containment remains unverified.', 'Run automated tests'))return;
+            report={directory:selected,startedUtc:new Date().toISOString(),rows:[],baseline:[]};epSuiteReport=null;byId('ep-suite-report').hidden=true;progress.value=0;
+            status.textContent='1 of 6 · Capturing initial readiness…';report.baseline.push(...epReadinessSnapshot().map(x=>({...x,name:'Initial readiness / '+x.name})));progress.value=1;
+            status.textContent='2 of 6 · Running initial service diagnostics…';epSelectStep(2,false);report.baseline.push(...(await run(false)).map(x=>({...x,name:'Initial diagnostics / '+x.name})));progress.value=2;
+            status.textContent='3 of 6 · Verifying live audit delivery…';epSelectStep(3,false);
+            if(Array.from(directory.options).some(x=>x.value===selected)){byId('ep-audit-directory').value=selected;report.rows.push(...(await epRunAudit(selected)).filter(x=>x.name!=='Production containment').map(x=>({...x,name:'Live audit / '+x.name})));}else{epStepResult(3,'Not tested · scope changed');report.rows.push({name:'Live audit',state:'Not tested',evidence:'Selected directory is no longer available in current readiness. No marker written.'});}
+            progress.value=3;
+            status.textContent='4 of 6 · Verifying independent PowerShell writer…';epSelectStep(4,false);
+            if(Array.from(directory.options).some(x=>x.value===selected)){byId('ep-external-directory').value=selected;report.rows.push(...(await epRunExternal(selected)).map(x=>({...x,name:'External writer / '+x.name})));}else{epStepResult(4,'Not tested · scope changed');report.rows.push({name:'External writer attribution',state:'Not tested',evidence:'Selected directory is no longer available. No marker written.'});}
+            if(includeProtection){epSelectStep(5,false);status.textContent='4 of 6 · Running isolated protection lab…';const lab=byId('ep-protection-directory');if(Array.from(lab.options).some(x=>x.value===selected)){lab.value=selected;report.rows.push(...(await epRunProtection(selected)).map(x=>({...x,name:'Isolated protection / '+x.name})));}else report.rows.push({name:'Isolated protection lab',state:'Not tested',evidence:'Select a dedicated leaf response directory. No lab file written.'});for(const name of epProtectionRequired)if(!report.rows.some(x=>x.name==='Isolated protection / '+name))report.rows.push({name:'Isolated protection / '+name,state:'Not tested',evidence:'No independent result returned for this exercise.'});}
+            progress.value=4;
+            status.textContent='5 of 6 · Rechecking service diagnostics after the probes…';
+            const finalRows=await run(false);
+            // Reject a replayed pre-probe result. The service clock is used for both observations.
+            const precedingTimes=[...report.baseline,...report.rows].map(x=>Date.parse(x.sourceUtc)).filter(Number.isFinite);
+            const finalTimes=[...new Set(finalRows.map(x=>x.sourceUtc).filter(Boolean))];
+            const cutoff=finalTimes.length===1&&Number.isFinite(Date.parse(finalTimes[0]))&&(!precedingTimes.length||Date.parse(finalTimes[0])>=Math.max(...precedingTimes))?finalTimes[0]:null;
+            if(!cutoff){for(const row of finalRows){if(row.state==='Pass'){row.state='Review';row.evidence='Final diagnostic timestamp could not be validated. No final pass. '+row.evidence;}}}
+            report.rows.push(...finalRows.map(x=>({...x,name:'Final diagnostics / '+x.name})));progress.value=5;
+            // No client timestamp substitute: only the server's diagnostic completion is a valid cutoff.
+            status.textContent='6 of 6 · Waiting for fresh readiness telemetry…';
+            report.rows.push(...(await epRefreshFinalReadiness(cutoff)).map(x=>({...x,name:'Final readiness / '+x.name})));progress.value=6;
+            for(const [name,evidence] of [...(!includeProtection?[['Live enrolled-canary watcher detection','Choose Full security validation to run the temporary enrolled-canary exercise.'],['Controlled production incident attribution','Full security validation is required for a normal-detector incident with matching audit evidence.'],['Live malware quarantine','Opt in to the isolated protection lab or use Step 05 B.'],['Isolated protection / Owned child termination mechanics','Choose Full security validation to run the fixed owned child termination exercise.']]:[]),['Production process containment','Not executed by this suite. A benign writer cannot satisfy the confirmed-malicious-executable gate. No production termination verdict.']])report.rows.push({name,state:'Not tested',evidence});
+            report.finishedUtc=new Date().toISOString();epRenderSuiteReport(report);epSelectStep(6);
+        }catch(ex){if(report){report.rows.push({name:'Suite completion',state:'Review',evidence:'Validation interrupted: '+ex.message+'. Remaining checks are unverified.'});report.finishedUtc=new Date().toISOString();epRenderSuiteReport(report);epSelectStep(6);}else status.textContent='Validation interrupted: '+ex.message;}finally{epSuiteBusy=false;sync();}
+    };
+}
+function endpointOverview(v,activeAlerts){
+    if(!byId('ep-overview'))return;
+    const r=v?.result||{},fresh=!v?.stale&&Number(v?.ageSeconds??Infinity)<=20&&!(r.status==='unavailable'&&r.engineOnline==null),disabled=r.status==='disabled'||v?.status==='disabled';
+    const findings=(r.items||[]),behavior= row=>String(row.change||'').startsWith('Possible ransomware activity'),critical=findings.some(x=>x.severity==='critical')||activeAlerts.some(x=>!x.resolved&&['critical','error'].includes(String(x.severity).toLowerCase())),warning=findings.some(x=>x.severity==='warning')||activeAlerts.some(x=>!x.resolved&&String(x.severity).toLowerCase()==='warning');
+    const rootIssues=(r.rootCoverage||[]).some(x=>['Uncovered','Initializing','Excluded','Journal only'].includes(x.state));
+    const uncertain=(!fresh||disabled),needsReview=r.engineOnline!==true||r.signatureFreshness!=='Current'||rootIssues||Number(r.activeScanIssues||0)>0||Number(r.coverageIssueCount||0)>0||r.status==='partial'||warning||r.truncated||Number(r.violations||0)>0;
+    let title=disabled?'Protection disabled':!fresh?'Status awaiting fresh data':critical?'Critical finding — investigate':needsReview?'Protection needs attention':r.scanRunning?'Protection monitoring · baseline active':'No active security warnings reported';
+    let kind=uncertain?'unknown':critical?'fail':needsReview?'review':'ok';const hero=byId('ep-overview');hero.dataset.state=kind;byId('ep-overview-title').textContent=title;
+    byId('ep-overview-message').textContent=disabled?'Choose protected application directories in Settings, then enable Endpoint Protection.':!fresh?'Displayed counters may be old; no current protection verdict is implied.':critical?'Review current detections and response evidence.':needsReview?'Review the findings and operational coverage below.':'Current telemetry has no reported warnings. This is not a guarantee of complete protection.';
+    byId('ep-mode').textContent='Mode · '+(fresh&&!disabled&&r.mode?r.mode:'—');
+    const safe=n=>uncertain||n==null?'—':String(n),rapid=findings.filter(behavior),canaries=r.canaries||[];
+    const stats=[['Confirmed malware',safe(r.activeMalware),'evidence',Number(r.activeMalware)>0?'fail':'ok','Active signature findings'],['Ransomware signals',uncertain?'—':rapid.length? 'Detected': 'None active','behavior',rapid.some(x=>x.severity==='critical')?'fail':rapid.length?'review':'ok','Behavioral findings'],['Scan coverage issues',safe(r.coverageIssueCount),'scan',Number(r.coverageIssueCount)>0||Number(r.activeScanIssues)>0?'review':'ok','Outstanding file / path gaps'],['Canary files',safe(r.canaryCount),'behavior',canaries.some(x=>x.status==='critical')?'fail':!canaries.length||canaries.some(x=>x.status!=='Enrolled')?'review':'ok','Integrity decoys']];
+    const key=JSON.stringify([stats,uncertain]);const cards=byId('ep-kpis');if(cards.dataset.key!==key){cards.dataset.key=key;cards.replaceChildren(...stats.map(([name,value,view,state,caption])=>{const b=element('button');b.type='button';b.className='ep-kpi';b.dataset.epGo=view;b.dataset.state=uncertain?'unknown':state;b.append(element('span',name),element('strong',value),element('small',caption+' ›'));return b;}));}
+    const a=byId('ep-attention'),messages=[];if(fresh&&!disabled){if(r.engineOnline!==true)messages.push('Antivirus engine unavailable or unverified');if(r.signatureFreshness!=='Current')messages.push('Signature freshness: '+(r.signatureFreshness||'Unknown'));if(rootIssues)messages.push('Protected folder monitoring requires review');if(Number(r.activeScanIssues||0)>0||Number(r.coverageIssueCount||0)>0)messages.push('Scan coverage gaps remain');if(Number(r.violations||0)>0)messages.push(r.violations+' active findings (security and operational)');if(r.truncated)messages.push('Finding list is capped; additional evidence exists');}
+    const messageKey=JSON.stringify([messages,kind]);if(a.dataset.key!==messageKey){a.dataset.key=messageKey;a.replaceChildren(...(messages.length?messages.slice(0,5).map(x=>element('p',x)):[element('p',uncertain?'Current status unavailable.':critical||warning?'Review active security findings.':'No current items requiring attention.')]));}
 }
 
 let endpointAck=null,endpointAckEpoch=0,endpointAckBusy=false,endpointScanBusy=false,endpointScanRequested=null,endpointLastSample=null;
@@ -596,17 +924,44 @@ function renderEndpointRootCoverage(panel,result,fresh){
     });
     panel.replaceChildren(...rows);
 }
+function renderEndpointResources(r,fresh){
+    const panel=byId('endpoint-resources');if(!panel)return;
+    const text=(id,value)=>{byId(id).textContent=value;};
+    const fmt=v=>v==null?'—':Number(v).toLocaleString()+' MiB';
+    const charts=byId('endpoint-resource-charts');
+    if(!fresh||!r||!r.sampleUtc){text('endpoint-resource-status','Awaiting fresh resource telemetry');text('endpoint-resource-memory','—');text('endpoint-resource-clam-memory','—');text('endpoint-resource-cpu','—');text('endpoint-resource-detail','');charts.replaceChildren();delete charts.dataset.sample;return;}
+    text('endpoint-resource-status',r.memoryStatus+(r.lowMemory?(r.backgroundPauseEnabled?' · Background pause enabled':' · Background pause disabled'):'')+' · Sample '+(Number.isFinite(Date.parse(r.sampleUtc))?new Date(r.sampleUtc).toLocaleString():'Unknown'));
+    text('endpoint-resource-memory',fmt(r.availableMiB)+' / '+fmt(r.totalMiB));
+    text('endpoint-resource-clam-memory',fmt(r.clamWorkingMiB)+' / '+fmt(r.clamPrivateMiB));
+    text('endpoint-resource-cpu',r.clamCpu==null?(r.clamPid?'Awaiting sample':'—'):r.clamCpu+'%');
+    text('endpoint-resource-detail','Effective RAM floor: '+fmt(r.effectiveFloorMiB)+' · '+r.clamStatus+(r.clamPid?' · PID '+r.clamPid:''));
+    if(charts.dataset.sample===r.sampleUtc)return;charts.dataset.sample=r.sampleUtc;
+    const points=Array.isArray(r.history)?r.history.slice(-120):[];
+    const ns='http://www.w3.org/2000/svg';const make=(tag,attrs)=>{const e=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))e.setAttribute(k,String(v));return e;};
+    const series=[['Available RAM (MiB)','availableMiB',null],['ClamD working set (MiB)','clamWorkingMiB',null],['ClamD CPU (%)','clamCpu',100]];
+    charts.replaceChildren(...series.map(([label,key,fixed])=>{
+        const box=element('div');box.className='endpoint-resource-chart';box.append(element('strong',label));
+        const valid=points.filter(p=>p[key]!=null&&Number.isFinite(Number(p[key])));
+        if(!valid.length){box.append(element('p','No readings available'));return box;}
+        const max=fixed||Math.max(1,...valid.map(p=>Number(p[key])));const svg=make('svg',{viewBox:'0 0 300 88',role:'img','aria-label':label+' recent samples, scale zero to '+Math.ceil(max)});
+        svg.append(make('path',{d:'M 4 4 V 82 H 296',stroke:'currentColor','stroke-opacity':'.25',fill:'none'}));
+        let d='',pen=false;points.forEach((p,i)=>{if(p[key]==null||!Number.isFinite(Number(p[key]))){pen=false;return;}const x=4+292*i/Math.max(1,points.length-1),y=82-78*Math.max(0,Math.min(1,Number(p[key])/max));d+=(pen?' L ':' M ')+x+' '+y;pen=true;svg.append(make('circle',{cx:x,cy:y,r:1.6,fill:'currentColor'}));});
+        svg.append(make('path',{d,stroke:'currentColor','stroke-width':1.8,fill:'none'}));box.append(svg,element('small','Scale: 0–'+Math.ceil(max)+' · '+valid.length+' readings'));return box;
+    }));
+}
 function endpointActivity(v,generatedUtc){
     endpointLastSample=v;const r=v?.result||v||{},panel=byId('endpoint-live');if(!panel)return;
     const age=Number(v?.ageSeconds??Infinity),fresh=!v?.stale&&age<=20,now=Date.parse(generatedUtc),recent=Number.isFinite(now)&&r.lastRealTimeScanUtc&&now-Date.parse(r.lastRealTimeScanUtc)<=8000&&now>=Date.parse(r.lastRealTimeScanUtc);
+    const resourceAge=now-Date.parse(r.resources?.sampleUtc);
+    renderEndpointResources(r.resources,fresh&&r.status!=='disabled'&&Number.isFinite(resourceAge)&&resourceAge>=-1000&&resourceAge<=30000);
     if(endpointScanRequested&&((fresh&&(r.scanRunning||r.lastScanUtc!==endpointScanRequested.previous||r.scanStartedUtc!==endpointScanRequested.started))||Date.now()-endpointScanRequested.at>30000))endpointScanRequested=null;
     let state='waiting',message='Waiting for endpoint telemetry';
-    if(r.status==='disabled'){state='disabled';message='Endpoint Protection disabled';}
+    if(r.status==='disabled'){state='disabled';message='Protection disabled · configure application directories in Settings';}
     else if(!fresh){state='waiting';message=v?.collectedUtc?'Awaiting fresh scanner telemetry':'Waiting for endpoint telemetry';}
-    else if(r.engineOnline!==true){state='warning';message='ClamAV unavailable · monitoring coverage incomplete';}
-    else if((r.rootCoverage||[]).some(x=>['Uncovered','Initializing','Excluded'].includes(x.state))){state='warning';message='Configured scope has unverified real-time coverage';}
-    else if(r.signatureFreshness&&r.signatureFreshness!=='Current'){state='warning';message='Signature freshness not verified';}
+    else if(r.scanRunning&&r.engineOnline!==true){state='warning';message='Baseline waiting for antivirus engine';}
+    else if(r.scanRunning&&r.baselineThrottleReason){state='paused';message='Baseline paused · '+r.baselineThrottleReason;}
     else if(r.scanRunning){state='scanning';message=r.baselineResumed?'Resuming baseline · reconciliation to follow':'Baseline verification in progress';}
+    else if(r.engineOnline!==true){state='warning';message='ClamAV unavailable · signature coverage incomplete';}
     else if(endpointScanRequested){state='queued';message='Scan requested · waiting for scanner';}
     else if(Number(r.queueDepth)>0){state='queued';message='Processing real-time file events';}
     else if(recent){state='activity';message='Real-time file scan just completed';}
@@ -614,6 +969,15 @@ function endpointActivity(v,generatedUtc){
     else if(r.realTime){state='warning';message='Real-time watcher unavailable';}
     else {state='idle';message='Scheduled monitoring · waiting for next scan';}
     panel.dataset.state=state;byId('endpoint-live-state').textContent=message;
+    const worker=v?.activity,phase=worker?.phase,elapsed=worker?.phaseUtc&&Number.isFinite(now)?Math.max(0,Math.floor((now-Date.parse(worker.phaseUtc))/1000)):null;
+    const workerText=phase?'Worker: '+phase+(elapsed!=null&&phase!=='Waiting for next cycle'?' · '+elapsed+' s in phase':''):'Worker phase unavailable';
+    const health=!fresh?'Scan counters are from the last published snapshot.':r.status==='disabled'?'':(r.signatureFreshness!=='Current'?'Signature freshness: '+(r.signatureFreshness||'Unknown')+'. ':'')+(r.engineOnline!==true?'Engine unavailable or unverified. ':'')+((r.rootCoverage||[]).some(x=>['Uncovered','Initializing','Excluded'].includes(x.state))?'Scope monitoring requires review.':'');
+    if(byId('endpoint-worker-state'))byId('endpoint-worker-state').textContent=workerText;
+    for(const [id,value] of [['ep-count-baseline',r.scannedFiles],['ep-count-realtime',r.realTimeChecked],['ep-count-pending',r.baselineDiscoveredPending],['ep-count-queue',r.queueDepth]])if(byId(id))byId(id).textContent=fresh&&value!=null?Number(value).toLocaleString():'—';
+    if(byId('endpoint-scan-health'))byId('endpoint-scan-health').textContent=health;
+    if(byId('ep-scan-summary'))byId('ep-scan-summary').textContent=message+(fresh&&r.scanRunning?' · '+(r.scannedFiles??'—')+' files checked':'');
+    if(byId('ep-worker-summary'))byId('ep-worker-summary').textContent=workerText;
+
     if(byId('endpoint-active-scope'))byId('endpoint-active-scope').textContent=!fresh?'Active scan scope: awaiting fresh telemetry':r.status==='disabled'?'Active scan scope: disabled':'Active scan scope: '+(Array.isArray(r.protectedPaths)&&r.protectedPaths.length?r.protectedPaths.join(' · '):'Not reported');
     renderEndpointRootCoverage(byId('endpoint-root-coverage'),r,fresh);
     if(byId('endpoint-usn-state')){const volumes=Array.isArray(r.usnVolumes)?r.usnVolumes:[];byId('endpoint-usn-state').textContent=!fresh?'NTFS journal: awaiting fresh telemetry':!r.realTime?'NTFS journal: real-time disabled':volumes.length?'NTFS journal · '+volumes.map(v=>v.volume+' '+v.status).join(' · ')+' · Durable pending: '+(r.usnQueueDepth??'—'):'NTFS journal: no configured local volumes';byId('endpoint-usn-detail').textContent=fresh?volumes.map(v=>v.volume+' '+v.detail+(v.status==='Live'||v.status==='Replaying'?' · checkpoint '+v.checkpoint+' / '+v.tail:'')).concat((r.privilegedWatcherDetails||[]).map(w=>w.path+' · '+(w.active?'Privileged watcher active':w.detail))).join(' | '):'';}
@@ -621,9 +985,10 @@ function endpointActivity(v,generatedUtc){
     if(byId('endpoint-download-state'))byId('endpoint-download-state').textContent='Downloads: '+(r.downloadStatus??'Not available')+' · Attempts: '+(r.downloadChecks??'—')+' · Pending: '+(r.downloadPending??'—')+(r.downloadRoots?.length?' · Folders: '+r.downloadRoots.join(' · '):'')+(r.downloadLastPath?' · Last: '+r.downloadLastPath+' · '+(r.downloadLastResult??''):'');
     byId('endpoint-live-file').textContent=r.lastFileScanUtc?'Last successful signature check: '+new Date(r.lastFileScanUtc).toLocaleString()+(r.lastScannedPath?' · '+r.lastScannedPath:''):'No successful file signature check reported yet.';
     if(byId('endpoint-signature-schedule')){const schedule=r.signatureSchedule,day=schedule?.frequency==='weekly'?' on '+(['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][schedule.weekday]||'—'):schedule?.frequency==='monthly'?' on day '+schedule.monthDay:'';byId('endpoint-signature-schedule').textContent=r.status==='disabled'?'Scheduled refresh · Paused (Endpoint Protection disabled)':!fresh?'Scheduled refresh · Awaiting fresh status':schedule?.enabled?'Scheduled refresh · '+schedule.frequency+day+' at '+schedule.localTime+' (monitoring host) · '+schedule.status+' · Next: '+localEndpointDate(schedule.nextRunUtc)+' · Last request: '+localEndpointDate(schedule.lastScheduledRequestUtc):schedule?'Scheduled refresh · Disabled':'Scheduled refresh · Status not recorded';}
+    if(byId('endpoint-signature-comparison'))byId('endpoint-signature-comparison').textContent=fresh&&r.signatureComparison?r.signatureComparison:'Official daily version comparison awaiting telemetry.';
     if(byId('endpoint-signature-log'))byId('endpoint-signature-log').textContent='Latest database update reported by FreshClam log: '+localEndpointDate(r.lastReportedSignatureUpdateUtc)+(r.signatureUpdateLogRecognized?'':' · No recent matching log record');
     const reset=byId('endpoint-reset');if(reset)reset.disabled=!csrf||!fresh||r.status==='disabled'||endpointScanBusy||!!endpointScanRequested;
-    const b=byId('endpoint-scan-now');b.disabled=!csrf||endpointScanBusy||!!endpointScanRequested||r.status==='disabled'||!!r.scanRunning||!fresh;b.textContent=r.scanRunning&&fresh?(r.baselineThrottleReason?'Background paused':'Scanning…'):endpointScanRequested?'Scan queued…':'Scan now';
+    const b=byId('endpoint-scan-now');b.disabled=!csrf||endpointScanBusy||!!endpointScanRequested||r.status==='disabled'||!!r.scanRunning||!fresh;b.textContent=r.scanRunning&&fresh?(r.engineOnline!==true?'Waiting for engine':r.baselineThrottleReason?'Background paused':'Scanning…'):endpointScanRequested?'Scan queued…':'Scan now';
 }
 let signatureBusy=false,signatureRequested=null,signatureState=null,canaryBusy=false,maintenanceLast=0,maintenanceBusy=false;
 function localEndpointDate(value){return value&&Number.isFinite(Date.parse(value))?new Date(value).toLocaleString():'Not recorded';}
@@ -639,6 +1004,12 @@ async function refreshEndpointMaintenance(){
         const elapsed=Date.now()-Date.parse(signatureState.attemptUtc||''),cooldown=Number.isFinite(elapsed)&&elapsed<3600000;
         const button=byId('endpoint-signatures');button.disabled=!csrf||!m.supported||signatureBusy||!!signatureRequested||signatureState.status==='Running'||signatureState.status==='Unavailable'||cooldown;button.textContent=signatureState.status==='Running'?'Updating signatures…':signatureRequested?'Update queued…':'Update signatures now';
         const state=byId('endpoint-signature-state');state.replaceChildren(healthBadge(signatureRequested?'Queued':signatureState.status||'Not recorded',({Running:'info',Updated:'ok',Checked:'ok',Failed:'fail',Warning:'review',Interrupted:'review',Unavailable:'unknown'})[signatureState.status]||'unknown'),document.createTextNode(' '+(startupError||signatureState.detail||'')+(cooldown&&signatureState.status!=='Running'?' · Next request after '+localEndpointDate(new Date(Date.parse(signatureState.attemptUtc)+3600000).toISOString()):'')+(!m.supported?' · Standard local service/port required.':'')));
+        const providerPanel=byId('endpoint-provider-schedules');
+        if(providerPanel){
+            if(!Array.isArray(m.providers))providerPanel.textContent='Provider separation not yet verified. Run Setup → Third-party signature sources to migrate existing URLs.';
+            else if(!m.providers.length)providerPanel.textContent='No third-party providers configured.';
+            else{const rows=m.providers.map(p=>({Provider:p.provider,Databases:p.files,'Interval (hours)':p.intervalHours,Status:p.status==='Attempt reserved'?(Date.parse(p.nextUtc)>Date.now()?'Attempt reserved / cooldown':'Previous attempt unconfirmed — due'):p.status==='Failed'?(Date.parse(p.nextUtc)>Date.now()?'Failed — cooldown':'Failed — retry due'):p.status==='Migration cooldown'&&Date.parse(p.nextUtc)>Date.now()?'Migration cooldown':Date.parse(p.nextUtc)>Date.now()?'Cooldown':'Due','Last attempt':localEndpointDate(p.lastAttemptUtc),'Last successful batch':localEndpointDate(p.lastSuccessUtc),'Next eligible attempt':localEndpointDate(p.nextUtc)}));providerPanel.replaceChildren(table(rows,'provider schedules'));}
+        }
         byId('endpoint-signature-check').textContent='Last successful FreshClam check (LinkScope initiated): '+localEndpointDate(signatureState.checkedUtc);
         byId('endpoint-signature-download').textContent='Last confirmed signature database content change (LinkScope initiated): '+localEndpointDate(signatureState.updatedUtc);
         const select=byId('endpoint-canary-dir'),prior=select.value,dirs=c.directories||[];if(JSON.stringify([...select.options].map(o=>o.value))!==JSON.stringify(['',...dirs])){select.replaceChildren(new Option(dirs.length?'Select a protected directory':'No eligible saved directory',''),...dirs.map(p=>new Option(p,p)));if(dirs.includes(prior))select.value=prior;}
@@ -815,10 +1186,12 @@ async function renderHealth(){
     const data=await request(page==='endpoint'?'/ui/endpoint':page==='integrity'?'/ui/integrity':'/ui/system');
     if(page==='integrity')integrityActivity(data.categories?.data_integrity,data.generatedUtc);
     if(page==='endpoint'){
-        const epoch=endpointAckEpoch,ack=await request('/ui/endpoint-ack').catch(()=>null);if(!endpointAckBusy&&epoch===endpointAckEpoch)endpointAck=ack;endpointAckControls();endpointActivity(data.categories?.endpoint_protection,data.generatedUtc);if(Date.now()-maintenanceLast>4000)refreshEndpointMaintenance();
+        if(!epAckPending){epAckPending=true;const epoch=endpointAckEpoch;request('/ui/endpoint-ack').then(ack=>{if(!endpointAckBusy&&epoch===endpointAckEpoch)endpointAck=ack;endpointAckControls();}).catch(()=>{}).finally(()=>{epAckPending=false;});}
+        endpointActivity(data.categories?.endpoint_protection,data.generatedUtc);renderContainmentReadiness(data.categories?.endpoint_protection);endpointOverview(data.categories?.endpoint_protection,(data.alerts||[]).filter(a=>a.category==='endpoint_protection'));if(Date.now()-maintenanceLast>4000)refreshEndpointMaintenance();
+        const sample=data.categories?.endpoint_protection;byId('endpoint-telemetry-warning').hidden=sample?.status==='disabled'||(!sample?.stale&&Number(sample?.ageSeconds??Infinity)<=20);const key=JSON.stringify([sample?.collectedUtc,sample?.status,!!sample?.stale,Number(sample?.ageSeconds??Infinity)>20,data.alerts]);if(epRenderKey===key&&byId('metrics').children.length){byId('stamp').textContent='Snapshot · '+new Date(data.generatedUtc).toLocaleString();return;}epRenderKey=key;
     }
     const activeAlerts=Array.isArray(data.alerts)?data.alerts:[];const cats=data.categories,metrics=byId('metrics'),alerts=byId('alerts'),results=byId('results');
-    const opened=new Set(Array.from(results.querySelectorAll('details[open]'),d=>d.dataset.category));
+    const opened=new Set(Array.from(document.querySelectorAll('#results details[open],#metrics details[open]'),d=>d.dataset.category));
     const active=document.activeElement,focusKey=active?.dataset?.healthSearch,selection=focusKey?[active.selectionStart,active.selectionEnd]:null;
     const first=!results.children.length;notice('');byId('stamp').textContent='Snapshot · '+new Date(data.generatedUtc).toLocaleString();
     metrics.replaceChildren();alerts.replaceChildren();results.replaceChildren();
@@ -852,21 +1225,38 @@ async function renderHealth(){
             if(critical>0)parts.push(critical+' critical/error alert'+(critical===1?'':'s'));
             if(warnings>0)parts.push(warnings+' warning'+(warnings===1?'':'s'));
             if(!parts.length&&categoryState.kind!=='ok')parts.push('Protection status requires review');
-            if(parts.length){summary.append(element('span',parts.join(' · ')+'. '));const link=element('a','View findings and diagnostics');link.href=result.status==='disabled'?'/alerts':'#endpoint-alert-diagnostics';if(result.status!=='disabled')link.onclick=()=>{const d=byId('endpoint-alert-diagnostics');if(d)d.open=true;};summary.append(link);section.append(summary);}
+            if(parts.length){summary.append(element('span',parts.join(' · ')+'. '));const link=element('a','View findings and diagnostics');link.href=result.status==='disabled'?'/alerts':'#endpoint-alert-diagnostics';if(result.status!=='disabled')link.onclick=()=>{const d=byId('endpoint-alert-diagnostics');if(d){endpointJump(d);d.open=true;}};summary.append(link);section.append(summary);}
         }
         if(key==='smart'&&rows.length){for(const disk of rows)section.append(renderDrive(disk));}
         else if(key==='events'||key==='event_details'){for(const group of rows){const heading=element('h3',group.channel+' ');heading.append(healthBadge(group.status,healthKind(group.status)));if(group.truncated)heading.append(' · capped');section.append(heading,table(group.items||[],key+' · '+group.channel));}}
         else if(key==='endpoint_protection'){
             if(result.status==='disabled')section.append(element('p','Enable Endpoint Protection in Settings.'));
             else {
-                const stats=element('div');stats.className='cards integrity-metrics';
+                const stats=element('div');stats.className='cards integrity-metrics';stats.dataset.endpointView='scan';const behaviorStats=element('div');behaviorStats.className='cards integrity-metrics';behaviorStats.dataset.endpointView='behavior';const engineStats=element('div');engineStats.className='cards integrity-metrics';engineStats.dataset.endpointView='maintenance';
                 const danger=rows.some(r=>r.severity==='critical'),warnings=rows.some(r=>r.severity==='warning');
                 const independent=v.stale?'review':'ok',coverage=Number(result.activeScanIssues||0)>0||Number(result.coverageIssueCount||0)>0;
                 const canaryState=(result.canaries||[]).some(c=>c.status==='critical')?'fail':(result.canaries||[]).some(c=>c.status!=='Enrolled')?'review':independent;
-                const cards=[['ClamAV engine',result.engineOnline===true?'Online':result.engineOnline===false?'Unavailable':'—',v.stale?'review':result.engineOnline===true?(rows.some(r=>r.path==='ClamAV'&&r.severity==='warning')?'review':'ok'):result.engineOnline===false?'review':'unknown',(result.engineVersion||'Waiting for scan')+' · DB '+(result.signatureDatabaseVersion||'Unknown')+(result.engineRecoveryPending?' · Awaiting successful readiness scan':'')],['Files scanned',result.scannedFiles,coverage?'review':independent,result.scanRunning?'Baseline running · cached: '+(result.baselineCached??0):'Last baseline · cached: '+(result.baselineCached??0)],['Real-time queue',result.queueDepth,rows.some(r=>r.change==='Real-time queue overflow')||(result.usnVolumes||[]).some(v=>v.status==='Backpressure')?'review':independent,'USN pending: '+(result.usnQueueDepth??'—')+' · Watcher pending: '+(result.watcherQueueDepth??'—')+' · Overflows: '+(result.overflowCount??0)+' · Journal-backed roots: '+(result.watcherRootsCoveredByJournal??0)+' · Privileged watcher roots: '+(result.watcherRootsCoveredByPrivileged??0)],['File changes',result.changedFiles,rows.some(r=>r.change==='Possible ransomware activity'||r.change==='Possible ransomware activity (extended observation)')?'review':'ok','Rapid window: '+(result.behaviorWindowSeconds??'—')+' s · change threshold: '+(result.behaviorChangeThreshold??'—')],['Entropy changes',result.entropyChanges,rows.some(r=>r.change==='Possible ransomware activity'||r.change==='Possible ransomware activity (extended observation)')?'review':independent,'Distinct files in rapid window'],['Extended entropy changes',result.extendedEntropyPeak,rows.some(r=>r.change==='Possible ransomware activity (extended observation)')?'review':independent,'Peak in one folder · '+(result.extendedEntropyWindowSeconds??'—')+' s · warning threshold: '+(result.extendedEntropyThreshold??'—')],['Canary files',result.canaryCount,rows.some(r=>r.change==='Canary integrity violation')?'fail':result.canaryCount===0?'unknown':canaryState,result.canaryCount===0?'Not configured':'Configured canaries'],['Active findings',result.violations,danger?'fail':warnings||coverage?'review':independent,'Persistent threat records'],['Mode',result.mode,result.mode==='monitor'?'ok':result.responseEngineStatus==='Ready'?'ok':'review',(result.mode==='monitor'?'Detection only':'Response: '+(result.responseEngineStatus||'Not checked'))+' · Process correlation: '+(result.processCorrelation||'Unavailable')]];
-                for(const [name,val,k,foot] of cards)stats.append(metric(name,val==null?'—':String(val),foot,val==null?'unknown':k,{kind:val==null?'unknown':k,status:name==='Files scanned'&&result.scanRunning&&k==='ok'?'Scanning':name==='Real-time queue'&&k==='ok'&&Number(val)>0?'Queued':alertStateLabel(val==null?'unknown':k),messages:[]}));section.append(stats);
-                section.append(element('h3','Active threats and scan statistics'));
-                const counts=element('div');counts.className='cards integrity-metrics';
+                const cards=[
+                    {name:'ClamAV engine',value:result.engineOnline===true?'Online':result.engineOnline===false?'Unavailable':'—',kind:v.stale?'review':result.engineOnline===true?(rows.some(r=>r.path==='ClamAV'&&r.severity==='warning')?'review':'ok'):result.engineOnline===false?'review':'unknown',foot:(result.engineVersion||'Waiting for scan')+' · DB '+(result.signatureDatabaseVersion||'Unknown')+(result.engineRecoveryPending?' · Awaiting successful readiness scan':''),target:'endpoint-signature-state',explanation:'Open signature and engine status'},
+                    {name:'Files scanned',value:result.scannedFiles,kind:result.scanRunning?'ok':(coverage?'review':'ok'),foot:result.scanRunning?'Baseline running · cached: '+(result.baselineCached??0):'Last baseline · cached: '+(result.baselineCached??0),target:'ep-scan-evidence',explanation:'Open scan activity and evidence'},
+                    {name:'Real-time queue',value:result.queueDepth,kind:rows.some(r=>r.change==='Real-time queue overflow')||(result.usnVolumes||[]).some(v=>v.status==='Backpressure')?'review':'ok',foot:'USN pending: '+(result.usnQueueDepth??'—')+' · Watcher pending: '+(result.watcherQueueDepth??'—')+' · Overflows: '+(result.overflowCount??0)+' · Journal-backed roots: '+(result.watcherRootsCoveredByJournal??0)+' · Privileged watcher roots: '+(result.watcherRootsCoveredByPrivileged??0),target:'endpoint-usn-state',explanation:'Open queue and journal explanation'},
+                    {name:'File changes',value:result.changedFiles,kind:rows.some(r=>r.change==='Possible ransomware activity'||r.change==='Possible ransomware activity (extended observation)')?'review':'ok',foot:'Rapid window: '+(result.behaviorWindowSeconds??'—')+' s · change threshold: '+(result.behaviorChangeThreshold??'—'),target:'ep-behavior-evidence',explanation:'Open file activity evidence'},
+                    {name:'Entropy changes',value:result.entropyChanges,kind:rows.some(r=>r.change==='Possible ransomware activity')?'review':'ok',foot:'Minimum sample: '+(result.entropyMinimumSampleBytes??'—')+' bytes · current ≥ '+(result.entropyMinimumCurrent??'—')+' · increase ≥ '+(result.entropyMinimumIncrease??'—'),target:'ep-behavior-evidence',explanation:'Open entropy-based evidence'},
+                    {name:'Extended entropy changes',value:result.extendedEntropyPeak,kind:rows.some(r=>r.change==='Possible ransomware activity (extended observation)')?'review':'ok',foot:'Peak in one folder · '+(result.extendedEntropyWindowSeconds??'—')+' s · warning threshold: '+(result.extendedEntropyThreshold??'—'),target:'ep-behavior-evidence',explanation:'Open extended entropy evidence'},
+                    {name:'Canary files',value:result.canaryCount,kind:rows.some(r=>r.change==='Canary integrity violation')?'fail':result.canaryCount===0?'unknown':((result.canaries||[]).some(c=>c.status==='critical')?'fail':(result.canaries||[]).some(c=>c.status!=='Enrolled')?'review':'ok'),foot:result.canaryCount===0?'Not configured':'Configured canaries',target:'ep-canary-evidence',explanation:'Open canary evidence'},
+                    {name:'Active findings',value:result.violations,kind:danger?'fail':warnings||coverage?'review':'ok',foot:'Persistent threat records',target:'endpoint-alert-diagnostics',openId:'endpoint-alert-diagnostics',explanation:'Open findings and diagnostics'},
+                    {name:'Mode',value:result.mode,kind:result.mode==='monitor'?'ok':result.responseEngineStatus==='Ready'&&(result.responsePathsReadiness||[]).length&&(result.responsePathsReadiness||[]).every(x=>x.status==='ok')?'ok':'review',foot:(result.mode==='monitor'?'Detection only':'Engine: '+(result.responseEngineStatus||'Not checked')+' · Response paths: '+((result.responsePathsReadiness||[]).length&&(result.responsePathsReadiness||[]).every(x=>x.status==='ok')?'Advisory clear':'Review access'))+' · Process correlation: '+(result.processCorrelation||'Unavailable'),target:'endpoint-evidence',explanation:'Open response and evidence details'}
+                ];
+                for(const cardInfo of cards){
+                    const val=cardInfo.value==null?'—':String(cardInfo.value),state=cardInfo.value==null?'unknown':cardInfo.kind;
+                    const status=cardInfo.name==='Files scanned'&&state==='ok'&&result.scanRunning?'Scanning':cardInfo.name==='Real-time queue'&&state==='ok'&&Number(cardInfo.value)>0?'Queued':alertStateLabel(state);
+                    const card=metric(cardInfo.name,val,cardInfo.foot,state,{kind:state,status,messages:[]});
+                    const group=['File changes','Entropy changes','Extended entropy changes','Canary files'].includes(cardInfo.name)?behaviorStats:['ClamAV engine','Mode'].includes(cardInfo.name)?engineStats:stats;
+                    if(Number(v.ageSeconds??Infinity)>20||v.stale){card.classList.remove('ok','fail','review');card.classList.add('unknown');card.querySelector('.health-metric-heading .health-badge').replaceWith(healthBadge('Stale sample','unknown'));}
+                    group.append(makeMetricJump(card,cardInfo.target,cardInfo.explanation,cardInfo.openId));
+                }section.append(stats,behaviorStats,engineStats);
+                const countHeading=element('h3','Scan statistics and active findings');countHeading.dataset.endpointView='scan';section.append(countHeading);
+                const counts=element('div');counts.className='cards integrity-metrics';counts.dataset.endpointView='scan';
                 // Severity is driven by unresolved findings, not cumulative historical scan checks.
                 const currentKind=independent;
                 const currentCount=(name)=>result[name]==null?null:Number(result[name]);
@@ -880,8 +1270,8 @@ async function renderHealth(){
                     ['Active scan issues',scanIssues,scanIssues>0||coverage?'review':currentKind,'Historical failed / missing / limited / boundary: '+(result.failedChecks??'—')+' · Deferred (file in use): '+(result.deferredChecks??'—')],
                     ['Quarantine vault',vault,vault==null?'unknown':vault>0?'review':currentKind,'Historical quarantined checks: '+(result.quarantinedChecks??'—')+' · Deleted payloads: '+(result.quarantineDeletedCount??'—')]
                 ];
-                for(const [name,val,k,foot] of counterCards){const state=val==null?'unknown':k;counts.append(metric(name,val==null?'—':String(val),foot,state,{kind:state,status:val==null?'Not available':name==='Excluded checks'?'Excluded by policy':name==='Quarantine vault'&&val>0?'Isolated evidence':alertStateLabel(state),messages:[]}));}section.append(counts);
-                section.append(summaryDetails('Scan & protection details',[
+                for(const [name,val,k,foot] of counterCards){const state=val==null?'unknown':k;const card=metric(name,val==null?'—':String(val),foot,state,{kind:state,status:val==null?'Not available':name==='Excluded checks'?'Excluded by policy':name==='Quarantine vault'&&val>0?'Isolated evidence':alertStateLabel(state),messages:[]});const target=name==='Quarantine vault'?'endpoint-quarantine-manager':'endpoint-evidence';const openId=name==='Active scan issues'||name==='Active confirmed malware'||name==='Active heuristic findings'?'endpoint-alert-diagnostics':null;counts.append(makeMetricJump(card,target,'Open supporting evidence',openId));}section.append(counts);
+                const scanDetails=summaryDetails('Scan & protection details',[
                     ['Last finished baseline attempt',localDate(result.lastScanUtc,'Not completed')],
                     ['Current baseline state',result.scanRunning?(result.baselineThrottleReason?'Paused — '+result.baselineThrottleReason:'Running'):result.fullScanComplete?'Complete':'Incomplete / not verified'],
                     ['Baseline paths visited',result.baselineVisited??'Not reported'],
@@ -897,31 +1287,33 @@ async function renderHealth(){
                     ['Configured per-file size cap',result.configuredMaxFileMiB==null?'Not reported':result.configuredMaxFileMiB+' MiB'],
                     ['Next scheduled scan',localDate(result.nextScanUtc,result.scanRunning?'In progress':'Not scheduled')],
                     ['Signature freshness',result.signatureFreshness||'Unknown'],
+                    ['Official daily version comparison',result.signatureComparison||'Not reported'],
                     ['Engine-reported signature date',localDate(result.signatureDatabaseTimestamp,result.signatureDatabaseTimestamp||'Unknown')],
                     ['Last engine status check',localDate(result.lastSignatureCheckUtc,'Not verified')],
-                    ['Automatic response',result.responseEngineStatus||'Not checked'],
+                    ['Response engine authentication',result.responseEngineStatus||'Not checked'],
                     ['Response verified',localDate(result.responseCheckedUtc,'Not verified')],
                     ['Queue overflows',result.overflowCount??0],
                     ['Size-limited files',result.sizeLimitedFiles??0],
                     ['Pending alert delivery',result.pendingAlertDelivery??0]
-                ],result.protectedPaths,result.responseEngineDetail||'Waiting for response verification'));
-                if(result.mode!=='monitor'&&(result.responsePathsReadiness||[]).length){section.append(element('h3','Authorized response path access (advisory)'),table(result.responsePathsReadiness,'endpoint response access'));}
+                ],result.protectedPaths,result.responseEngineDetail||'Waiting for response verification');const scanDisclosure=element('details');scanDisclosure.dataset.endpointView='scan';scanDisclosure.dataset.category='ep-scan-details';scanDisclosure.open=opened.has('ep-scan-details');scanDisclosure.append(element('summary','Advanced scan and response details'),scanDetails);section.append(scanDisclosure);
+                if(result.mode!=='monitor'&&(result.responsePathsReadiness||[]).length){const d=element('div');d.dataset.endpointView='maintenance';d.append(element('h3','Authorized response path access (advisory)'),table(result.responsePathsReadiness,'endpoint response access'));section.append(d);}
                 // Render both statistic groups before the fixed activity/maintenance panel.
                 // That panel is never detached or recreated by the two-second telemetry poll.
+                const bdetail=element('div');bdetail.dataset.endpointView='behavior';bdetail.id='ep-behavior-evidence';bdetail.append(element('h3','Behavioral findings'),element('p','File changes and significant entropy increases are detection signals, not proof of ransomware. The extended detector is warning-only.'),(rows.filter(x=>String(x.change||'').startsWith('Possible ransomware activity')||x.change==='Canary integrity violation').length?table(rows.filter(x=>String(x.change||'').startsWith('Possible ransomware activity')||x.change==='Canary integrity violation'),'endpoint behavioral findings'):element('p','No active behavioral findings in this snapshot.')));section.append(bdetail);
                 metrics.append(section);
                 section=element('section');section.id='endpoint-evidence';
                 section.append(element('h2','Scan activity & threat evidence'));
                 const diagnostics=element('details');diagnostics.id='endpoint-alert-diagnostics';diagnostics.dataset.category='endpoint-alert-diagnostics';diagnostics.open=opened.has('endpoint-alert-diagnostics');
                 diagnostics.append(element('summary','Active alert diagnostics ('+endpointAlerts.length+')'));
                 diagnostics.append(element('p','Detailed alert messages, including file paths, signatures, hashes and technical coverage errors. Operational warnings are not malware verdicts.'));
-                diagnostics.append(endpointAlerts.length?table(endpointAlerts.map(a=>({severity:a.severity,change:a.title,detail:a.message})),'endpoint active alert diagnostics'):element('p','No active warning, error or critical alerts reported.'));
+                diagnostics.append(endpointAlerts.length?table(endpointAlerts.map(a=>({severity:a.severity,change:a.title,detail:a.message})),'endpoint active alert diagnostics',endpointAlerts):element('p','No active warning, error or critical alerts reported.'));
                 section.append(diagnostics);
-                section.append(element('h3','Registered canary files'),(result.canaries||[]).length?table(result.canaries,'endpoint canaries'):element('p','No canaries configured. Use Canary manager above, LinkScope Setup, or register existing decoys under Settings → Endpoint Protection. Do not edit or delete enrolled decoys.'));
-                section.append(element('h3','Live file scan activity (latest 100)'),(result.scanActivity||[]).length?table(result.scanActivity,'endpoint scan activity'):element('p','No file scan results yet.'));
-                section.append(element('h3','Scan coverage details'),element('p',result.coverageIssueCount==null?'Coverage details not reported by this service.':String(result.coverageIssueCount)+' outstanding file/path scan issues. Showing up to 100 recent paths. These are coverage gaps, not malware detections.'));
+                const canaryHeading=element('h3','Registered canary files');canaryHeading.id='ep-canary-evidence';section.append(canaryHeading,(result.canaries||[]).length?table(result.canaries,'endpoint canaries'):element('p','No canaries configured. Use Canary manager above, LinkScope Setup, or register existing decoys under Settings → Endpoint Protection. Do not edit or delete enrolled decoys.'));
+                const activityHeading=element('h3','Live file scan activity (latest 100)');activityHeading.id='ep-scan-evidence';section.append(activityHeading,(result.scanActivity||[]).length?table(result.scanActivity,'endpoint scan activity'):element('p','No file scan results yet.'));
+                const coverageHeading=element('h3','Scan coverage details');coverageHeading.id='ep-coverage-evidence';section.append(coverageHeading,element('p',result.coverageIssueCount==null?'Coverage details not reported by this service.':String(result.coverageIssueCount)+' outstanding file/path scan issues. Showing up to 100 recent paths. These are coverage gaps, not malware detections.'));
                 if((result.coverageBreakdown||[]).length)section.append(table(result.coverageBreakdown,'endpoint coverage categories'));
                 if((result.coverageDetails||[]).length)section.append(table(result.coverageDetails,'endpoint scan coverage'));
-                section.append(element('h3','Active detections, coverage warnings and response evidence'),rows.length?table(rows,key):element('p',result.status==='ok'?'No active findings.':'Scan pending or incomplete.'));
+                const findingHeading=element('h3','Active detections, coverage warnings and response evidence');findingHeading.id='ep-active-evidence';section.append(findingHeading,rows.length?table(rows,key):element('p',result.status==='ok'?'No active findings.':'Scan pending or incomplete.'));
                 section.append(element('h3','Recent threat and response history (latest 100)'),(result.recentIncidents||[]).length?table(result.recentIncidents,'endpoint incident history'):element('p','No recorded incidents.'));
                 section.append(element('p','Use Quarantine manager above to review or permanently delete isolated payloads. Full detection history remains in the endpoint database.'));
 
@@ -959,6 +1351,7 @@ async function renderHealth(){
         results.append(section);
     }
     if(page==='system')filterHealthCategories();
+    if(page==='endpoint'){applyEndpointView();byId('endpoint-telemetry-warning').hidden=!(Number(data.categories?.endpoint_protection?.ageSeconds??Infinity)>20||data.categories?.endpoint_protection?.stale)||data.categories?.endpoint_protection?.status==='disabled';}
     if(focusKey){const input=[...results.querySelectorAll('[data-health-search]')].find(e=>e.dataset.healthSearch===focusKey);if(input&&!input.closest('[hidden]')){input.focus({preventScroll:true});if(selection&&selection[0]!=null)input.setSelectionRange(...selection);}}
     if(first)revealCategory();
 }
@@ -973,7 +1366,7 @@ function filterHealthCategories(){
 function revealCategory(){
     if(page==='system'&&location.hash==='#category-data_integrity'){location.replace('/integrity#category-data_integrity');return;}
     const d=byId(location.hash.slice(1));
-    if(d){if(d.tagName==='DETAILS')d.open=true;for(let p=d.parentElement;p;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true;d.scrollIntoView({block:'start'});}
+    if(d){endpointJump(d);if(d.tagName==='DETAILS')d.open=true;for(let p=d.parentElement;p;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true;d.scrollIntoView({block:'start'});}
 }
 window.addEventListener('linkscope-reveal',revealCategory);window.addEventListener('hashchange',revealCategory);
 async function start(){
@@ -1061,8 +1454,8 @@ async function start(){
         return;
     }
     if(page==='integrity'||page==='endpoint'){
-        if(page==='endpoint'){setupEndpointControls();setupQuarantineManager();}else setupIntegrityControls();
-        async function pollIntegrity(){try{await renderHealth();}catch(ex){if(page==='endpoint'){byId('endpoint-live').dataset.state='warning';byId('endpoint-live-state').textContent='Unable to refresh scanner telemetry';byId('endpoint-scan-now').disabled=true;endpointAck=null;endpointAckControls();}else{byId('integrity-live').dataset.state='warning';byId('integrity-live-state').textContent='Unable to refresh scanner telemetry';byId('integrity-scan-now').disabled=true;}failure(ex);}finally{setTimeout(pollIntegrity,2000);}}
+        if(page==='endpoint'){setupEndpointWorkspace();setupEndpointControls();setupQuarantineManager();}else setupIntegrityControls();
+        async function pollIntegrity(){try{await renderHealth();}catch(ex){if(page==='endpoint'){renderEndpointResources(null,false);renderContainmentReadiness(null);endpointOverview(null,[]);epRenderKey='';byId('endpoint-telemetry-warning').hidden=false;byId('endpoint-live').dataset.state='warning';byId('endpoint-live-state').textContent='Unable to refresh scanner telemetry';byId('ep-scan-summary').textContent='Telemetry refresh failed';byId('ep-worker-summary').textContent='Worker state unknown';byId('endpoint-scan-now').disabled=true;endpointAck=null;endpointAckControls();}else{byId('integrity-live').dataset.state='warning';byId('integrity-live-state').textContent='Unable to refresh scanner telemetry';byId('integrity-scan-now').disabled=true;}failure(ex);}finally{setTimeout(pollIntegrity,2000);}}
         await pollIntegrity();return;
     }
     if(page==='system'){

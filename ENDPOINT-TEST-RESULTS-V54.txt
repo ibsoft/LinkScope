@@ -1,0 +1,8 @@
+V54 validation
+PASS tests/validate_setup_permissions_v54.py — static install hook, saved policy gate, explicit approval, exact preflight snapshots, cancellation/partial result, bounded restart, delimiter checks.
+PASS tests/validate_automatic_permissions_v53.py — inherited manual wizard safeguards (version assertion updated to accept later releases).
+PASS tests/validate_endpoint_permissions_v49.py — static administrator-only ACL, scope, backup and rollback safeguards.
+PASS tests/validate_setup_build.py — static project/build graph.
+PASS tests/validate_setup_readiness_v51.py — static migration and signature readiness.
+PASS tests/validate_containment_test_center_v48.py — static isolation/auth checks and Chromium mocked API UI checks (320–1440 px, dark/light).
+NOT RUN: Native C# compilation, Windows installer, ACL modification, UAC, Windows effective service token access, service restart, full historical regression suite.

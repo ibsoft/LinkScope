@@ -12,8 +12,8 @@ namespace LinkScope {
         internal static void Command(string verb,bool success){
             int i=Array.IndexOf(Verbs,verb.TrimStart('-'));if(i<0)return;
             try{
-                if(!EventLog.SourceExists("Unixfor LinkScope"))return;
-                EventLog.WriteEntry("Unixfor LinkScope","LinkScope "+Verbs[i]+(success?" completed.":" failed."),
+                if(!EventLog.SourceExists("LinkScope"))return;
+                EventLog.WriteEntry("LinkScope","LinkScope "+Verbs[i]+(success?" completed.":" failed."),
                     success?EventLogEntryType.Information:EventLogEntryType.Error,BaseId+i*2+(success?0:1));
             }catch(Exception){} // Diagnostics must not change the result of an administrative command.
         }
@@ -21,7 +21,7 @@ namespace LinkScope {
             id=lastId;stamp=lastTime;
             string recent=DateTime.FromFileTimeUtc(Math.Max(0,cutoff*10000000L+116444736000000000L)).ToString("o",CultureInfo.InvariantCulture);
             string last=DateTime.FromFileTimeUtc(Math.Max(0,lastTime)).ToString("o",CultureInfo.InvariantCulture);
-            string query="*[System[Provider[@Name='Unixfor LinkScope'] and EventID >= "+BaseId+" and EventID < "+(BaseId+Verbs.Length*2)+
+            string query="*[System[Provider[@Name='LinkScope'] and EventID >= "+BaseId+" and EventID < "+(BaseId+Verbs.Length*2)+
                 " and TimeCreated[@SystemTime >= '"+recent+"'] and (EventRecordID > "+lastId+" or TimeCreated[@SystemTime > '"+last+"'])]]";
             var result=new List<LogEntry>();
             using(var reader=new EventLogReader(new EventLogQuery("Application",PathType.LogName,query))){

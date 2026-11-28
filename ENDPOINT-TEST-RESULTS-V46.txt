@@ -1,0 +1,8 @@
+PASS: node --check src/app.js
+PASS: validate_clamd_resources_v46.py (source guard checks and Chromium synthetic telemetry tests: access denial, initial sample, 0% CPU and chart recovery)
+PASS: validate_endpoint_resources_v44.py (static and Chromium fixtures)
+PASS: validate_endpoint_workspace_v45.py (full Chromium fixture, version assertion generalized for newer releases)
+PASS: validate_setup_build.py (static)
+PASS: validate_visualstudio_config.py (static)
+FAIL: validate_response_access_settings.py (new guard assertion passes; inherited obsolete assertion expects one default-open settings category, contrary to V43 requirement that all start collapsed). The guard assertion was updated for V46. No claim that all historical regression scripts pass.
+NOT RUN: Windows build, native self-check, installed query-access task, real ClamD process ACL/metrics. No Windows runtime available.

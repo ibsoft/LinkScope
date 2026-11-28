@@ -20,7 +20,7 @@ registered=worker.split('internal static uint StandardClamdResponsePid()',1)[1].
 for marker in ['NativeService("clamd",ClamdExe)','LoopbackOnly()','VerifyClamPath(ClamdExe)','ClamCommand("PING")','ClamdPid()!=pid']:
     assert marker in registered,marker
 entry=program.split('static int RefreshInstalledClamPeerAccess()',1)[1].split('static int UpdateInstalledSignatures()',1)[0]
-for marker in ['id.IsSystem','Assembly.GetExecutingAssembly().Location,ServiceExe','RegisteredCommand(),ServiceCommand(ServiceExe)','maintenance.lock','policy.Mode=="monitor"','policy.Port!=3310','policy.TrustedEnginePath,standard','RefreshClamPeerAccess(ServiceSid())']:
+for marker in ['id.IsSystem','Assembly.GetExecutingAssembly().Location,ServiceExe','RegisteredCommand(),ServiceCommand(ServiceExe)','maintenance.lock','if(!policy.Enabled)return 0','policy.Mode!="monitor"&&!Same(policy.TrustedEnginePath,standard)','policy.Port!=3310','policy.TrustedEnginePath,standard','RefreshClamPeerAccess(ServiceSid())']:
     assert marker in entry,marker
 assert "$peerAction.Path=$exe" in task and "$peerAction.Arguments='--clam-peer-access-installed'" in task
 assert "$peerDef.Principal.UserId='SYSTEM'" in task and "$peerTrigger.Repetition.Interval='PT1M'" in task

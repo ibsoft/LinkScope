@@ -90,6 +90,8 @@ namespace LinkScope {
             c.Delivery.Validate(false);if(c.Ai==null)c.Ai=new AiSettings();c.Ai.Validate();
             if(c.Logging==null)c.Logging=new LogSettings();c.Logging.Validate();if(c.Siem==null)c.Siem=new SiemSettings();c.Siem.Validate();
             c.BrandLabel=(c.BrandLabel??"").Trim();
+            // Remove retired default branding while retaining other administrator-defined labels.
+            if(c.BrandLabel.IndexOf("Unixfor",StringComparison.OrdinalIgnoreCase)>=0)c.BrandLabel="";
             if(c.BrandLabel.Length>80||c.BrandLabel.Any(char.IsControl))throw new InvalidDataException("Use a brand label of up to 80 characters with no control characters.");
             if(string.IsNullOrEmpty(c.HostName) || c.HostName.Length>253 || Uri.CheckHostName(c.HostName)!=UriHostNameType.Dns || c.HostName.EndsWith(".") || c.HostName.Any(ch=>!(ch>='A'&&ch<='Z'||ch>='a'&&ch<='z'||ch>='0'&&ch<='9'||ch=='.'||ch=='-')))
                 throw new InvalidDataException("Set HostName to localhost or a DNS name matching the certificate.");
