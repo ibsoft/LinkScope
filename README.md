@@ -199,3 +199,12 @@ Full security validation includes a fixed owned-child process exit test and sepa
 
 ### V70 protection status reconciliation
 See [ENDPOINT-PROTECTION-V70.md](ENDPOINT-PROTECTION-V70.md) for the narrow historical signature warning recovery, distinct scan coverage counts and current status reasons. Existing operational and security evidence is preserved.
+
+### V73 endpoint coverage recovery
+See [V73 recovery and verification notes](ENDPOINT-PROTECTION-V73.md).
+
+### V74 USN historical path recovery
+See [V74 recovery and verification notes](ENDPOINT-PROTECTION-V74.md).
+
+### V75 individual alert review and coverage verification
+See [V75 alert review and verification notes](ENDPOINT-PROTECTION-V75.md).

@@ -6,7 +6,8 @@ from pygments.token import String,Comment
 r=Path(__file__).resolve().parents[1]
 s=(r/'setup/EndpointPermissions.cs').read_text(); setup=(r/'setup/Setup.cs').read_text(); wizard=(r/'setup/wizard.ps1').read_text()
 assert 'bool installOperation=verb=="--install"||verb=="--upgrade"||verb=="--upgrade-pwa";' in setup
-assert setup.index('int result=RunHidden(exe,verb,stage,log);')<setup.index('if(result==0&&installOperation)return ProvisionEndpointPermissionsAfterInstall(log,logPath);')
+assert setup.index('int result=RunHidden(exe,verb,stage,log);')<setup.index('if(result==0&&installOperation){')<setup.index('int webAudit=ProvisionWebAuditAfterInstall(log);')<setup.index('int endpoint=ProvisionEndpointPermissionsAfterInstall(log,logPath);')
+assert 'return webAudit!=0?webAudit:endpoint;' in setup
 assert 'return result;' in setup
 p=s.split('static int ProvisionEndpointPermissionsAfterInstall(',1)[1].split('static int EndpointPermissionWizard(',1)[0]
 assert p.index('if(!AutomaticResponseEnabled(ep))')<p.index('SecureDirectory(PermissionStore)')<p.index('ConfirmInstallPermissions(summary)')<p.index('ApplyPermission(step.Kind,step.Path,sid,step)')
@@ -24,7 +25,7 @@ assert 'No effective-access or containment verdict inferred' in p
 assert 'EndpointPermissionReview=21' in s and '$rc -eq 21' in wizard and 'LinkScope installed; endpoint permissions require review' in wizard
 assert 'form.CancelButton=skip;form.ActiveControl=skip;' in s
 assert 'FileShare.None' in p and 'DirectoryPin(PermissionStore)' in p
-assert '/set /subcategory:' not in s and 'TerminateProcess' not in s
+assert '/set /subcategory:' not in p and 'TerminateProcess' not in s
 assert 'C:\\Apache24' not in p and 'C:\\Users' not in p
 assert int((r/'source-build-version.txt').read_text().strip().removeprefix('V'))>=54
 for src in (s,setup):

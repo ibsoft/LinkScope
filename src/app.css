@@ -320,3 +320,60 @@ body[data-page=endpoint] #ep-scan-technical{margin:12px 0 0;padding:12px;border:
 .ep-suite{border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:20px;min-width:0}.ep-suite-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}.ep-suite-heading>div{flex:1 1 270px;min-width:0}#ep-test-center .ep-suite h3{margin:0 0 6px}.ep-suite p{overflow-wrap:anywhere}.ep-suite select{display:block;width:100%;max-width:760px;margin:6px 0}.ep-suite progress{width:100%;height:8px;accent-color:var(--sea)}#ep-suite-status{font-size:13px;margin:8px 0 0}#ep-suite-report{border-top:1px solid var(--line);padding-top:12px}#ep-suite-summary{overflow-wrap:anywhere}@media(max-width:540px){#ep-suite-run{width:100%}.ep-suite{padding:12px}}
 
 body[data-page=endpoint] .ep-reason-button{margin-top:10px;font-size:12px}body[data-page=endpoint] #ep-attention{width:100%;max-height:340px;overflow:auto;overflow-wrap:anywhere;scrollbar-gutter:stable}body[data-page=endpoint] #ep-attention p+p{border-top:1px solid var(--line);padding-top:8px;margin-top:8px}body[data-page=endpoint] .ep-hero>div:nth-child(2){min-width:0}body[data-page=endpoint] .ep-reason-button[hidden]{display:none}
+
+/* V77: stable Endpoint alert review. Scoped to Evidence; no impact on other tables. */
+#ep-ack #endpoint-alert-diagnostics{margin-top:16px;min-width:0}
+#endpoint-alert-review-freshness:empty{display:none}
+#ep-ack .ep-alert-action-status{margin:12px 0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;overflow-wrap:anywhere;white-space:normal;color:var(--ink)}
+#ep-ack .ep-alert-action-status[data-state=success]{border-left:3px solid #23835c}
+#ep-ack .ep-alert-action-status[data-state=error]{border-left:3px solid #dc5a5a}
+#endpoint-alert-review-rows .tablewrap{width:100%;max-width:100%;overflow:auto}
+#endpoint-alert-review-rows table{width:100%;table-layout:fixed;margin:0}
+#endpoint-alert-review-rows th,#endpoint-alert-review-rows td{vertical-align:top;white-space:normal;overflow-wrap:anywhere;word-break:normal;padding:12px 10px;text-align:left}
+#endpoint-alert-review-rows th:nth-child(1){width:100px}
+#endpoint-alert-review-rows th:nth-child(2){width:23%}
+#endpoint-alert-review-rows th:nth-child(4){width:170px}
+#endpoint-alert-review-rows .ep-alert-action-cell>.health-badge{display:inline-block;margin:0 0 8px;max-width:100%;white-space:normal}
+#endpoint-alert-review-rows .ep-alert-actions{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;align-items:stretch}
+#endpoint-alert-review-rows .ep-alert-actions button{box-sizing:border-box;display:flex;align-items:center;justify-content:center;text-align:center;width:100%;min-width:0;min-height:36px;margin:0;padding:7px 8px;border-radius:7px;font:600 12px/1.35 "Segoe UI",system-ui,sans-serif;white-space:normal;overflow-wrap:anywhere}
+#endpoint-alert-review-rows .ep-alert-actions button:disabled{opacity:.55;cursor:not-allowed}
+#endpoint-alert-review-rows .ep-alert-action-note{display:block;margin-top:8px;font-size:12px;line-height:1.4;overflow-wrap:anywhere;color:var(--muted)}
+#endpoint-alert-review-rows .ep-alert-action-note[data-state=error]{color:var(--ink);border-left:2px solid #dc5a5a;padding-left:6px}
+@media(max-width:720px){
+  #endpoint-alert-review-rows table{min-width:0;display:block}
+  #endpoint-alert-review-rows thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+  #endpoint-alert-review-rows tbody{display:grid;gap:10px}
+  #endpoint-alert-review-rows tr:not([hidden]){display:grid;grid-template-columns:minmax(0,1fr);border:1px solid var(--line);border-radius:9px;padding:8px 10px}
+  #endpoint-alert-review-rows tr[hidden]{display:none}
+  #endpoint-alert-review-rows td{display:block;width:100%;padding:6px 0;border:0}
+  #endpoint-alert-review-rows td:nth-child(2){font-weight:650}
+  #endpoint-alert-review-rows .ep-alert-actions{grid-template-columns:repeat(auto-fit,minmax(min(100%,125px),1fr))}
+  #endpoint-alert-review-rows .ep-alert-action-cell{border-top:1px solid var(--line);margin-top:5px;padding-top:10px}
+}
+
+/* V77: current evidence is separated from verification progress. */
+body[data-page=endpoint] .ep-overview[data-state=verifying] .ep-hero-icon{color:#4085be}
+body[data-page=endpoint] .ep-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
+body[data-page=endpoint] .ep-kpi[data-state=ok] .ep-component-state{color:var(--good,#258a65)}
+body[data-page=endpoint] .ep-kpi[data-state=review] .ep-component-state{color:#b88a35}
+body[data-page=endpoint] .ep-kpi[data-state=fail] .ep-component-state{color:#cf5656}
+body[data-page=endpoint] .ep-kpi[data-state=verifying] .ep-component-state{color:#4085be}
+body[data-page=endpoint] .ep-kpi[data-state=unknown] .ep-component-state{color:var(--muted)}
+body[data-page=endpoint] .ep-kpi .ep-component-state{font-size:12px;font-weight:650}
+@media(max-width:900px){body[data-page=endpoint] .ep-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* V78 supplemental workspace */
+.ep-web-links{display:flex;flex-wrap:wrap;gap:.65rem;align-items:center;margin-top:1rem}.ep-web-links a{padding:.65rem .9rem;border:1px solid var(--border,#496171);border-radius:.5rem;text-decoration:none}.ep-web-links button{margin:0}#ep-web-paths{overflow-wrap:anywhere}#web-protection-settings{display:grid;gap:.65rem}#web-protection-settings label{display:flex;gap:.5rem;align-items:center}#web-protection-settings input[type=checkbox]{width:auto}
+
+/* V79: Web Server Protection uses the shared Endpoint overview visual system. */
+body[data-page=endpoint] .ep-web-overview .ep-kpis{grid-template-columns:repeat(4,minmax(0,1fr))}
+body[data-page=endpoint] .ep-web-path-list{width:100%;min-width:0;margin:6px 0 10px}
+body[data-page=endpoint] .ep-web-path-row,body[data-page=endpoint] .ep-web-monitor-row{padding:10px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere;min-width:0}
+body[data-page=endpoint] .ep-web-monitor-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+body[data-page=endpoint] .ep-web-monitor-row .health-badge{white-space:normal;max-width:100%;text-align:left}
+body[data-page=endpoint] .ep-web-overview .ep-web-links{margin-top:auto;padding-top:14px;width:100%;align-items:stretch}
+body[data-page=endpoint] .ep-web-overview .ep-web-links a,body[data-page=endpoint] .ep-web-overview .ep-web-links button{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:9px 14px;margin:0;font:inherit;font-size:13px;font-weight:600;box-sizing:border-box;text-align:center;border:1px solid var(--line);border-radius:8px;color:var(--ink);background:var(--paper)}
+body[data-page=endpoint] .ep-web-overview .ep-web-links a:hover,body[data-page=endpoint] .ep-web-overview .ep-web-links button:hover{border-color:var(--sea)}
+body[data-page=endpoint] .ep-web-notes{margin-top:12px}
+@media(max-width:900px){body[data-page=endpoint] .ep-web-overview .ep-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:420px){body[data-page=endpoint] .ep-web-overview .ep-web-links>*{flex:1 1 100%}}

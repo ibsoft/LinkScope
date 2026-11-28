@@ -120,6 +120,27 @@ namespace LinkScope {
                 Changed();return EndpointAckState(db);
             }
         }
+        // An acknowledgement is scoped to one incident, never its finding or later recurrence.
+        internal object ReadEndpointAlert(string id){
+            lock(this)using(var db=Open()){
+                if(string.IsNullOrEmpty(id)||id.Length>128)throw new HttpError(400,"Invalid endpoint alert ID.");
+                if(db.Rows("SELECT 1 FROM alert_events WHERE id=? AND category='endpoint_protection'",id).Count==0)throw new HttpError(404,"Endpoint alert not found.");
+                db.Exec("UPDATE alert_events SET is_read=1 WHERE id=? AND category='endpoint_protection' AND is_read=0",id);
+                foreach(var a in current.Values)if(a.Category=="endpoint_protection"&&a.Id==id){a.Read=true;break;}
+                Changed();return EndpointAckState(db);
+            }
+        }
+        // Explicit allowlist: threat findings and unrelated maintenance actions are not retryable here.
+        internal static bool EndpointVerificationAllowed(HealthAlert a){
+            return a!=null&&!a.Resolved&&a.Category=="endpoint_protection"&&a.Severity=="warning"&&new[]{"USN journal coverage gap","USN journal unavailable","Watcher coverage incomplete","Real-time queue overflow","Scan incomplete","File scan coverage incomplete","File scan error","File scan limited","Engine scan incomplete","Protected path unavailable","Scan traversal limit reached","endpoint_protection coverage is partial","endpoint_protection coverage is unavailable"}.Contains(a.Title,StringComparer.Ordinal);
+        }
+        internal void ValidateEndpointVerification(string id){
+            lock(this){
+                if(string.IsNullOrEmpty(id)||id.Length>128)throw new HttpError(400,"Invalid endpoint alert ID.");
+                var a=current.Values.FirstOrDefault(x=>x.Category=="endpoint_protection"&&x.Id==id);
+                if(!EndpointVerificationAllowed(a))throw new HttpError(409,"This alert is no longer active or does not support coverage verification. Refresh the dashboard.");
+            }
+        }
         // Only Endpoint Protection history is affected; keep the global monotonic sequence.
         internal long ResetEndpointHistory(){
             lock(this)using(var db=Open()){

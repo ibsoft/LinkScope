@@ -73,7 +73,7 @@ $planCard=Card $homePage 28 323 686 164
 [void](Label $planCard 'Automatic installation' 18 12 640 29 15 $true)
 $plan=Label $planCard 'Detect prerequisites, install or repair ClamAV, deploy LinkScope and verify readiness.' 18 46 642 64 10 $false $muted
 $pwa=New-Object Windows.Forms.CheckBox;$pwa.Text='Register managed Edge PWA (local policy; optional)';$pwa.Checked=$false;$pwa.SetBounds(18,115,642,28);$pwa.ForeColor=$ink;$planCard.Controls.Add($pwa)
-[void](Label $homePage 'New installations: endpoint protection is off until you choose application directories. No user folders or canaries are enrolled. Administrator and package-verification approvals remain required.' 30 501 682 78 10 $false $muted)
+[void](Label $homePage 'Setup enables machine-wide Process Creation success auditing (4688) and read-only Security log access for the LinkScope service. New installations do not enroll folders or canaries. Administrator and package-verification approvals remain required.' 30 501 682 78 10 $false $muted)
 [void](Label $advanced 'ADVANCED / MANUAL' 28 23 680 23 9 $true $teal)
 [void](Label $advanced 'Manage installation' 28 50 680 45 24 $true)
 $manualState=Label $advanced '' 30 103 680 50 10 $false $muted
@@ -253,7 +253,7 @@ function End-Report([string]$title,[string]$message,[bool]$complete=$false){
  $finishNote.Text=$message
  $seconds=[Math]::Round(([DateTime]::UtcNow-$script:startedAt).TotalSeconds,1)
  $kind=if($wasAuto){'Automatic installation'}else{'Manual maintenance'}
- $lines=@('LINKSCOPE  |  V69 INSTALLATION REPORT',$kind,('Completed UTC: '+[DateTime]::UtcNow.ToString('o')),('Elapsed: '+$seconds+' s'),('Outcome: '+$title),'') + @($script:results) + @('',('LinkScope service running: '+$script:serviceRunning),('NTFS journal service running: '+$script:usnRunning),('ClamAV readiness code: '+$script:clamCheck),('Restart required: '+$script:rebootRequired),'',('Administrator logs: '+$logFolder),'Desktop: app launcher provisioning is recorded in administrator logs; Edge policy application requires browser launch. No service executable shortcut is created.','Setup readiness is not endpoint protection certification. New application scope, initial sign-in and Test Center validation are separate. Existing policy is preserved.')
+ $lines=@('LINKSCOPE  |  V81 INSTALLATION REPORT',$kind,('Completed UTC: '+[DateTime]::UtcNow.ToString('o')),('Elapsed: '+$seconds+' s'),('Outcome: '+$title),'') + @($script:results) + @('',('LinkScope service running: '+$script:serviceRunning),('NTFS journal service running: '+$script:usnRunning),('ClamAV readiness code: '+$script:clamCheck),('Restart required: '+$script:rebootRequired),'',('Administrator logs: '+$logFolder),'Desktop: app launcher provisioning is recorded in administrator logs; Edge policy application requires browser launch. No service executable shortcut is created.','Windows audit: install/upgrade provisions Process Creation success auditing and service-SID Security log read access. Elevated logs contain policy readback and ACL outcomes; live coverage is verified in the dashboard. Historical gaps remain recorded.','Setup readiness is not endpoint protection certification. New application scope, initial sign-in and Test Center validation are separate. Existing policy is preserved.')
  $script:previousReport=$lines -join "`r`n";$reportBox.Text=$script:previousReport
  Show-Page 'finish'
 }
@@ -277,7 +277,7 @@ function Start-Operation($verb){
  }
 }
 function Start-CoreInstall {
- Phase 1 'Verified' $green;Set-Stage 2 'Deploying LinkScope and preserving existing configuration.';Phase 2 'Installing...' $teal;$runTitle.Text='Installing LinkScope'
+ Phase 1 'Verified' $green;Set-Stage 2 'Deploying LinkScope, configuring process audit prerequisites and preserving existing configuration.';Phase 2 'Installing...' $teal;$runTitle.Text='Installing LinkScope'
  [void](Start-Operation '--upgrade')
 }
 function Begin-LinkScopeInstall {
@@ -322,15 +322,15 @@ function Complete-Operation {
   if($rc -ne 0 -and $rc -ne 21){Stop-Automatic ('LinkScope operation returned exit '+$rc+'. Installation may be partially applied; inspect administrator logs before retrying.');return}
   Phase 2 'Installed' $green
   if($script:serviceRunning -and $script:usnRunning -and $script:clamCheck -eq 0 -and $rc -eq 0){
-   Phase 3 'Verified' $green;Record 'LinkScope and LinkScopeUsn running; ClamAV readiness verified.'
+   Phase 3 'Verified' $green;Record 'LinkScope and LinkScopeUsn running; ClamAV readiness and audit prerequisite configuration checks completed.'
    End-Report 'Installation completed' 'Core services verified. Sign in, configure application protection as required and run the Test Center for acceptance.' $true;return
   }
   Record 'Installation worker completed; service/readiness or permission review remains.'
   Phase 3 'Review required' $amber
-  End-Report 'Installed - review required' 'LinkScope was deployed, but permissions, journal availability or engine readiness require review. See the report and administrator logs.';return
+  End-Report 'Installed - review required' 'LinkScope was deployed, but audit prerequisites, permissions, journal availability or engine readiness require review. See the report and administrator logs.';return
  }
  if($script:rebootRequired){End-Report 'Restart required' 'Restart Windows before continuing antivirus maintenance.';return}
- if($rc -eq 21){End-Report 'Installed - review required' 'LinkScope installed; endpoint permissions require review. See elevated setup log.';return}
+ if($rc -eq 21){End-Report 'Installed - review required' 'LinkScope installed; endpoint permissions require review (including web process audit prerequisites). See elevated setup log.';return}
  if($rc -eq 1602){End-Report 'Maintenance cancelled' 'The requested operation was not completed.';return}
  if($rc -ne 0){End-Report 'Maintenance needs attention' ('Worker exit '+$rc+'. Review administrator logs.');return}
  if($op -in @('--install-clamav','--install-clamav-online','--configure-clamav','--update-clamav') -and $script:clamCheck -ne 0){End-Report 'Engine review required' 'The operation returned success, but antivirus readiness is not verified.';return}

@@ -180,7 +180,11 @@ internal static partial class Setup {
                 string exe=Path.Combine(stage,"LinkScope.exe");
                 using(var input=Resource("LinkScope.exe"))using(var output=new FileStream(exe,FileMode.CreateNew,FileAccess.Write,FileShare.None))input.CopyTo(output);
                 int result=RunHidden(exe,verb,stage,log);
-                if(result==0&&installOperation)return ProvisionEndpointPermissionsAfterInstall(log,logPath);
+                if(result==0&&installOperation){
+                    int webAudit=ProvisionWebAuditAfterInstall(log);
+                    int endpoint=ProvisionEndpointPermissionsAfterInstall(log,logPath);
+                    return webAudit!=0?webAudit:endpoint;
+                }
                 return result;
             }catch(Exception ex){if(verb=="--clamav-providers"){string detail=ProviderFailureDetail(ex);log.WriteLine("Provider configuration failed during: "+providerStage+Environment.NewLine+detail);log.Flush();MessageBox.Show("Could not complete provider configuration.\r\n\r\nStep: "+providerStage+"\r\n"+detail+"\r\n\r\nSetup log: "+logPath,"LinkScope | Third-party signatures",MessageBoxButtons.OK,MessageBoxIcon.Error);}else {log.WriteLine(ex);log.Flush();MessageBox.Show(ex.Message+"\r\n\r\nSetup log: "+logPath,"LinkScope Setup",MessageBoxButtons.OK,MessageBoxIcon.Error);}return 1;}
             finally {

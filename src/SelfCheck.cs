@@ -250,7 +250,7 @@ namespace LinkScope {
             }
             File.Delete(sharedLog);
             Check(EndpointProtection.CoverageRecoveryDue(86500,100,false,false,true,false,false,86400)==400,"recovered path errors advance next reconciliation");
-            Check(EndpointProtection.CoverageRecoveryDue(86500,100,false,false,true,false,true,86400)==86500,"persistent path failures retain normal schedule");
+            Check(EndpointProtection.CoverageRecoveryDue(86500,100,false,false,true,false,true,86400)==1000,"outstanding transient path failures receive bounded reconciliation");
             Check(EndpointProtection.CoverageRecoveryDue(86500,100,false,false,true,true,false,86400)==86500,"memory pressure does not advance reconciliation");
             Check(EndpointProtection.CoverageRecoveryDue(86500,100,true,false,true,false,false,86400)==86500,"running baseline not interrupted");
             Check(EndpointProtection.CoverageRecoveryDue(86500,100,false,true,true,false,false,86400)==86500,"complete baseline not rescheduled");
@@ -291,6 +291,12 @@ namespace LinkScope {
             alerts.Sample("ram",new {status="ok",usedPercent=100.0},cfg);
             long cutoff=Convert.ToInt64(AsMap(alerts.EndpointAcknowledgement())["through"]);
             alerts.EndpointTransitions("test-stream",new List<object[]>{new object[]{5L,now,"new-alert","new.txt","New detection","critical","Test only","hash",1L}},cfg);
+            var single=alerts.List(new[]{"endpoint_protection"},true).Select(AsMap).Single(a=>Equals(a["title"],"Malware detected"));
+            alerts.ReadEndpointAlert((string)single["id"]);
+            alerts.ReadEndpointAlert((string)single["id"]); // idempotent
+            var individuallyReviewed=alerts.List(new[]{"endpoint_protection"},true).Select(AsMap).ToArray();
+            Check(individuallyReviewed.Any(a=>Equals(a["id"],single["id"])&&Equals(a["read"],true)&&Equals(a["resolved"],false))&&individuallyReviewed.Any(a=>Equals(a["title"],"New detection")&&Equals(a["read"],false)),"individual endpoint acknowledgement retains active finding and newer unread alert");
+            Check(Alerts.EndpointVerificationAllowed(new HealthAlert{Category="endpoint_protection",Severity="warning",Title="USN journal coverage gap"})&&!Alerts.EndpointVerificationAllowed(new HealthAlert{Category="endpoint_protection",Severity="critical",Title="Malware signature detected"})&&!Alerts.EndpointVerificationAllowed(new HealthAlert{Category="endpoint_protection",Severity="warning",Title="USN journal coverage gap",Resolved=true}),"verification only for active operational warnings");
             var ack=AsMap(alerts.ReadEndpointThrough(cutoff));
             Check(Convert.ToInt64(ack["unread"])==1&&Convert.ToInt64(ack["activeUnread"])==1,"endpoint acknowledgement retains later unread incident");
             remaining=alerts.List(new[]{"endpoint_protection"},true).Select(AsMap).ToArray();

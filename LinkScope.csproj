@@ -88,6 +88,7 @@
     <Compile Include="src\UserAccounts.cs" />
     <Compile Include="src\UserAudit.cs" />
     <Compile Include="src\Web.cs" />
+    <Compile Include="src\WebServerProtection.cs" />
     <EmbeddedResource Include="linkscope.ico"><LogicalName>linkscope.ico</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="obj\LinkScopeVersion.txt"><LogicalName>build-version.txt</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="src\theme.js"><LogicalName>theme.js</LogicalName></EmbeddedResource>

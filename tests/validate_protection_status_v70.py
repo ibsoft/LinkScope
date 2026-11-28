@@ -33,7 +33,7 @@ print('PASS: narrow recovery wiring, native self-test registration, SQLite resol
 html=(src/'endpoint.html').read_text();js=(src/'app.js').read_text();css='\n'.join((src/f).read_text() for f in ('app.css','theme.css','navigation.css'))
 html=re.sub(r'<script\b[^>]*>.*?</script>','',html,flags=re.S|re.I);html=re.sub(r'<link\b[^>]*>','',html,flags=re.I);html=html.replace('</head>','<style>'+css+'</style></head>').replace('{{admin-hidden}}','').replace('{{brand}}','LinkScope').replace('{{version}}','V70')
 js=js[:js.rindex('LinkScopeBusy.run(')]
-base=dict(status='ok',engineOnline=True,signatureFreshness='Current',activeMalware=0,activeScanIssues=0,coverageIssueCount=0,canaryCount=3,mode='contain',violations=0,items=[],fullScanComplete=True,rootCoverage=[])
+base=dict(status='ok',engineOnline=True,signatureFreshness='Current',activeMalware=0,activeScanIssues=0,coverageIssueCount=0,canaryCount=3,mode='contain',violations=0,items=[],fullScanComplete=True,rootCoverage=[dict(path=r"C:\Data",state="Watching",localWatcher=True)],protectedPaths=[r"C:\Data"],pendingAlertDelivery=0)
 with sync_playwright() as pw:
     browser=pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH','/usr/bin/chromium'),args=['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']);page=browser.new_page(viewport={'width':1366,'height':768});page.set_content(html)
     page.add_script_tag(content=js+'\nwindow.LinkScopePages={attach:()=>{}};csrf="test";maintenanceLast=Date.now();setupEndpointWorkspace();')
